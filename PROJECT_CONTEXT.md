@@ -360,3 +360,5 @@ Phase 1 ยังไม่ต้องใช้เวลามากกับ Ro
 - Matrix ใช้ความกว้างคอลัมน์คงที่เหมือนกันใน View Branch และ Date; กรณี Date มีคอลัมน์น้อยจะไม่ยืด SKU, WA Item, Total หรือวันที่เพื่อให้เต็มหน้าจอ
 - ไฟล์ Export เดียวมี Sheet `Item Mapping`, `Branch Mapping` และ `วิธีใช้งาน`
 - Branch Mapping เก็บรหัส/ชื่อ TWD และรหัส/ชื่อ WA; Matrix ใช้ชื่อ WA เมื่อ Mapping แล้ว และอนุญาตให้อัปเดตเฉพาะชื่อโดยไม่เปลี่ยนรหัสเดิม
+- Sales Date View มีแถว `SUM` สำหรับ Grand Total และยอดรวมของแต่ละวันทั้ง Amount/Qty โดยคำนวณจากทุก SKU ที่ผ่าน Filter และไม่เปลี่ยนตาม Pagination
+- API Date View ใช้ `grain=day_total` เพื่อรวมข้อมูลเป็น `SKU × Date` ที่ PostgreSQL ก่อนส่งให้ Browser แทนการส่งรายละเอียดทุก Branch; ชุดข้อมูลตัวอย่างลด response จากประมาณ 1.16 MB เหลือ 52 KB

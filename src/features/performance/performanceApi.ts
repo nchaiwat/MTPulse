@@ -56,7 +56,9 @@ export async function fetchPerformance(queryInput: PerformanceQuery): Promise<Pe
     ? 'month'
     : queryInput.dimension === 'branch' && queryInput.mode === 'sales'
       ? 'branch_month'
-      : 'day'
+      : queryInput.dimension === 'day'
+        ? 'day_total'
+        : 'day'
   const query = new URLSearchParams({
     page: String(queryInput.page),
     page_size: String(queryInput.pageSize),

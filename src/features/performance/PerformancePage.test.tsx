@@ -15,6 +15,7 @@ describe('PerformancePage', () => {
     expect(screen.getByRole('heading', { name: 'Sales ตาม Date' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: /16 ส\.ค\./ })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: /17 ส\.ค\./ })).toBeInTheDocument()
+    expect(document.querySelector('.matrix-summary-row')).toHaveTextContent('SUM')
   })
 
   it('uses the latest month in Branch view and shows totals above every column', async () => {

@@ -33,7 +33,7 @@ def performance(
     mapping_status: Annotated[Literal["confirmed", "pending", "unmatched"] | None, Query()] = None,
     hide_unmapped: Annotated[bool, Query()] = False,
     search: Annotated[str | None, Query(max_length=200)] = None,
-    grain: Annotated[Literal["day", "month", "branch_month"], Query()] = "day",
+    grain: Annotated[Literal["day", "day_total", "month", "branch_month"], Query()] = "day",
     period_month: Annotated[str | None, Query(max_length=7)] = None,
 ) -> dict:
     all_dates = session.scalars(
@@ -161,6 +161,21 @@ def performance(
             f"{year:04d}-{month:02d}": {"amount": _number(amount), "qty": _number(qty)}
             for year, month, amount, qty in total_rows
         }
+    elif grain == "day_total":
+        total_rows = session.execute(
+            select(
+                SalesInventoryFact.data_date,
+                func.coalesce(func.sum(SalesInventoryFact.amount), 0),
+                func.coalesce(func.sum(SalesInventoryFact.sales_qty), 0),
+            )
+            .where(*filters)
+            .group_by(SalesInventoryFact.data_date)
+            .order_by(SalesInventoryFact.data_date)
+        ).all()
+        column_totals = {
+            data_date.isoformat(): {"amount": _number(amount), "qty": _number(qty)}
+            for data_date, amount, qty in total_rows
+        }
     skus = session.scalars(
         select(SalesInventoryFact.source_sku)
         .where(*filters)
@@ -170,9 +185,25 @@ def performance(
         .limit(page_size)
     ).all()
     facts = []
+    daily_rows = []
     monthly_rows = []
     monthly_branch_rows = []
-    if grain == "month":
+    if grain == "day_total":
+        daily_rows = session.execute(
+            select(
+                SalesInventoryFact.source_sku,
+                func.min(SalesInventoryFact.source_description),
+                SalesInventoryFact.data_date,
+                func.sum(SalesInventoryFact.amount),
+                func.sum(SalesInventoryFact.sales_qty),
+                func.sum(SalesInventoryFact.stock_on_hand),
+                func.sum(SalesInventoryFact.stock_on_order),
+            )
+            .where(*filters, SalesInventoryFact.source_sku.in_(skus))
+            .group_by(SalesInventoryFact.source_sku, SalesInventoryFact.data_date)
+            .order_by(SalesInventoryFact.source_sku, SalesInventoryFact.data_date)
+        ).all()
+    elif grain == "month":
         year_part = cast(func.extract("year", SalesInventoryFact.data_date), Integer)
         month_part = cast(func.extract("month", SalesInventoryFact.data_date), Integer)
         monthly_rows = session.execute(
@@ -277,6 +308,28 @@ def performance(
                 "qty": _number(fact.sales_qty),
                 "stockOh": _number(fact.stock_on_hand),
                 "stockOnOrder": _number(fact.stock_on_order),
+            }
+        )
+
+    aggregate_branch_id = branch_id or "all"
+    for (
+        source_sku,
+        source_description,
+        data_date,
+        amount,
+        qty,
+        stock_oh,
+        stock_on_order,
+    ) in daily_rows:
+        item = item_for(source_sku, source_description)
+        item["points"].append(
+            {
+                "date": data_date.isoformat(),
+                "branchId": aggregate_branch_id,
+                "amount": _number(amount),
+                "qty": _number(qty),
+                "stockOh": _number(stock_oh),
+                "stockOnOrder": _number(stock_on_order),
             }
         )
 

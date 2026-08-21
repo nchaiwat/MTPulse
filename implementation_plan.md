@@ -255,6 +255,15 @@ Backend ในระยะถัดไปจะแยกขอบเขตเช
 
 - ไม่มีสำหรับขอบเขตรอบนี้; รอ Product Owner ยืนยันแผนก่อนเริ่ม Implementation
 
+## แผนเพิ่มเติม: Date SUM และ Performance
+
+### สถานะ: ดำเนินการแล้ว (21 สิงหาคม 2026)
+
+- เพิ่มแถว `SUM` ใน Sales Date View ให้แสดง Grand Total และยอดรวมรายวันของ Amount/Qty จากทุก SKU ที่ผ่าน Filter
+- เพิ่ม API grain `day_total` เพื่อ Aggregate ตาม SKU และ Date ที่ PostgreSQL ก่อนส่งข้อมูล ลด payload และงานรวมข้อมูลใน Browser
+- ยืนยันกับข้อมูลจริงว่าผลรวมรายวันเท่ากับ KPI ด้านบน และ response ลดจากประมาณ 1.16 MB เหลือ 52 KB
+- เพิ่ม regression tests สำหรับ Date SUM และการเลือก `grain=day_total`
+
 ## แผนเพิ่มเติม: Branch by Month และ Matrix Column Totals
 
 ### สถานะ: ดำเนินการแล้ว (21 สิงหาคม 2026)

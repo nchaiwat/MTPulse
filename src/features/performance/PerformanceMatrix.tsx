@@ -55,7 +55,7 @@ const MatrixTable = memo(function MatrixTable({ items, branches, dates, branchId
     ? columnTotals[key][salesMetric]
     : rows.reduce((total, row) => total + (row.values[key] ?? 0), 0)
   const summaryTotal = grandTotal ?? rows.reduce((total, row) => total + row.total, 0)
-  const showSummary = mode === 'sales' && (dimension === 'branch' || dimension === 'month')
+  const showSummary = mode === 'sales'
 
   useLayoutEffect(() => {
     const table = tableRef.current

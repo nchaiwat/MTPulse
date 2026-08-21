@@ -51,4 +51,25 @@ describe('fetchPerformance', () => {
     expect(url).not.toContain('date_from')
     expect(url).not.toContain('date_to')
   })
+
+  it('requests date totals aggregated by the backend', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({}), { status: 200 }),
+    )
+
+    await fetchPerformance({
+      dateRange: 'all',
+      branchId: 'all',
+      mappingStatus: 'all',
+      hideUnmapped: false,
+      search: '',
+      page: 1,
+      pageSize: 100,
+      dimension: 'day',
+      mode: 'sales',
+      branchMonth: 'latest',
+    })
+
+    expect(String(fetchMock.mock.calls[0][0])).toContain('grain=day_total')
+  })
 })
