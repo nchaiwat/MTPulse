@@ -1,0 +1,26 @@
+node_modules/
+dist/
+coverage/
+*.local
+.env
+.env.*
+!.env.example
+npm-debug.log*
+.deps/
+.tmp/
+.uv-cache/
+backend/.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.pyc
+
+# Local business data and runtime artifacts
+*.xls
+*.xlsx
+*.csv
+*.db
+*.sqlite
+*.sqlite3
+uploads/
+data/

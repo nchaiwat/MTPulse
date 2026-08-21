@@ -1,0 +1,354 @@
+<div id="mt-pulse-workbench">
+  <style>
+    #mt-pulse-workbench {
+      --mtp-bg: light-dark(#f4f6f8, #09111d);
+      --mtp-shell: light-dark(#ffffff, #101c2b);
+      --mtp-rail: light-dark(#12243a, #07101b);
+      --mtp-rail-text: light-dark(#f7fbff, #eaf5ff);
+      --mtp-text: light-dark(#152333, #e8f1fa);
+      --mtp-muted: light-dark(#667789, #9eb0c2);
+      --mtp-line: light-dark(#dce3e8, #2a3b4d);
+      --mtp-soft: light-dark(#eef2f5, #172536);
+      --mtp-accent: light-dark(#087f75, #65d4c7);
+      --mtp-accent-soft: light-dark(#d9f2ee, #163b3a);
+      --mtp-warning: light-dark(#9b6500, #ffd27a);
+      --mtp-warning-soft: light-dark(#fff3cd, #3b2d13);
+      --mtp-danger: light-dark(#b93b48, #ff8b96);
+      --mtp-danger-soft: light-dark(#fde7e9, #3d1d25);
+      --mtp-heat-1: light-dark(#edf7f5, #173131);
+      --mtp-heat-2: light-dark(#cdece6, #1f4b48);
+      --mtp-heat-3: light-dark(#8bd4c8, #26756d);
+      --mtp-selected: light-dark(#e8f3ff, #142f47);
+      color: var(--mtp-text);
+      background: transparent;
+      font-family: "Noto Sans Thai", "Leelawadee UI", system-ui, sans-serif;
+    }
+    #mt-pulse-workbench * { box-sizing: border-box; }
+    #mt-pulse-workbench .mtp-window {
+      background: var(--mtp-bg);
+      border: 1px solid var(--mtp-line);
+      border-radius: 14px;
+      overflow: hidden;
+      min-height: 720px;
+    }
+    #mt-pulse-workbench .mtp-appbar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      background: var(--mtp-rail);
+      color: var(--mtp-rail-text);
+      padding: 12px 18px;
+    }
+    #mt-pulse-workbench .mtp-brand { display: flex; align-items: center; gap: 10px; min-width: 170px; }
+    #mt-pulse-workbench .mtp-mark {
+      display: grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      background: var(--mtp-accent);
+      color: var(--mtp-rail);
+      font-weight: 700;
+    }
+    #mt-pulse-workbench .mtp-brand strong { font-weight: 500; letter-spacing: .02em; }
+    #mt-pulse-workbench .mtp-nav { display: flex; gap: 4px; flex: 1; flex-wrap: wrap; }
+    #mt-pulse-workbench .mtp-nav button {
+      border: 0;
+      background: transparent;
+      color: inherit;
+      padding: 8px 10px;
+      border-radius: 7px;
+      cursor: default;
+    }
+    #mt-pulse-workbench .mtp-nav button[aria-current="page"] { background: color-mix(in srgb, var(--mtp-accent) 28%, transparent); }
+    #mt-pulse-workbench .mtp-user { color: var(--mtp-rail-text); opacity: .84; white-space: nowrap; }
+    #mt-pulse-workbench .mtp-page { padding: 20px; }
+    #mt-pulse-workbench .mtp-titlebar { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 14px; }
+    #mt-pulse-workbench .mtp-titlebar h2 { margin: 0 0 3px; font-weight: 500; }
+    #mt-pulse-workbench .mtp-titlebar p { margin: 0; color: var(--mtp-muted); }
+    #mt-pulse-workbench .mtp-prototype { color: var(--mtp-accent); font-weight: 500; white-space: nowrap; }
+    #mt-pulse-workbench .mtp-statusbar {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      border-top: 1px solid var(--mtp-line);
+      border-bottom: 1px solid var(--mtp-line);
+      background: var(--mtp-shell);
+      margin-bottom: 14px;
+    }
+    #mt-pulse-workbench .mtp-statusbar > div { padding: 11px 13px; border-right: 1px solid var(--mtp-line); }
+    #mt-pulse-workbench .mtp-statusbar > div:last-child { border-right: 0; }
+    #mt-pulse-workbench .mtp-statusbar span { display: block; color: var(--mtp-muted); margin-bottom: 2px; }
+    #mt-pulse-workbench .mtp-statusbar strong { font-weight: 500; }
+    #mt-pulse-workbench .mtp-statusbar .mtp-good { color: var(--mtp-accent); }
+    #mt-pulse-workbench .mtp-statusbar .mtp-warn { color: var(--mtp-warning); }
+    #mt-pulse-workbench .mtp-mode-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+    #mt-pulse-workbench .mtp-segment { display: inline-flex; border: 1px solid var(--mtp-line); border-radius: 9px; overflow: hidden; background: var(--mtp-shell); }
+    #mt-pulse-workbench .mtp-segment button {
+      border: 0;
+      border-right: 1px solid var(--mtp-line);
+      background: transparent;
+      color: var(--mtp-text);
+      padding: 8px 13px;
+      cursor: pointer;
+    }
+    #mt-pulse-workbench .mtp-segment button:last-child { border-right: 0; }
+    #mt-pulse-workbench .mtp-segment button[aria-pressed="true"] { background: var(--mtp-accent); color: var(--mtp-rail); }
+    #mt-pulse-workbench .mtp-context { color: var(--mtp-muted); }
+    #mt-pulse-workbench .mtp-summary {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    #mt-pulse-workbench .mtp-summary article { background: var(--mtp-shell); border-top: 2px solid var(--mtp-line); padding: 10px 12px; }
+    #mt-pulse-workbench .mtp-summary span { display: block; color: var(--mtp-muted); }
+    #mt-pulse-workbench .mtp-summary strong { display: block; margin-top: 2px; font-weight: 500; font-size: 1.18em; }
+    #mt-pulse-workbench .mtp-controls {
+      display: grid;
+      grid-template-columns: 1.25fr 1.1fr .9fr .9fr auto;
+      gap: 8px;
+      align-items: end;
+      margin-bottom: 10px;
+    }
+    #mt-pulse-workbench .mtp-field label { display: block; color: var(--mtp-muted); margin-bottom: 4px; }
+    #mt-pulse-workbench .mtp-field input,
+    #mt-pulse-workbench .mtp-field select {
+      width: 100%;
+      min-height: 36px;
+      border: 1px solid var(--mtp-line);
+      border-radius: 7px;
+      background: var(--mtp-shell);
+      color: var(--mtp-text);
+      padding: 7px 9px;
+    }
+    #mt-pulse-workbench .mtp-heat-toggle { display: flex; align-items: center; gap: 7px; min-height: 36px; white-space: nowrap; }
+    #mt-pulse-workbench .mtp-workspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; position: relative; }
+    #mt-pulse-workbench .mtp-workspace.is-open { grid-template-columns: minmax(0, 1fr) 310px; gap: 12px; }
+    #mt-pulse-workbench .mtp-table-wrap { overflow-x: auto; background: var(--mtp-shell); border: 1px solid var(--mtp-line); border-radius: 9px; }
+    #mt-pulse-workbench table { border-collapse: separate; border-spacing: 0; width: 100%; min-width: 1060px; }
+    #mt-pulse-workbench th,
+    #mt-pulse-workbench td { padding: 9px 10px; border-bottom: 1px solid var(--mtp-line); text-align: left; vertical-align: middle; }
+    #mt-pulse-workbench th { background: var(--mtp-soft); color: var(--mtp-muted); font-weight: 500; white-space: nowrap; }
+    #mt-pulse-workbench td.mtp-num, #mt-pulse-workbench th.mtp-num { text-align: right; font-variant-numeric: tabular-nums; }
+    #mt-pulse-workbench tbody tr { cursor: pointer; }
+    #mt-pulse-workbench tbody tr:hover td { background: var(--mtp-soft); }
+    #mt-pulse-workbench tbody tr.is-selected td { background: var(--mtp-selected); }
+    #mt-pulse-workbench .mtp-item { min-width: 128px; }
+    #mt-pulse-workbench .mtp-desc { min-width: 220px; max-width: 260px; }
+    #mt-pulse-workbench .mtp-desc span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #mt-pulse-workbench .mtp-wa { min-width: 160px; }
+    #mt-pulse-workbench .mtp-status { white-space: nowrap; font-weight: 500; }
+    #mt-pulse-workbench .mtp-status.ok { color: var(--mtp-accent); }
+    #mt-pulse-workbench .mtp-status.pending { color: var(--mtp-warning); }
+    #mt-pulse-workbench .mtp-heat-1 { background: var(--mtp-heat-1); }
+    #mt-pulse-workbench .mtp-heat-2 { background: var(--mtp-heat-2); }
+    #mt-pulse-workbench .mtp-heat-3 { background: var(--mtp-heat-3); }
+    #mt-pulse-workbench .mtp-zero { color: var(--mtp-muted); }
+    #mt-pulse-workbench .mtp-drawer { display: none; background: var(--mtp-shell); border: 1px solid var(--mtp-line); border-radius: 9px; padding: 14px; align-self: start; }
+    #mt-pulse-workbench .mtp-workspace.is-open .mtp-drawer { display: block; }
+    #mt-pulse-workbench .mtp-drawer-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; padding-bottom: 10px; border-bottom: 1px solid var(--mtp-line); }
+    #mt-pulse-workbench .mtp-drawer-head h3 { margin: 0 0 3px; font-weight: 500; }
+    #mt-pulse-workbench .mtp-drawer-head p { margin: 0; color: var(--mtp-muted); }
+    #mt-pulse-workbench .mtp-close { border: 0; background: transparent; color: var(--mtp-muted); cursor: pointer; }
+    #mt-pulse-workbench .mtp-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0; }
+    #mt-pulse-workbench .mtp-detail-grid div { border-bottom: 1px solid var(--mtp-line); padding: 7px 0; }
+    #mt-pulse-workbench .mtp-detail-grid span { display: block; color: var(--mtp-muted); }
+    #mt-pulse-workbench .mtp-detail-grid strong { font-weight: 500; }
+    #mt-pulse-workbench .mtp-map-box { background: var(--mtp-warning-soft); padding: 10px; border-radius: 8px; margin-top: 10px; }
+    #mt-pulse-workbench .mtp-map-box label { display: block; color: var(--mtp-warning); margin-bottom: 5px; }
+    #mt-pulse-workbench .mtp-map-box select { width: 100%; border: 1px solid var(--mtp-line); background: var(--mtp-shell); color: var(--mtp-text); border-radius: 7px; padding: 7px; }
+    #mt-pulse-workbench .mtp-map-actions { display: flex; gap: 6px; margin-top: 8px; }
+    #mt-pulse-workbench .mtp-map-actions button { border: 1px solid var(--mtp-line); background: var(--mtp-shell); color: var(--mtp-text); border-radius: 7px; padding: 7px 10px; cursor: pointer; }
+    #mt-pulse-workbench .mtp-map-actions button:first-child { background: var(--mtp-accent); color: var(--mtp-rail); border-color: transparent; }
+    #mt-pulse-workbench .mtp-daily { margin-top: 12px; }
+    #mt-pulse-workbench .mtp-daily h4 { margin: 0 0 7px; font-weight: 500; }
+    #mt-pulse-workbench .mtp-bars { display: grid; gap: 6px; }
+    #mt-pulse-workbench .mtp-bar-row { display: grid; grid-template-columns: 48px 1fr 64px; align-items: center; gap: 7px; }
+    #mt-pulse-workbench .mtp-bar-track { height: 8px; background: var(--mtp-soft); border-radius: 999px; overflow: hidden; }
+    #mt-pulse-workbench .mtp-bar-fill { height: 100%; background: var(--mtp-accent); border-radius: inherit; }
+    #mt-pulse-workbench .mtp-empty { padding: 24px; text-align: center; color: var(--mtp-muted); }
+    #mt-pulse-workbench .mtp-foot { display: flex; justify-content: space-between; gap: 12px; color: var(--mtp-muted); margin-top: 8px; }
+    @media (max-width: 860px) {
+      #mt-pulse-workbench .mtp-appbar { align-items: flex-start; flex-wrap: wrap; }
+      #mt-pulse-workbench .mtp-user { display: none; }
+      #mt-pulse-workbench .mtp-statusbar, #mt-pulse-workbench .mtp-summary { grid-template-columns: 1fr 1fr; }
+      #mt-pulse-workbench .mtp-controls { grid-template-columns: 1fr 1fr; }
+      #mt-pulse-workbench .mtp-workspace.is-open { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 520px) {
+      #mt-pulse-workbench .mtp-page { padding: 12px; }
+      #mt-pulse-workbench .mtp-titlebar { flex-direction: column; }
+      #mt-pulse-workbench .mtp-statusbar, #mt-pulse-workbench .mtp-summary, #mt-pulse-workbench .mtp-controls { grid-template-columns: 1fr; }
+      #mt-pulse-workbench .mtp-statusbar > div { border-right: 0; border-bottom: 1px solid var(--mtp-line); }
+    }
+  </style>
+
+  <section class="mtp-window" aria-label="ต้นแบบหน้าจอ MT Pulse TWD Performance">
+    <header class="mtp-appbar">
+      <div class="mtp-brand"><span class="mtp-mark">M</span><strong>MT Pulse</strong></div>
+      <nav class="mtp-nav" aria-label="เมนูหลัก">
+        <button type="button" aria-current="page">Performance</button>
+        <button type="button">Data Status</button>
+        <button type="button">Matching</button>
+        <button type="button">System Settings</button>
+      </nav>
+      <span class="mtp-user">User · TWD</span>
+    </header>
+
+    <main class="mtp-page">
+      <div class="mtp-titlebar">
+        <div><h2>TWD Performance</h2><p>ตรวจยอดขาย สต็อก และ Matching ด้วยรหัส Item/Branch ของ TWD</p></div>
+        <span class="mtp-prototype">Interactive prototype</span>
+      </div>
+
+      <section class="mtp-statusbar" aria-label="สถานะข้อมูล">
+        <div><span>วันที่ข้อมูล</span><strong>17 ส.ค. 2026</strong></div>
+        <div><span>รับไฟล์เมื่อ</span><strong>19 ส.ค. · 06:01</strong></div>
+        <div><span>ไฟล์เดือนสิงหาคม</span><strong class="mtp-warn">17 / 19 วัน</strong></div>
+        <div><span>ผลนำเข้า</span><strong class="mtp-good">12,561 แถว · ผ่าน</strong></div>
+      </section>
+
+      <div class="mtp-mode-row">
+        <div class="mtp-segment" aria-label="เลือกโหมดรายงาน">
+          <button type="button" data-mode="sales" aria-pressed="true">Sales</button>
+          <button type="button" data-mode="inventory" aria-pressed="false">Inventory</button>
+        </div>
+        <div class="mtp-segment" aria-label="เลือกค่าที่แสดง">
+          <button type="button" data-metric="amount" aria-pressed="true">Amount Ex.VAT</button>
+          <button type="button" data-metric="qty" aria-pressed="false">Qty</button>
+          <button type="button" data-metric="stock" aria-pressed="false" hidden>Stock On Hand</button>
+          <button type="button" data-metric="order" aria-pressed="false" hidden>Stock On Order</button>
+        </div>
+        <span class="mtp-context" id="mtp-context">ช่วงวันที่ 1–17 ส.ค. 2026</span>
+      </div>
+
+      <section class="mtp-summary" aria-label="สรุปข้อมูล">
+        <article><span id="mtp-kpi-1-label">Amount Ex.VAT</span><strong id="mtp-kpi-1">807,799.36</strong></article>
+        <article><span id="mtp-kpi-2-label">Sales Qty</span><strong id="mtp-kpi-2">345</strong></article>
+        <article><span>SKU ในไฟล์</span><strong>2,043</strong></article>
+        <article><span>สาขา TWD</span><strong>102</strong></article>
+      </section>
+
+      <section class="mtp-controls" aria-label="ตัวกรองรายงาน">
+        <div class="mtp-field"><label for="mtp-search">ค้นหา Item / Description</label><input id="mtp-search" type="search" placeholder="เช่น 060425465 หรือ หน้าต่าง" /></div>
+        <div class="mtp-field"><label for="mtp-date">ช่วงวันที่</label><select id="mtp-date"><option>1–17 ส.ค. 2026</option><option>17 ส.ค. 2026</option><option>16 ส.ค. 2026</option></select></div>
+        <div class="mtp-field"><label for="mtp-branch">สาขา</label><select id="mtp-branch"><option value="all">ทุกสาขา</option><option value="60920">60920 · บางนา</option><option value="60930">60930 · ชะอำ</option><option value="60982">60982 · สงขลา</option></select></div>
+        <div class="mtp-field"><label for="mtp-mapping">Matching</label><select id="mtp-mapping"><option value="all">ทั้งหมด</option><option value="confirmed">ยืนยันแล้ว</option><option value="pending">รอยืนยัน</option></select></div>
+        <label class="mtp-heat-toggle"><input id="mtp-heat" type="checkbox" checked /> Heat map</label>
+      </section>
+
+      <section class="mtp-workspace" id="mtp-workspace">
+        <div>
+          <div class="mtp-table-wrap">
+            <table aria-label="ตาราง Item แยกตามสาขา TWD">
+              <thead><tr><th class="mtp-item">TWD SKU</th><th class="mtp-desc">Description TWD</th><th class="mtp-wa">WA Item</th><th>Matching</th><th class="mtp-num">Total</th><th class="mtp-num">60920<br>บางนา</th><th class="mtp-num">60930<br>ชะอำ</th><th class="mtp-num">60982<br>สงขลา</th><th class="mtp-num">60995<br>สระแก้ว</th></tr></thead>
+              <tbody id="mtp-tbody"></tbody>
+            </table>
+          </div>
+          <div class="mtp-foot"><span id="mtp-row-count">แสดงตัวอย่าง 6 จาก 2,043 SKU</span><span>คลิก Item เพื่อดูรายละเอียดรายวัน</span></div>
+        </div>
+
+        <aside class="mtp-drawer" id="mtp-drawer" aria-label="รายละเอียด Item">
+          <div class="mtp-drawer-head"><div><h3 id="mtp-detail-sku">060425465</h3><p id="mtp-detail-desc">หน้าต่างบานเลื่อน UPVC</p></div><button class="mtp-close" id="mtp-close" type="button" aria-label="ปิดรายละเอียด">✕</button></div>
+          <div class="mtp-detail-grid">
+            <div><span>Amount Ex.VAT</span><strong id="mtp-detail-amount">128,400</strong></div>
+            <div><span>Qty</span><strong id="mtp-detail-qty">43</strong></div>
+            <div><span>Stock On Hand</span><strong id="mtp-detail-stock">19</strong></div>
+            <div><span>Stock On Order</span><strong id="mtp-detail-order">2</strong></div>
+          </div>
+          <div id="mtp-map-area"></div>
+          <div class="mtp-daily"><h4>รายวัน × สาขา</h4><div class="mtp-bars" id="mtp-bars"></div></div>
+        </aside>
+      </section>
+    </main>
+  </section>
+
+  <script>
+    (() => {
+      const root = document.getElementById('mt-pulse-workbench');
+      const workspace = root.querySelector('#mtp-workspace');
+      const tbody = root.querySelector('#mtp-tbody');
+      const search = root.querySelector('#mtp-search');
+      const mappingFilter = root.querySelector('#mtp-mapping');
+      const heatToggle = root.querySelector('#mtp-heat');
+      const state = { mode: 'sales', metric: 'amount', selected: null };
+      const rows = [
+        { sku:'060425465', desc:'หน้าต่างบานเลื่อน UPVC WINDOW ASIA 2 บาน มีมุ้ง', wa:'FAE32-W22512-180110', status:'confirmed', amount:[128400,22400,31400,48600,26000], qty:[43,8,11,16,8], stock:[19,8,2,5,4], order:[2,0,0,2,0] },
+        { sku:'060385493', desc:'หน้าต่างบานเลื่อนอลูมิเนียม WINDOW ASIA 4 บาน FSSF', wa:'FAE32-W14414-120110', status:'confirmed', amount:[96320,18300,24600,32120,21300], qty:[28,5,7,9,7], stock:[15,4,3,5,3], order:[0,0,0,0,0] },
+        { sku:'060440650', desc:'ประตูบานเลื่อนอลูมิเนียม FRAMEX FSSF+มุ้ง สีดำ', wa:'—', status:'pending', amount:[74250,0,21600,34650,18000], qty:[19,0,6,8,5], stock:[7,0,0,4,3], order:[4,0,0,2,2] },
+        { sku:'060419921', desc:'หน้าต่างบานเลื่อน UPVC FRAMEX SSSS+มุ้ง สีขาว', wa:'FAE00-W0112-100100', status:'confirmed', amount:[60840,14640,0,26200,20000], qty:[17,4,0,7,6], stock:[11,3,0,5,3], order:[1,0,0,1,0] },
+        { sku:'060385489', desc:'หน้าต่างบานเลื่อนอลูมิเนียม WINDOW ASIA 2 บาน', wa:'FAE00-W0112-080050', status:'confirmed', amount:[45500,10800,12700,0,22000], qty:[14,3,4,0,7], stock:[7,2,2,0,3], order:[0,0,0,0,0] },
+        { sku:'060369713', desc:'ประตูภายใน UPVC AQUA มีวงกบและบานพับ', wa:'—', status:'pending', amount:[23800,0,0,14800,9000], qty:[7,0,0,4,3], stock:[1,0,0,1,0], order:[0,0,0,0,0] }
+      ];
+      const format = (value) => new Intl.NumberFormat('th-TH', { maximumFractionDigits: state.metric === 'amount' ? 0 : 0 }).format(value);
+      const metricValues = (row) => row[state.metric];
+      function heatClass(value, max) {
+        if (!heatToggle.checked || value === 0) return '';
+        const ratio = value / Math.max(max, 1);
+        return ratio > .66 ? 'mtp-heat-3' : ratio > .33 ? 'mtp-heat-2' : 'mtp-heat-1';
+      }
+      function renderTable() {
+        const term = search.value.trim().toLowerCase();
+        const map = mappingFilter.value;
+        const visible = rows.filter(row => (!term || `${row.sku} ${row.desc} ${row.wa}`.toLowerCase().includes(term)) && (map === 'all' || row.status === map));
+        const max = Math.max(...visible.flatMap(row => metricValues(row)), 1);
+        tbody.innerHTML = visible.map(row => {
+          const values = metricValues(row);
+          const total = values[0];
+          const branchCells = values.slice(1).map(value => `<td class="mtp-num ${heatClass(value,max)} ${value === 0 ? 'mtp-zero' : ''}">${value === 0 ? '—' : format(value)}</td>`).join('');
+          return `<tr data-sku="${row.sku}" class="${state.selected === row.sku ? 'is-selected' : ''}"><td class="mtp-item"><strong>${row.sku}</strong></td><td class="mtp-desc"><span>${row.desc}</span></td><td class="mtp-wa">${row.wa}</td><td><span class="mtp-status ${row.status === 'confirmed' ? 'ok' : 'pending'}">${row.status === 'confirmed' ? '✓ ยืนยันแล้ว' : '● รอยืนยัน'}</span></td><td class="mtp-num"><strong>${format(total)}</strong></td>${branchCells}</tr>`;
+        }).join('') || `<tr><td colspan="9" class="mtp-empty">ไม่พบ Item ตามตัวกรองนี้</td></tr>`;
+        root.querySelector('#mtp-row-count').textContent = `แสดงตัวอย่าง ${visible.length} จาก 2,043 SKU`;
+        tbody.querySelectorAll('tr[data-sku]').forEach(tr => tr.addEventListener('click', () => openDetail(tr.dataset.sku)));
+      }
+      function openDetail(sku) {
+        const row = rows.find(item => item.sku === sku);
+        if (!row) return;
+        state.selected = sku;
+        workspace.classList.add('is-open');
+        root.querySelector('#mtp-detail-sku').textContent = row.sku;
+        root.querySelector('#mtp-detail-desc').textContent = row.desc;
+        root.querySelector('#mtp-detail-amount').textContent = format(row.amount[0]);
+        root.querySelector('#mtp-detail-qty').textContent = format(row.qty[0]);
+        root.querySelector('#mtp-detail-stock').textContent = format(row.stock[0]);
+        root.querySelector('#mtp-detail-order').textContent = format(row.order[0]);
+        root.querySelector('#mtp-map-area').innerHTML = row.status === 'pending'
+          ? `<div class="mtp-map-box"><label>Item นี้ยังไม่ยืนยัน Matching</label><select aria-label="เลือก WA Item"><option>ค้นหา Item Master…</option><option>FAE32-W22512-180110</option><option>FAE00-W0112-180050</option></select><div class="mtp-map-actions"><button type="button">ยืนยัน Matching</button><button type="button">ดู OSCN</button></div></div>`
+          : `<div class="mtp-map-box" style="background:var(--mtp-accent-soft)"><label style="color:var(--mtp-accent)">Matching ที่ใช้งาน</label><strong>${row.wa}</strong><div class="mtp-map-actions"><button type="button">แก้ไข Mapping</button><button type="button">ดู Log</button></div></div>`;
+        const daily = [
+          ['15 ส.ค.', Math.round(row.amount[0] * .34)],
+          ['16 ส.ค.', Math.round(row.amount[0] * .27)],
+          ['17 ส.ค.', Math.round(row.amount[0] * .39)]
+        ];
+        const max = Math.max(...daily.map(item => item[1]), 1);
+        root.querySelector('#mtp-bars').innerHTML = daily.map(([day,value]) => `<div class="mtp-bar-row"><span>${day}</span><div class="mtp-bar-track"><div class="mtp-bar-fill" style="width:${Math.round(value/max*100)}%"></div></div><strong>${format(value)}</strong></div>`).join('');
+        renderTable();
+      }
+      function setMode(mode) {
+        state.mode = mode;
+        root.querySelectorAll('[data-mode]').forEach(btn => btn.setAttribute('aria-pressed', String(btn.dataset.mode === mode)));
+        const sales = mode === 'sales';
+        root.querySelectorAll('[data-metric="amount"],[data-metric="qty"]').forEach(btn => btn.hidden = !sales);
+        root.querySelectorAll('[data-metric="stock"],[data-metric="order"]').forEach(btn => btn.hidden = sales);
+        state.metric = sales ? 'amount' : 'stock';
+        root.querySelector('#mtp-context').textContent = sales ? 'ช่วงวันที่ 1–17 ส.ค. 2026' : 'Snapshot วันที่ 17 ส.ค. 2026';
+        root.querySelector('#mtp-kpi-1-label').textContent = sales ? 'Amount Ex.VAT' : 'Stock On Hand';
+        root.querySelector('#mtp-kpi-1').textContent = sales ? '807,799.36' : '77,416';
+        root.querySelector('#mtp-kpi-2-label').textContent = sales ? 'Sales Qty' : 'Stock On Order';
+        root.querySelector('#mtp-kpi-2').textContent = sales ? '345' : '6,338';
+        updateMetricButtons();
+      }
+      function updateMetricButtons() {
+        root.querySelectorAll('[data-metric]').forEach(btn => btn.setAttribute('aria-pressed', String(btn.dataset.metric === state.metric)));
+        renderTable();
+      }
+      root.querySelectorAll('[data-mode]').forEach(btn => btn.addEventListener('click', () => setMode(btn.dataset.mode)));
+      root.querySelectorAll('[data-metric]').forEach(btn => btn.addEventListener('click', () => { state.metric = btn.dataset.metric; updateMetricButtons(); }));
+      search.addEventListener('input', renderTable);
+      mappingFilter.addEventListener('change', renderTable);
+      heatToggle.addEventListener('change', renderTable);
+      root.querySelector('#mtp-close').addEventListener('click', () => { state.selected = null; workspace.classList.remove('is-open'); renderTable(); });
+      renderTable();
+    })();
+  </script>
+</div>

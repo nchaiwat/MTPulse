@@ -1,0 +1,25 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: mtpulse
+      POSTGRES_USER: mtpulse
+      POSTGRES_PASSWORD: mtpulse
+    ports: ["5432:5432"]
+    volumes: ["mtpulse-postgres:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mtpulse -d mtpulse"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  api:
+    build: ./backend
+    environment:
+      MTPULSE_DATABASE_URL: postgresql+psycopg://mtpulse:mtpulse@db:5432/mtpulse
+      MTPULSE_CORS_ORIGINS: '["http://localhost:5173"]'
+    ports: ["8000:8000"]
+    depends_on:
+      db:
+        condition: service_healthy
+volumes:
+  mtpulse-postgres:
