@@ -13,7 +13,6 @@ interface PerformanceToolbarProps {
   search: string
   heatmap: boolean
   showDescriptions: boolean
-  hideUnmapped: boolean
   branches: Branch[]
   dates: string[]
   months: string[]
@@ -27,7 +26,6 @@ interface PerformanceToolbarProps {
   onSearchChange: (search: string) => void
   onHeatmapChange: (enabled: boolean) => void
   onShowDescriptionsChange: (enabled: boolean) => void
-  onHideUnmappedChange: (enabled: boolean) => void
 }
 
 const salesMetrics: { value: Metric; label: string }[] = [
@@ -88,10 +86,6 @@ export function PerformanceToolbar(props: PerformanceToolbarProps) {
               {props.showDescriptions ? <Eye size={15} aria-hidden="true" /> : <EyeOff size={15} aria-hidden="true" />}
               Description
             </button>
-            <button className="description-toggle unmapped-toggle" type="button" aria-pressed={!props.hideUnmapped} onClick={() => props.onHideUnmappedChange(!props.hideUnmapped)}>
-              {props.hideUnmapped ? <EyeOff size={15} aria-hidden="true" /> : <Eye size={15} aria-hidden="true" />}
-              Unmap
-            </button>
           </div>
         </div>
       </section>
@@ -133,7 +127,6 @@ export function PerformanceToolbar(props: PerformanceToolbarProps) {
             <option value="all">ทุกสถานะ</option>
             <option value="confirmed">ยืนยันแล้ว</option>
             <option value="pending">รอตรวจสอบ</option>
-            <option value="unmatched">ยังไม่ Mapping</option>
           </select>
         </label>
 

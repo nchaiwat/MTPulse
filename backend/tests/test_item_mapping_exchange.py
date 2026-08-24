@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from io import BytesIO
 
 import openpyxl
@@ -8,6 +8,7 @@ from app.services.item_mapping_exchange import (
     ExportBranch,
     ExportItem,
     build_item_mapping_workbook,
+    export_filename,
     import_item_mapping_workbook,
     parse_item_mapping_workbook,
 )
@@ -123,6 +124,69 @@ class _ExistingBranchSession(_ImportSession):
         return _ScalarRows(values_by_call[self.scalars_calls])
 
 
+class _ExistingItemSession(_ImportSession):
+    def __init__(self, item_mapping: ItemMapping) -> None:
+        super().__init__()
+        self.item_mapping = item_mapping
+
+    def scalars(self, _statement) -> _ScalarRows:
+        self.scalars_calls += 1
+        values_by_call = {
+            1: [self.item_mapping.source_sku],
+            2: [],
+            3: [self.item_mapping],
+            4: [],
+        }
+        return _ScalarRows(values_by_call[self.scalars_calls])
+
+
+def test_import_uses_confirmed_status_without_requiring_description() -> None:
+    content = build_item_mapping_workbook(
+        [ExportItem("060358971", "N/A", "WA-NEW", "", "confirmed")]
+    )
+    session = _ImportSession()
+
+    import_item_mapping_workbook(
+        session, content, date(2026, 8, 16), "confirmed-item.xlsx"  # type: ignore[arg-type]
+    )
+
+    mapping = next(value for value in session.added if isinstance(value, ItemMapping))
+    assert mapping.source_description == "N/A"
+    assert mapping.wa_item_description is None
+    assert mapping.status == "confirmed"
+
+
+def test_import_confirms_existing_pending_mapping_when_excel_is_confirmed() -> None:
+    existing = ItemMapping(
+        modern_trade_id=1,
+        source_sku="060358971",
+        source_description="N/A",
+        wa_item_code="WA-NEW",
+        wa_item_description="รายละเอียดเดิม",
+        status="pending",
+        effective_from=date(2026, 8, 16),
+        effective_to=None,
+        changed_by="original",
+    )
+    content = build_item_mapping_workbook(
+        [ExportItem("060358971", "N/A", "WA-NEW", "", "confirmed")]
+    )
+    session = _ExistingItemSession(existing)
+
+    report = import_item_mapping_workbook(
+        session, content, date(2026, 8, 16), "confirmed-existing.xlsx"  # type: ignore[arg-type]
+    )
+
+    assert existing.status == "confirmed"
+    assert existing.wa_item_description == "รายละเอียดเดิม"
+    assert existing.changed_by.startswith("excel-import:")
+    assert report.unchanged == 1
+    assert any(
+        isinstance(value, AuditEvent) and value.action == "confirm_existing_mapping"
+        for value in session.added
+    )
+
+
 def test_import_accepts_new_source_sku_as_pending_mapping() -> None:
     content = build_item_mapping_workbook(
         [ExportItem("099999999", "สินค้าใหม่", "WA-NEW", "รายละเอียดใหม่", "unmatched")]
@@ -189,3 +253,11 @@ def test_import_updates_branch_description_without_changing_existing_code() -> N
     assert existing.wa_branch_description == "สำนักงานใหญ่"
     assert report.branch_updated == 1
     assert report.branch_unchanged == 0
+
+
+def test_export_filename_includes_hhmmss() -> None:
+    assert export_filename(
+        date(2026, 8, 16),
+        date(2026, 8, 17),
+        datetime(2026, 8, 24, 14, 5, 9),
+    ) == "TWD_Item_Mapping_2026-08-16_2026-08-17_140509.xlsx"

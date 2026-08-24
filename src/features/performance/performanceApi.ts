@@ -6,7 +6,6 @@ interface PerformanceQuery {
   dateRange: string
   branchId: string
   mappingStatus: string
-  hideUnmapped: boolean
   search: string
   page: number
   pageSize: number
@@ -72,7 +71,6 @@ export async function fetchPerformance(queryInput: PerformanceQuery): Promise<Pe
   }
   if (queryInput.branchId !== 'all') query.set('branch_id', queryInput.branchId)
   if (queryInput.mappingStatus !== 'all') query.set('mapping_status', queryInput.mappingStatus)
-  if (queryInput.hideUnmapped) query.set('hide_unmapped', 'true')
   if (queryInput.search) query.set('search', queryInput.search)
   const response = await fetch(`${apiBaseUrl}/api/performance?${query}`, { signal: queryInput.signal })
   if (!response.ok) throw new Error(`Performance API ตอบกลับ ${response.status}`)
@@ -88,7 +86,7 @@ export async function exportItemMappings(dateRange: string): Promise<{ blob: Blo
   const encodedFilename = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
   return {
     blob: await response.blob(),
-    filename: encodedFilename ? decodeURIComponent(encodedFilename) : `TWD_Item_Mapping_${dateFrom}_${dateTo}.xlsx`,
+    filename: encodedFilename ? decodeURIComponent(encodedFilename) : `TWD_Item_Mapping_${dateFrom}_${dateTo}_${new Date().toTimeString().slice(0, 8).replaceAll(':', '')}.xlsx`,
   }
 }
 

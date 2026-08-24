@@ -72,20 +72,6 @@ describe('PerformancePage', () => {
     expect(screen.getByText('SKU × Branch × Day')).toBeInTheDocument()
   })
 
-  it('hides only items that are not mapped', async () => {
-    const user = userEvent.setup()
-    render(<PerformancePage initialData={samplePerformanceResponse} />)
-
-    expect(screen.getByRole('button', { name: '60358968' })).toBeInTheDocument()
-    const unmapButton = screen.getByRole('button', { name: 'Unmap' })
-    expect(unmapButton).toHaveAttribute('aria-pressed', 'true')
-    await user.click(unmapButton)
-
-    expect(screen.queryByRole('button', { name: '60358968' })).not.toBeInTheDocument()
-    expect(unmapButton).toHaveAttribute('aria-pressed', 'false')
-    expect(screen.getByText('แสดง 7 จาก 2,043 SKU')).toBeInTheDocument()
-  })
-
   it('uses a compact SKU cell and synchronizes both horizontal scrollbars', () => {
     render(<PerformancePage initialData={samplePerformanceResponse} />)
 

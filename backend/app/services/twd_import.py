@@ -12,8 +12,15 @@ class DuplicateImportError(ValueError):
     pass
 
 
+class PeriodDuplicateError(ValueError):
+    pass
+
+
 def import_twd_file(session: Session, source_path: str | Path) -> ImportBatch:
-    extract = extract_twd_file(source_path)
+    return import_twd_extract(session, extract_twd_file(source_path))
+
+
+def import_twd_extract(session: Session, extract: TwdExtract) -> ImportBatch:
     mt = session.scalar(select(ModernTrade).where(ModernTrade.code == "TWD"))
     if mt is None:
         mt = ModernTrade(code="TWD", name="Thai Watsadu")
@@ -26,7 +33,17 @@ def import_twd_file(session: Session, source_path: str | Path) -> ImportBatch:
         )
     )
     if existing is not None:
-        raise DuplicateImportError(f"ไฟล์นี้เคยนำเข้าแล้วใน batch {existing.id}")
+        raise DuplicateImportError(f"ไฟล์นี้เคยนำเข้าแล้วใน Batch {existing.id}")
+    period_batch = session.scalar(
+        select(ImportBatch).where(
+            ImportBatch.modern_trade_id == mt.id,
+            ImportBatch.data_date == extract.data_date,
+        )
+    )
+    if period_batch is not None:
+        raise PeriodDuplicateError(
+            f"TWD วันที่ {extract.data_date.isoformat()} มีข้อมูลใน Batch {period_batch.id} แล้ว"
+        )
 
     batch = _build_batch(mt.id, extract)
     session.add(batch)

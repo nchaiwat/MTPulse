@@ -1,8 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.imports import router as imports_router
 from app.api.item_mappings import router as item_mappings_router
 from app.api.performance import router as performance_router
+from app.api.system_settings import router as system_settings_router
+from app.api.twd_settings import router as twd_settings_router
 from app.config import get_settings
 
 settings = get_settings()
@@ -16,6 +19,9 @@ app.add_middleware(
 )
 app.include_router(performance_router)
 app.include_router(item_mappings_router)
+app.include_router(imports_router)
+app.include_router(system_settings_router)
+app.include_router(twd_settings_router)
 
 
 @app.get("/health")

@@ -37,7 +37,6 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
   const [page, setPage] = useState(1)
   const [heatmap, setHeatmap] = useState(true)
   const [showDescriptions, setShowDescriptions] = useState(true)
-  const [hideUnmapped, setHideUnmapped] = useState(false)
   const [selected, setSelected] = useState<SelectedCell | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const [isExporting, setIsExporting] = useState(false)
@@ -65,7 +64,6 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
       dateRange,
       branchId,
       mappingStatus,
-      hideUnmapped,
       search: debouncedSearch,
       page,
       pageSize,
@@ -82,7 +80,7 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
       })
       .finally(() => { if (!controller.signal.aborted) setIsLoading(false) })
     return () => controller.abort()
-  }, [branchId, branchMonth, dateRange, debouncedSearch, dimension, hideUnmapped, initialData, mappingStatus, mode, page, pageSize, refreshKey])
+  }, [branchId, branchMonth, dateRange, debouncedSearch, dimension, initialData, mappingStatus, mode, page, pageSize, refreshKey])
 
   const handleExport = async () => {
     setIsExporting(true)
@@ -145,11 +143,10 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
         .filter(Boolean)
         .some((value) => value!.toLowerCase().includes(term))
       const matchesMapping = mappingStatus === 'all' || item.mappingStatus === mappingStatus
-      const matchesUnmappedVisibility = !hideUnmapped || item.mappingStatus !== 'unmatched'
       const hasData = item.points.some((point) => selectedDates.includes(point.date) && (branchId === 'all' || point.branchId === branchId))
-      return matchesSearch && matchesMapping && matchesUnmappedVisibility && hasData
+      return matchesSearch && matchesMapping && hasData
     })
-  }, [branchId, hideUnmapped, initialData, mappingStatus, performanceItems, search, selectedDates])
+  }, [branchId, initialData, mappingStatus, performanceItems, search, selectedDates])
 
   const allPoints = visibleItems.flatMap((item) => pointsForView(item, selectedDates, branchId, mode, 'branch'))
   const hasServerSummary = !initialData && data?.summary
@@ -194,7 +191,6 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
           search={search}
           heatmap={heatmap}
           showDescriptions={showDescriptions}
-          hideUnmapped={hideUnmapped}
           branches={branches}
           dates={dates}
           months={months}
@@ -204,11 +200,10 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
           onDateRangeChange={(value) => { setDateRange(value); setPage(1); setIsLoading(true); setLoadError(null) }}
           onBranchMonthChange={(value) => { setBranchMonth(value); setPage(1); setIsLoading(true); setLoadError(null) }}
           onBranchChange={(value) => { setBranchId(value); setPage(1); setIsLoading(true); setLoadError(null) }}
-          onMappingStatusChange={(value) => { setMappingStatus(value); if (value === 'unmatched') setHideUnmapped(false); setPage(1); setIsLoading(true); setLoadError(null) }}
+          onMappingStatusChange={(value) => { setMappingStatus(value); setPage(1); setIsLoading(true); setLoadError(null) }}
           onSearchChange={(value) => { setSearch(value); setPage(1); setLoadError(null) }}
           onHeatmapChange={setHeatmap}
           onShowDescriptionsChange={setShowDescriptions}
-          onHideUnmappedChange={(value) => { setHideUnmapped(value); if (value && mappingStatus === 'unmatched') setMappingStatus('all'); setPage(1); setIsLoading(true); setLoadError(null) }}
         />
 
         {loadError && <div className="empty-state" role="alert"><strong>เชื่อมต่อ Backend ไม่สำเร็จ</strong><span>{loadError}</span></div>}

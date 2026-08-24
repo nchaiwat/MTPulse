@@ -17,6 +17,7 @@ services:
     environment:
       MTPULSE_DATABASE_URL: postgresql+psycopg://mtpulse:mtpulse@db:5432/mtpulse
       MTPULSE_CORS_ORIGINS: '["http://localhost:5173"]'
+      MTPULSE_SETTINGS_ENCRYPTION_KEY: ${MTPULSE_SETTINGS_ENCRYPTION_KEY:-}
     ports: ["8000:8000"]
     depends_on:
       db:

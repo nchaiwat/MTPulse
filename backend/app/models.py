@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     Date,
     DateTime,
     ForeignKey,
@@ -29,12 +30,19 @@ class ModernTrade(Base):
     name: Mapped[str] = mapped_column(String(200))
     vat_mode: Mapped[str] = mapped_column(String(20), default="include")
     vat_rate: Mapped[Decimal] = mapped_column(Numeric(8, 6), default=Decimal("0.07"))
+    show_unmatched_items: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    show_unmatched_branches: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
 
 
 class ImportBatch(Base):
     __tablename__ = "import_batches"
     __table_args__ = (
         UniqueConstraint("modern_trade_id", "checksum_sha256", name="uq_batch_mt_checksum"),
+        UniqueConstraint("modern_trade_id", "data_date", name="uq_batch_mt_period"),
         Index("ix_batch_mt_period", "modern_trade_id", "data_date"),
     )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -145,3 +153,14 @@ class AuditEvent(Base):
     )
     before_json: Mapped[str | None] = mapped_column(Text)
     after_json: Mapped[str | None] = mapped_column(Text)
+
+
+class SystemSetting(Base):
+    __tablename__ = "system_settings"
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[str | None] = mapped_column(Text)
+    is_secret: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    updated_by: Mapped[str] = mapped_column(String(200))

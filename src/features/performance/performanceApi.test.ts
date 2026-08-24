@@ -13,7 +13,6 @@ describe('fetchPerformance', () => {
       dateRange: 'all',
       branchId: 'all',
       mappingStatus: 'all',
-      hideUnmapped: true,
       search: '',
       page: 3,
       pageSize: 25,
@@ -23,7 +22,6 @@ describe('fetchPerformance', () => {
     })
 
     expect(String(fetchMock.mock.calls[0][0])).toContain('page=3&page_size=25')
-    expect(String(fetchMock.mock.calls[0][0])).toContain('hide_unmapped=true')
     expect(String(fetchMock.mock.calls[0][0])).toContain('grain=branch_month')
     expect(String(fetchMock.mock.calls[0][0])).toContain('period_month=latest')
   })
@@ -37,7 +35,6 @@ describe('fetchPerformance', () => {
       dateRange: 'all',
       branchId: 'all',
       mappingStatus: 'all',
-      hideUnmapped: false,
       search: '',
       page: 1,
       pageSize: 100,
@@ -61,7 +58,6 @@ describe('fetchPerformance', () => {
       dateRange: 'all',
       branchId: 'all',
       mappingStatus: 'all',
-      hideUnmapped: false,
       search: '',
       page: 1,
       pageSize: 100,

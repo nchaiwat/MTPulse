@@ -15,6 +15,7 @@ from app.services.item_mapping_exchange import (
     ExportBranch,
     ExportItem,
     build_item_mapping_workbook,
+    export_filename,
     import_item_mapping_workbook,
 )
 
@@ -113,7 +114,7 @@ def export_item_mappings(
         )
 
     content = build_item_mapping_workbook(items, branches)
-    filename = f"TWD_Item_Mapping_{date_from.isoformat()}_{date_to.isoformat()}.xlsx"
+    filename = export_filename(date_from, date_to)
     return StreamingResponse(
         BytesIO(content),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

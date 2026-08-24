@@ -251,3 +251,48 @@ Discovery สำหรับ Frontend UX Milestone ได้รับอนุ�
 ### สถานะ
 
 - ดำเนินการแล้วเมื่อ 21 สิงหาคม 2026 และผ่านการตรวจ Backend, Frontend และ Browser QA
+
+## Requirement เพิ่มเติม: Manual Import และ Telegram Notification
+
+### สถานะ
+
+- Product Owner ยืนยันขอบเขต Functional เมื่อ 24 สิงหาคม 2026
+
+### Objective
+
+- ให้ User นำไฟล์ Raw Data ของ TWD วันอื่นเข้าระบบได้เองเพื่อ Reconcile รายงาน
+- ใช้หน้า Upload กลางร่วมกันในอนาคต โดย Phase แรก Detect และ Import เฉพาะ TWD
+- มี Log ที่อธิบายว่าใครหรือระบบทำอะไร กับไฟล์ใด เมื่อใด และผลเป็นอย่างไร
+
+### Workflow: Manual Upload
+
+1. User เปิด `สถานะข้อมูล > นำเข้าข้อมูล` และเลือกไฟล์ครั้งละหนึ่งไฟล์
+2. ระบบ Detect MT จากโครงสร้างไฟล์และ Validate โดยยังไม่บันทึก Fact
+3. ระบบแสดง Preview: MT, Period, Filename, checksum, Row, SKU, Branch, Amount, Qty และ Warning
+4. User กดยืนยันก่อน Import ทุกครั้ง
+5. Backend ตรวจไฟล์และ Duplicate ซ้ำอีกครั้ง แล้วใช้ Import Pipeline เดิมบันทึกแบบ Transaction
+6. แสดงผลลัพธ์และ Activity Log ที่อ่านเข้าใจได้
+
+### Business Rules
+
+- checksum เดิมห้าม Import ซ้ำ
+- checksum ต่างแต่ MT และ Period เดิมห้าม Import ซ้ำ; Workflow Replace ทำภายหลัง
+- Manual Upload ต้องยืนยันก่อน ส่วน On-Premise Agent ในอนาคตนำเข้าอัตโนมัติเมื่อ Validation ผ่าน
+- Raw File อยู่ชั่วคราวเฉพาะระหว่าง Preview/Import และต้องถูกลบทั้งกรณีสำเร็จและล้มเหลว
+- Original File บน UNC เป็น Read-only และอยู่นอกขอบเขต Manual Upload รอบนี้
+- ยังไม่ทำ User Level, On-Premise Agent, MT อื่น หรือ Daily Telegram Summary เชิงรายละเอียด
+
+### Telegram และ System Setting
+
+- ใช้ Telegram Bot หนึ่งตัวและ Group/Chat ID เดียวสำหรับทุก MT
+- System Setting รองรับ Bot Token แบบปกปิด, Group/Chat ID และการทดสอบส่งข้อความ
+- Manual Import สำเร็จหรือล้มเหลวต้องสร้าง Notification Event
+- หาก Telegram ยังไม่ถูกตั้งค่าหรือส่งไม่สำเร็จ Import ต้องไม่ Rollback และ Log ต้องระบุผลการแจ้งเตือน
+- Token ห้ามปรากฏใน Log, API Response หรือ Source Control
+
+### Success Criteria
+
+- Preview ไฟล์ TWD จริงได้โดยไม่สร้าง Import Batch หรือ Fact
+- Confirm แล้วข้อมูล Period ใหม่ปรากฏในรายงานและยอด Reconcile กับ Preview
+- Duplicate ทั้ง checksum และ MT+Period ถูกปฏิเสธโดยไม่สร้าง Fact เพิ่ม
+- Log แสดง Preview, Import, Duplicate, Failed และผล Telegram ด้วยข้อความที่ผู้ใช้เข้าใจได้

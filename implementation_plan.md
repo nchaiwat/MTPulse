@@ -311,3 +311,45 @@ Backend ในระยะถัดไปจะแยกขอบเขตเช
 ### Open Decision
 
 - ไม่มีสำหรับขอบเขตรอบนี้; รอ Product Owner ยืนยันแผนก่อนเริ่ม Implementation
+
+## แผนเพิ่มเติม: Manual Import และ Telegram Notification
+
+### Scope และ Non-goals
+
+- เพิ่ม Central Manual Upload สำหรับ TWD ครั้งละหนึ่งไฟล์ พร้อม Preview และ Confirm
+- เพิ่ม Activity Log และ Telegram System Setting/Test Notification
+- ไม่ทำ Agent, MT อื่น, Replace, Role Enforcement หรือ Daily Summary Scheduler ในรอบนี้
+
+### Technical Architecture
+
+- Frontend ส่งไฟล์เดิมสองครั้ง: Preview และ Confirm เพื่อไม่เก็บ Raw File ค้างบน Server ระหว่างรอ User
+- Backend ตรวจ checksum และโครงสร้างซ้ำตอน Confirm; Browser ส่ง expected checksum เพื่อกันไฟล์เปลี่ยน
+- ใช้ `extract_twd_file` และ Import Pipeline เดิมเป็น Source of Truth สำหรับการคำนวณ
+- ใช้ `AuditEvent` บันทึก Activity ที่สำคัญ และมี Read API แปลงเป็นข้อความสำหรับผู้ใช้
+- Telegram Adapter เป็น best-effort side effect หลัง Transaction; ความล้มเหลวของ Telegram ห้ามทำให้ Fact Rollback
+- Bot Token เข้ารหัสก่อนเก็บ โดย Encryption Key มาจาก Environment และ API คืนเฉพาะสถานะ configured
+
+### File และ Module Plan
+
+- `backend/app/api/imports.py`: Preview, Confirm และ Activity API
+- `backend/app/api/system_settings.py`: Telegram Settings และ Test Message API
+- `backend/app/services/twd_import.py`: Import จาก Extract และ Duplicate MT+Period
+- `backend/app/services/telegram.py`: Secret encryption และ Telegram sender
+- `backend/app/models.py` + Alembic: System Setting และ Unique MT+Period
+- `src/features/imports/`: Upload, Preview, Confirm และ Activity Log
+- `src/features/settings/`: System Setting สำหรับ Telegram
+- `src/app/App.tsx`: เปิด Submenu `สถานะข้อมูล > นำเข้าข้อมูล` และ `การตั้งค่า > ระบบ`
+
+### UI Direction
+
+- ใช้ Design Token และ Typography เดิมทั้งหมด
+- หน้ามีลำดับเดียว `เลือกไฟล์ → ตรวจสอบ → ยืนยัน → ผลลัพธ์`; Preview เป็น signature element ของหน้า
+- Log อยู่ใต้ Workflow และใช้ Status/เวลา/ข้อความตรงไปตรงมา ไม่แสดง Technical Detailโดย Default
+
+### Verification
+
+1. Tests สำหรับ Preview ที่ไม่เขียน Fact, Confirm, checksum duplicate และ MT+Period duplicate
+2. Tests สำหรับ Telegram secret masking, no-config, send failure และ Test Message
+3. Frontend tests สำหรับ Navigation, Preview, Confirm, Error และ Log
+4. รัน Backend tests/Ruff, Frontend tests/Lint/Build และ Browser QA
+5. ทดสอบกับไฟล์ TWD จริงโดยใช้ Preview ก่อน; ห้าม Confirm ไฟล์ Period เดิมในฐานข้อมูล

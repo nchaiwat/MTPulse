@@ -5,7 +5,9 @@ description = "MT Pulse API and import worker"
 requires-python = ">=3.13"
 dependencies = [
   "alembic>=1.16,<2",
+  "cryptography>=46,<47",
   "fastapi>=0.116,<1",
+  "httpx>=0.28,<1",
   "openpyxl>=3.1,<4",
   "psycopg[binary]>=3.2,<4",
   "pydantic-settings>=2.10,<3",

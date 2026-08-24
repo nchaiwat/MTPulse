@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
-from datetime import date
+from datetime import date, datetime
 from io import BytesIO
 from typing import Any
 
@@ -13,6 +13,17 @@ from sqlalchemy import distinct, select
 from sqlalchemy.orm import Session
 
 from app.models import AuditEvent, BranchMapping, ItemMapping, ModernTrade, SalesInventoryFact
+
+
+def export_filename(
+    date_from: date, date_to: date, current_time: datetime | None = None
+) -> str:
+    timestamp = (current_time or datetime.now()).strftime("%H%M%S")
+    return (
+        f"TWD_Item_Mapping_{date_from.isoformat()}_{date_to.isoformat()}_"
+        f"{timestamp}.xlsx"
+    )
+
 
 SHEET_NAME = "Item Mapping"
 BRANCH_SHEET_NAME = "Branch Mapping"
@@ -58,6 +69,7 @@ class ImportCandidate:
     source_description: str
     wa_item_code: str
     wa_item_description: str
+    status: str
 
 
 @dataclass(frozen=True)
@@ -66,6 +78,7 @@ class BranchImportCandidate:
     source_branch_description: str
     wa_branch_code: str
     wa_branch_description: str
+    status: str
 
 
 @dataclass(frozen=True)
@@ -101,6 +114,11 @@ class ItemImportReport:
 
 def _text(value: Any) -> str:
     return "" if value is None else str(value).replace("\u00a0", " ").strip()
+
+
+def _import_status(value: Any) -> str:
+    status = _text(value).lower()
+    return status if status in {"confirmed", "pending"} else "pending"
 
 
 def _identifier(value: Any, width: int) -> str:
@@ -226,11 +244,12 @@ def parse_item_mapping_workbook(content: bytes) -> ParsedItemWorkbook:
         if missing:
             raise ValueError(f"ไม่พบ Column ที่จำเป็น: {', '.join(missing)}")
 
-        candidate_sets: dict[str, set[tuple[str, str, str]]] = {}
+        candidate_sets: dict[str, set[tuple[str, str, str, str]]] = {}
         errors: list[str] = []
         row_count = skipped_blank = 0
         description_index = header_map.get("WA Description")
         source_description_index = header_map.get("TWD Description")
+        status_index = header_map.get("Mapping Status")
         for excel_row, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
             if not any(value not in (None, "") for value in row):
                 continue
@@ -247,6 +266,11 @@ def parse_item_mapping_workbook(content: bytes) -> ParsedItemWorkbook:
                 if description_index is not None and description_index < len(row)
                 else ""
             )
+            status = _import_status(
+                row[status_index]
+                if status_index is not None and status_index < len(row)
+                else None
+            )
             if not sku:
                 errors.append(f"แถว {excel_row}: ไม่มี TWD SKU")
                 continue
@@ -257,7 +281,7 @@ def parse_item_mapping_workbook(content: bytes) -> ParsedItemWorkbook:
                 errors.append(f"แถว {excel_row}: รหัสยาวเกิน 50 ตัวอักษร")
                 continue
             candidate_sets.setdefault(sku, set()).add(
-                (source_description, wa_item, wa_description)
+                (source_description, wa_item, wa_description, status)
             )
 
         conflicts = tuple(sorted(sku for sku, values in candidate_sets.items() if len(values) > 1))
@@ -267,7 +291,7 @@ def parse_item_mapping_workbook(content: bytes) -> ParsedItemWorkbook:
             if len(values) == 1
         )
 
-        branch_sets: dict[str, set[tuple[str, str, str]]] = {}
+        branch_sets: dict[str, set[tuple[str, str, str, str]]] = {}
         branch_row_count = branch_skipped_blank = 0
         if BRANCH_SHEET_NAME in workbook.sheetnames:
             branch_sheet = workbook[BRANCH_SHEET_NAME]
@@ -287,6 +311,7 @@ def parse_item_mapping_workbook(content: bytes) -> ParsedItemWorkbook:
                 )
             source_name_index = branch_headers.get("TWD Branch Description")
             wa_name_index = branch_headers.get("WA Branch Description")
+            branch_status_index = branch_headers.get("Mapping Status")
             for excel_row, row in enumerate(
                 branch_sheet.iter_rows(min_row=2, values_only=True), start=2
             ):
@@ -305,6 +330,12 @@ def parse_item_mapping_workbook(content: bytes) -> ParsedItemWorkbook:
                     if wa_name_index is not None and wa_name_index < len(row)
                     else ""
                 )
+                status = _import_status(
+                    row[branch_status_index]
+                    if branch_status_index is not None
+                    and branch_status_index < len(row)
+                    else None
+                )
                 if not source_code:
                     errors.append(f"Branch แถว {excel_row}: ไม่มี TWD Branch")
                     continue
@@ -315,7 +346,7 @@ def parse_item_mapping_workbook(content: bytes) -> ParsedItemWorkbook:
                     errors.append(f"Branch แถว {excel_row}: รหัสยาวเกิน 30 ตัวอักษร")
                     continue
                 branch_sets.setdefault(source_code, set()).add(
-                    (source_name, wa_code, wa_name)
+                    (source_name, wa_code, wa_name, status)
                 )
 
         branch_conflicts = tuple(
@@ -389,6 +420,23 @@ def import_item_mapping_workbook(
         current = existing.get(candidate.source_sku)
         if current:
             if current.wa_item_code == candidate.wa_item_code:
+                if candidate.status == "confirmed" and current.status != "confirmed":
+                    before = {"status": current.status}
+                    current.status = "confirmed"
+                    current.changed_by = actor
+                    session.add(
+                        AuditEvent(
+                            entity_type="item_mapping",
+                            entity_id=candidate.source_sku,
+                            action="confirm_existing_mapping",
+                            actor=actor,
+                            before_json=json.dumps(before),
+                            after_json=json.dumps(
+                                {"status": current.status, **asdict(candidate)},
+                                ensure_ascii=False,
+                            ),
+                        )
+                    )
                 unchanged += 1
             else:
                 existing_conflicts += 1
@@ -406,7 +454,7 @@ def import_item_mapping_workbook(
             source_description=candidate.source_description or None,
             wa_item_code=candidate.wa_item_code,
             wa_item_description=candidate.wa_item_description or None,
-            status="pending",
+            status=candidate.status,
             effective_from=effective_from,
             effective_to=None,
             changed_by=actor,
@@ -416,7 +464,7 @@ def import_item_mapping_workbook(
             AuditEvent(
                 entity_type="item_mapping",
                 entity_id=candidate.source_sku,
-                action="import_pending_mapping",
+                action=f"import_{candidate.status}_mapping",
                 actor=actor,
                 before_json=None,
                 after_json=json.dumps(
@@ -439,22 +487,30 @@ def import_item_mapping_workbook(
                 next_wa_description = (
                     candidate.wa_branch_description or current.wa_branch_description
                 )
+                next_status = (
+                    "confirmed"
+                    if candidate.status == "confirmed"
+                    else current.status
+                )
                 if (
                     next_source_description != current.source_branch_description
                     or next_wa_description != current.wa_branch_description
+                    or next_status != current.status
                 ):
                     before = {
                         "source_branch_description": current.source_branch_description,
                         "wa_branch_description": current.wa_branch_description,
+                        "status": current.status,
                     }
                     current.source_branch_description = next_source_description
                     current.wa_branch_description = next_wa_description
+                    current.status = next_status
                     current.changed_by = actor
                     session.add(
                         AuditEvent(
                             entity_type="branch_mapping",
                             entity_id=candidate.source_branch_code,
-                            action="update_mapping_descriptions",
+                            action="update_mapping",
                             actor=actor,
                             before_json=json.dumps(before, ensure_ascii=False),
                             after_json=json.dumps(asdict(candidate), ensure_ascii=False),
@@ -477,7 +533,7 @@ def import_item_mapping_workbook(
             source_branch_description=candidate.source_branch_description or None,
             wa_branch_code=candidate.wa_branch_code,
             wa_branch_description=candidate.wa_branch_description or None,
-            status="pending",
+            status=candidate.status,
             effective_from=effective_from,
             effective_to=None,
             changed_by=actor,
@@ -487,7 +543,7 @@ def import_item_mapping_workbook(
             AuditEvent(
                 entity_type="branch_mapping",
                 entity_id=candidate.source_branch_code,
-                action="import_pending_mapping",
+                action=f"import_{candidate.status}_mapping",
                 actor=actor,
                 before_json=None,
                 after_json=json.dumps(

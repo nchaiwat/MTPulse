@@ -64,13 +64,31 @@ def performance(
         filters.append(SalesInventoryFact.data_date >= range_from)
     if date_to or grain == "branch_month":
         filters.append(SalesInventoryFact.data_date <= range_to)
-    twd_id = select(ModernTrade.id).where(ModernTrade.code == "TWD").scalar_subquery()
+    modern_trade = session.scalar(select(ModernTrade).where(ModernTrade.code == "TWD"))
+    if modern_trade is None:
+        raise HTTPException(status_code=404, detail="ไม่พบ Modern Trade รหัส TWD")
+    twd_id = modern_trade.id
     active_mapping_filters = (
         ItemMapping.modern_trade_id == twd_id,
         ItemMapping.effective_from <= range_to,
         (ItemMapping.effective_to.is_(None) | (ItemMapping.effective_to >= range_from)),
     )
+    active_branch_mapping_filters = (
+        BranchMapping.modern_trade_id == twd_id,
+        BranchMapping.effective_from <= range_to,
+        (
+            BranchMapping.effective_to.is_(None)
+            | (BranchMapping.effective_to >= range_from)
+        ),
+    )
     mapped_skus = select(ItemMapping.source_sku).where(*active_mapping_filters)
+    mapped_branches = select(BranchMapping.source_branch_code).where(
+        *active_branch_mapping_filters
+    )
+    if not modern_trade.show_unmatched_items or hide_unmapped:
+        filters.append(SalesInventoryFact.source_sku.in_(mapped_skus))
+    if not modern_trade.show_unmatched_branches:
+        filters.append(SalesInventoryFact.source_branch_code.in_(mapped_branches))
     if branch_id:
         filters.append(SalesInventoryFact.source_branch_code == branch_id)
     if mapping_status:
@@ -82,8 +100,7 @@ def performance(
                     mapped_skus.where(ItemMapping.status == mapping_status)
                 )
             )
-    elif hide_unmapped:
-        filters.append(SalesInventoryFact.source_sku.in_(mapped_skus))
+
     normalized_search = search.strip() if search else ""
     if normalized_search:
         wa_matches = select(ItemMapping.source_sku).where(
@@ -100,10 +117,29 @@ def performance(
                 SalesInventoryFact.source_sku.in_(wa_matches),
             )
         )
-    total_skus = (
-        session.scalar(select(func.count(distinct(SalesInventoryFact.source_sku))).where(*filters))
-        or 0
-    )
+    fact_skus = select(SalesInventoryFact.source_sku).where(*filters)
+    mapping_candidate_filters = list(active_mapping_filters)
+    if mapping_status and mapping_status != "unmatched":
+        mapping_candidate_filters.append(ItemMapping.status == mapping_status)
+    if normalized_search:
+        mapping_candidate_filters.append(
+            or_(
+                ItemMapping.source_sku.icontains(normalized_search, autoescape=True),
+                ItemMapping.source_description.icontains(
+                    normalized_search, autoescape=True
+                ),
+                ItemMapping.wa_item_code.icontains(normalized_search, autoescape=True),
+                ItemMapping.wa_item_description.icontains(
+                    normalized_search, autoescape=True
+                ),
+            )
+        )
+    if mapping_status == "unmatched":
+        candidate_skus = fact_skus.distinct().subquery()
+    else:
+        mapping_skus = select(ItemMapping.source_sku).where(*mapping_candidate_filters)
+        candidate_skus = fact_skus.union(mapping_skus).subquery()
+    total_skus = session.scalar(select(func.count()).select_from(candidate_skus)) or 0
     total_amount, total_qty = session.execute(
         select(
             func.coalesce(func.sum(SalesInventoryFact.amount), 0),
@@ -121,9 +157,9 @@ def performance(
     )
     mapping_attention = (
         session.scalar(
-            select(func.count(distinct(SalesInventoryFact.source_sku))).where(
-                *filters, ~SalesInventoryFact.source_sku.in_(confirmed_skus)
-            )
+            select(func.count())
+            .select_from(candidate_skus)
+            .where(~candidate_skus.c.source_sku.in_(confirmed_skus))
         )
         or 0
     )
@@ -177,10 +213,7 @@ def performance(
             for data_date, amount, qty in total_rows
         }
     skus = session.scalars(
-        select(SalesInventoryFact.source_sku)
-        .where(*filters)
-        .group_by(SalesInventoryFact.source_sku)
-        .order_by(SalesInventoryFact.source_sku)
+        select(candidate_skus.c.source_sku).order_by(candidate_skus.c.source_sku)
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
@@ -242,24 +275,22 @@ def performance(
                 SalesInventoryFact.source_branch_code,
             )
         ).all()
-    branch_rows = session.execute(
-        select(
-            SalesInventoryFact.source_branch_code,
-            func.min(SalesInventoryFact.source_branch_name),
+    branch_query = select(
+        SalesInventoryFact.source_branch_code,
+        func.min(SalesInventoryFact.source_branch_name),
+    )
+    if not modern_trade.show_unmatched_branches:
+        branch_query = branch_query.where(
+            SalesInventoryFact.source_branch_code.in_(mapped_branches)
         )
-        .group_by(SalesInventoryFact.source_branch_code)
-        .order_by(SalesInventoryFact.source_branch_code)
+    branch_rows = session.execute(
+        branch_query.group_by(SalesInventoryFact.source_branch_code).order_by(
+            SalesInventoryFact.source_branch_code
+        )
     ).all()
     branch_mappings = session.scalars(
         select(BranchMapping)
-        .where(
-            BranchMapping.modern_trade_id == twd_id,
-            BranchMapping.effective_from <= range_to,
-            (
-                BranchMapping.effective_to.is_(None)
-                | (BranchMapping.effective_to >= range_from)
-            ),
-        )
+        .where(*active_branch_mapping_filters)
         .order_by(BranchMapping.effective_from)
     ).all()
     branch_mapping_by_code = {
@@ -284,9 +315,9 @@ def performance(
 
     def item_for(source_sku: str, source_description: str | None) -> dict:
         mapping = mapping_by_sku.get(source_sku)
-        return items.setdefault(
-            source_sku,
-            {
+        item = items.get(source_sku)
+        if item is None:
+            item = {
                 "sku": source_sku,
                 "twdDescription": source_description
                 or (mapping.source_description if mapping else None)
@@ -295,8 +326,14 @@ def performance(
                 "waDescription": mapping.wa_item_description if mapping else None,
                 "mappingStatus": mapping.status if mapping else "unmatched",
                 "points": [],
-            },
-        )
+            }
+            items[source_sku] = item
+        elif source_description:
+            item["twdDescription"] = source_description
+        return item
+
+    for source_sku in skus:
+        item_for(source_sku, None)
 
     for fact in facts:
         item = item_for(fact.source_sku, fact.source_description)
