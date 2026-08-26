@@ -1,10 +1,15 @@
+import { useEffect } from 'react'
 import { Bell, Building2 } from 'lucide-react'
 import { SystemSettingsPage } from './SystemSettingsPage'
 import { TwdSettingsPage } from './TwdSettingsPage'
 
-export function SettingsPage() {
-  return (
-    <div className="settings-workspace page-content">
+export function SettingsPage({ focusCoverageKey = 0 }: { focusCoverageKey?: number }) {
+  useEffect(() => {
+    if (!focusCoverageKey) return
+    document.getElementById('data-coverage-heading')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [focusCoverageKey])
+
+  return (    <div className="settings-workspace page-content">
       <div className="settings-workspace-intro">
         <p>รวมการตั้งค่าของ Modern Trade และระบบไว้ในที่เดียว</p>
       </div>

@@ -2,6 +2,7 @@ import { memo, useLayoutEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { aggregateByDimension, formatMetric, heatLevel, monthKeys, pointsForView, sumMetric } from './performanceMath'
 import type { Branch, Dimension, Metric, Mode, PerformanceItem, SelectedCell } from './types'
+import { formatDisplayDate } from '../../shared/dateFormat'
 
 interface PerformanceMatrixProps {
   items: PerformanceItem[] | null
@@ -11,7 +12,7 @@ interface PerformanceMatrixProps {
   totalPages: number
   isLoading: boolean
   dates: string[]
-  branchId: string
+  branchIds: string[]
   mode: Mode
   metric: Metric
   dimension: Dimension
@@ -24,7 +25,6 @@ interface PerformanceMatrixProps {
   onPageChange: (page: number) => void
 }
 
-const shortDate = (date: string) => new Intl.DateTimeFormat('th-TH-u-ca-gregory', { day: '2-digit', month: 'short' }).format(new Date(`${date}T00:00:00`))
 const shortMonth = (month: string) => {
   const [year, monthNumber] = month.split('-').map(Number)
   return new Intl.DateTimeFormat('en-US', { month: 'short', year: 'numeric' }).format(new Date(year, monthNumber - 1, 1))
@@ -34,19 +34,19 @@ type MatrixTableProps = Omit<PerformanceMatrixProps, 'items' | 'totalSkus' | 'pa
   items: PerformanceItem[]
 }
 
-const MatrixTable = memo(function MatrixTable({ items, branches, dates, branchId, mode, metric, dimension, heatmap, showDescriptions, columnTotals, grandTotal, selected, onSelect }: MatrixTableProps) {
+const MatrixTable = memo(function MatrixTable({ items, branches, dates, branchIds, mode, metric, dimension, heatmap, showDescriptions, columnTotals, grandTotal, selected, onSelect }: MatrixTableProps) {
   const topScrollRef = useRef<HTMLDivElement>(null)
   const matrixScrollRef = useRef<HTMLDivElement>(null)
   const tableRef = useRef<HTMLTableElement>(null)
   const topSpacerRef = useRef<HTMLDivElement>(null)
   const dimensionKeys = dimension === 'branch'
-    ? branches.filter((branch) => branchId === 'all' || branch.id === branchId).map((branch) => branch.id)
+    ? branches.filter((branch) => branchIds.length === 0 || branchIds.includes(branch.id)).map((branch) => branch.id)
     : dimension === 'month'
       ? monthKeys(dates)
       : dates
 
   const rows = items.map((item) => {
-    const points = pointsForView(item, dates, branchId, mode, dimension)
+    const points = pointsForView(item, dates, branchIds, mode, dimension)
     return { item, values: aggregateByDimension(points, dimension, metric), total: sumMetric(points, metric) }
   })
   const maxValue = Math.max(0, ...rows.flatMap((row) => dimensionKeys.map((key) => row.values[key] ?? 0)))
@@ -112,14 +112,20 @@ const MatrixTable = memo(function MatrixTable({ items, branches, dates, branchId
             <th className="numeric-column total-column">Total</th>
             {dimensionKeys.map((key) => {
               const branch = branches.find((entry) => entry.id === key)
-              return <th className="numeric-column dimension-header" key={key}><span>{branch ? branch.id : dimension === 'month' ? shortMonth(key) : shortDate(key)}</span>{branch && <small>{branch.name}</small>}</th>
+              return (
+                <th className="numeric-column dimension-header" key={key}>
+                  {branch
+                    ? <><span className="branch-header-code">{branch.id}</span><small className="branch-header-name">{branch.name}</small></>
+                    : <span>{dimension === 'month' ? shortMonth(key) : formatDisplayDate(key)}</span>}
+                </th>
+              )
             })}
           </tr>
         </thead>
         <tbody>
           {rows.map(({ item, values, total }) => (
-            <tr data-selected={selected?.sku === item.sku || undefined} data-mapping-status={item.mappingStatus} key={item.sku}>
-              <td className="sticky-column col-sku"><button className={`item-link ${item.mappingStatus === 'unmatched' ? 'item-link-unmatched' : ''}`} type="button" onClick={() => onSelect({ sku: item.sku })}>{item.sku}</button></td>
+            <tr data-selected={selected?.sku === item.sku || undefined} data-mapping-status={item.mappingStatus} data-item-type={item.itemType ?? 'normal'} key={item.sku}>
+              <td className="sticky-column col-sku"><span className="item-link-wrap"><button className={`item-link ${item.mappingStatus === 'unmatched' ? 'item-link-unmatched' : ''}`} type="button" onClick={() => onSelect({ sku: item.sku })}>{item.sku}</button>{item.itemType === 'trial' && <span className="trial-row-badge">สินค้าทดลอง</span>}</span></td>
               {showDescriptions && <td className="sticky-column col-twd-desc"><span className="truncate" title={item.twdDescription}>{item.twdDescription}</span></td>}
               <td className={`sticky-column col-wa-item mono ${showDescriptions ? '' : 'sticky-divider'}`}>{item.waItem ?? '—'}</td>
               {showDescriptions && <td className="sticky-column col-wa-desc sticky-divider"><span className="truncate" title={item.waDescription ?? 'ยังไม่ Mapping'}>{item.waDescription ?? 'ยังไม่ได้เลือก Mapping'}</span></td>}
@@ -174,7 +180,7 @@ function PaginationControls({ page, totalPages, isLoading, onPageChange }: Pick<
   )
 }
 
-export function PerformanceMatrix({ items, branches, totalSkus, page, totalPages, isLoading, dates, branchId, mode, metric, dimension, heatmap, showDescriptions, columnTotals, grandTotal, selected, onSelect, onPageChange }: PerformanceMatrixProps) {
+export function PerformanceMatrix({ items, branches, totalSkus, page, totalPages, isLoading, dates, branchIds, mode, metric, dimension, heatmap, showDescriptions, columnTotals, grandTotal, selected, onSelect, onPageChange }: PerformanceMatrixProps) {
   if (items === null) {
     return <div className="matrix-skeleton" aria-label="กำลังโหลดข้อมูล Performance" aria-busy="true">{Array.from({ length: 7 }, (_, index) => <span key={index} />)}</div>
   }
@@ -185,7 +191,7 @@ export function PerformanceMatrix({ items, branches, totalSkus, page, totalPages
 
   return (
     <div className="matrix-frame" data-loading={isLoading || undefined} aria-busy={isLoading}>
-      <MatrixTable items={items} branches={branches} dates={dates} branchId={branchId} mode={mode} metric={metric} dimension={dimension} heatmap={heatmap} showDescriptions={showDescriptions} columnTotals={columnTotals} grandTotal={grandTotal} selected={selected} onSelect={onSelect} />
+      <MatrixTable items={items} branches={branches} dates={dates} branchIds={branchIds} mode={mode} metric={metric} dimension={dimension} heatmap={heatmap} showDescriptions={showDescriptions} columnTotals={columnTotals} grandTotal={grandTotal} selected={selected} onSelect={onSelect} />
       <footer className="matrix-footer">
         <span>แสดง {items.length.toLocaleString('en-US')} จาก {totalSkus.toLocaleString('en-US')} SKU</span>
         <span className="loading-copy" role="status" aria-live="polite">{isLoading ? 'กำลังโหลดข้อมูล…' : 'พร้อมใช้งาน'}</span>

@@ -6,7 +6,7 @@ describe('performance calculations', () => {
   const item = performanceItems[0]
 
   it('aggregates quantity by branch across selected days', () => {
-    const points = pointsForView(item, ['2026-08-16', '2026-08-17'], 'all', 'sales', 'branch')
+    const points = pointsForView(item, ['2026-08-16', '2026-08-17'], [], 'sales', 'branch')
     const totals = aggregateByDimension(points, 'branch', 'qty')
 
     expect(totals['60920']).toBe(10)
@@ -14,7 +14,7 @@ describe('performance calculations', () => {
   })
 
   it('uses the latest selected snapshot for inventory by branch', () => {
-    const points = pointsForView(item, ['2026-08-16', '2026-08-17'], 'all', 'inventory', 'branch')
+    const points = pointsForView(item, ['2026-08-16', '2026-08-17'], [], 'inventory', 'branch')
 
     expect(points.every((point) => point.date === '2026-08-17')).toBe(true)
     expect(sumMetric(points, 'stockOh')).toBe(15)
@@ -22,10 +22,21 @@ describe('performance calculations', () => {
 
   it('keeps returns negative and gives them a distinct heat level', () => {
     const returnItem = performanceItems.find((candidate) => candidate.sku === '60358971')!
-    const points = pointsForView(returnItem, ['2026-08-17'], '60920', 'sales', 'branch')
+    const points = pointsForView(returnItem, ['2026-08-17'], ['60920'], 'sales', 'branch')
 
     expect(sumMetric(points, 'qty')).toBe(-1)
     expect(heatLevel(sumMetric(points, 'amount'), 10000)).toBe('negative')
+  })
+
+  it('keeps backend aggregates when several Branch values are selected', () => {
+    const aggregateItem = {
+      ...item,
+      points: [
+        { date: '2026-08-17', branchId: 'all', amount: 150, qty: 3, stockOh: 0, stockOnOrder: 0 },
+      ],
+    }
+
+    expect(pointsForView(aggregateItem, ['2026-08-17'], ['60016', '60923'], 'sales', 'day')).toHaveLength(1)
   })
 
   it('orders months chronologically across years and aggregates monthly totals', () => {

@@ -40,7 +40,7 @@ describe('ImportPage', () => {
     const file = new File(['raw'], 'twd.xls', { type: 'application/vnd.ms-excel' })
     await userEvent.upload(screen.getByLabelText('เลือกไฟล์ Raw Data'), file)
     await userEvent.click(screen.getByRole('button', { name: 'ตรวจสอบไฟล์' }))
-    expect(await screen.findByText('ไทวัสดุ · 2026-08-18')).toBeInTheDocument()
+    expect(await screen.findByText('ไทวัสดุ · 18/08/2026')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'ยืนยันนำเข้าข้อมูล' })).toBeEnabled()
     await userEvent.click(screen.getByRole('button', { name: 'ยืนยันนำเข้าข้อมูล' }))
     expect(await screen.findByText(/นำเข้าข้อมูลสำเร็จ/)).toBeInTheDocument()

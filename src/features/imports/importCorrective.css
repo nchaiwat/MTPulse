@@ -1,0 +1,38 @@
+.corrective-panel { margin-bottom: 14px; background: var(--surface); border: 1px solid var(--line); box-shadow: inset 4px 0 0 #d79222; }
+.corrective-panel > header { display: flex; align-items: center; gap: 10px; padding: 11px 14px; background: #fffaf1; border-bottom: 1px solid var(--line); }
+.corrective-panel > header > div { min-width: 0; }
+.corrective-panel h3 { margin: 2px 0; font-size: 15px; }
+.corrective-panel header p, .corrective-options p { margin: 0; color: var(--text-600); font-size: 10px; }
+.corrective-icon { width: 36px; height: 36px; display: grid; flex: 0 0 auto; place-items: center; color: #9b5f08; background: #fff0cf; border-radius: 6px; }
+.corrective-loading, .corrective-message { display: flex; align-items: center; gap: 8px; padding: 9px 13px; font-size: 10px; }
+.corrective-message[data-tone="success"] { color: var(--teal-700); background: var(--teal-100); }
+.corrective-message[data-tone="error"] { color: var(--red-700); background: var(--red-100); }
+.corrective-batch-summary { display: grid; grid-template-columns: 90px 140px minmax(220px, 1fr) 130px; margin: 0; border-bottom: 1px solid var(--line); }
+.corrective-batch-summary > div { min-width: 0; padding: 9px 12px; border-right: 1px solid var(--line); }
+.corrective-batch-summary > div:last-child { border-right: 0; }
+.corrective-batch-summary dt { color: var(--text-600); font-size: 8px; font-weight: 700; text-transform: uppercase; }
+.corrective-batch-summary dd { overflow: hidden; margin: 3px 0 0; font-family: "Cascadia Mono", Consolas, monospace; font-size: 11px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.corrective-warning-list p { display: flex; align-items: center; gap: 7px; margin: 0; padding: 8px 12px; color: #8a5200; background: #fff8e9; border-bottom: 1px solid #ead9b4; font-size: 10px; }
+.corrective-warning-list p[data-resolved] { color: var(--teal-700); background: var(--teal-100); }
+.corrective-resolution { display: flex; gap: 9px; padding: 12px; color: var(--teal-700); }
+.corrective-resolution div { display: grid; gap: 2px; }
+.corrective-resolution span, .corrective-resolution small { color: var(--text-600); font-size: 9px; }
+.corrective-options { display: grid; grid-template-columns: 1fr 1fr; }
+.corrective-options > section { display: grid; align-content: start; gap: 8px; padding: 13px; border-right: 1px solid var(--line); }
+.corrective-options > section:last-child { border-right: 0; }
+.corrective-options section > div { display: flex; align-items: center; gap: 8px; }
+.corrective-options h4 { margin: 0; font-size: 12px; }
+.corrective-step { width: 24px; height: 24px; display: grid; place-items: center; color: #fff; background: var(--teal-700); border-radius: 50%; font-family: "Cascadia Mono", Consolas, monospace; font-size: 10px; font-weight: 700; }
+.corrective-options label { color: var(--text-700); font-size: 9px; font-weight: 700; }
+.corrective-options textarea { min-height: 64px; resize: vertical; }
+.corrective-options button { justify-self: end; }
+.replacement-preview { margin: 0 12px 12px; border: 1px solid var(--line-strong); }
+.replacement-preview[data-blocked] { border-color: #e3aab1; }
+.replacement-preview > header, .replacement-preview > footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 11px; background: #f5f8f8; }
+.replacement-preview > header span, .replacement-preview > footer small { color: var(--text-600); font-size: 9px; }
+.replacement-preview table { width: 100%; border-collapse: collapse; font-size: 10px; }
+.replacement-preview th, .replacement-preview td { padding: 7px 10px; border-top: 1px solid var(--line); border-right: 1px solid var(--line); text-align: right; }
+.replacement-preview th:first-child, .replacement-preview td:first-child { text-align: left; }
+.replacement-preview th:last-child, .replacement-preview td:last-child { border-right: 0; }
+.replacement-blocked { display: flex; align-items: center; gap: 7px; margin: 0; padding: 8px 10px; color: var(--red-700); background: var(--red-100); border-top: 1px solid #e3aab1; font-size: 9px; }
+@media (max-width: 760px) { .corrective-batch-summary, .corrective-options { grid-template-columns: 1fr; } .corrective-options > section { border-right: 0; border-bottom: 1px solid var(--line); } }

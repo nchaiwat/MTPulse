@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.importers.twd import TwdExtract, extract_twd_file
@@ -42,7 +42,7 @@ def import_twd_extract(session: Session, extract: TwdExtract) -> ImportBatch:
     )
     if period_batch is not None:
         raise PeriodDuplicateError(
-            f"TWD วันที่ {extract.data_date.isoformat()} มีข้อมูลใน Batch {period_batch.id} แล้ว"
+            f"TWD วันที่ {extract.data_date:%d/%m/%Y} มีข้อมูลใน Batch {period_batch.id} แล้ว"
         )
 
     batch = _build_batch(mt.id, extract)
@@ -55,6 +55,60 @@ def import_twd_extract(session: Session, extract: TwdExtract) -> ImportBatch:
     session.refresh(batch)
     return batch
 
+
+def replace_twd_batch(
+    session: Session,
+    batch: ImportBatch,
+    extract: TwdExtract,
+) -> ImportBatch:
+    if extract.data_date != batch.data_date:
+        raise ValueError(
+            f"ไฟล์ใหม่เป็นวันที่ {extract.data_date:%d/%m/%Y} "
+            f"แต่ Batch {batch.id} เป็นวันที่ {batch.data_date:%d/%m/%Y}"
+        )
+    if extract.checksum_sha256 == batch.checksum_sha256:
+        raise DuplicateImportError("ไฟล์ใหม่เหมือนกับไฟล์ที่อยู่ในระบบแล้ว")
+    duplicate = session.scalar(
+        select(ImportBatch).where(
+            ImportBatch.modern_trade_id == batch.modern_trade_id,
+            ImportBatch.checksum_sha256 == extract.checksum_sha256,
+            ImportBatch.id != batch.id,
+        )
+    )
+    if duplicate is not None:
+        raise DuplicateImportError(f"ไฟล์นี้เคยนำเข้าแล้วใน Batch {duplicate.id}")
+
+    replacement = _build_batch(batch.modern_trade_id, extract)
+    session.execute(delete(SalesInventoryFact).where(SalesInventoryFact.batch_id == batch.id))
+    session.add_all(_build_facts(batch.id, extract))
+
+    for field in (
+        "source_path",
+        "source_filename",
+        "checksum_sha256",
+        "started_at",
+        "row_count",
+        "store_count",
+        "sku_count",
+        "negative_row_count",
+        "source_amount",
+        "amount",
+        "sales_qty",
+        "stock_on_hand",
+        "reported_stock_on_hand",
+        "stock_on_order",
+        "reconciliation_errors",
+    ):
+        setattr(batch, field, getattr(replacement, field))
+    batch.status = "imported_with_warnings" if extract.reconciliation_errors else "imported"
+    batch.finished_at = datetime.now(UTC)
+    batch.error_message = None
+    batch.warning_resolution = None
+    batch.warning_resolution_note = None
+    batch.warning_resolved_at = None
+    batch.warning_resolved_by = None
+    session.flush()
+    return batch
 
 def _build_batch(modern_trade_id: int, extract: TwdExtract) -> ImportBatch:
     summary = extract.summary

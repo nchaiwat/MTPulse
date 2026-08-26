@@ -5,12 +5,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.database import get_session
 from app.models import AuditEvent
 from app.services.telegram import (
     GROUP_KEY,
     NOTIFY_MANUAL_KEY,
     SettingsCryptoError,
+    bot_token,
     send_telegram,
     set_bot_token,
     set_setting,
@@ -32,6 +34,21 @@ def get_telegram_settings(
     session: Annotated[Session, Depends(get_session)],
 ) -> dict:
     return telegram_config(session)
+
+
+@router.get("/telegram/token")
+def get_telegram_token(
+    session: Annotated[Session, Depends(get_session)],
+) -> dict:
+    if not get_settings().allow_secret_reveal:
+        raise HTTPException(status_code=403, detail="ปิดการเปิดดู Token บน Environment นี้")
+    try:
+        token = bot_token(session)
+    except SettingsCryptoError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if not token:
+        raise HTTPException(status_code=404, detail="ยังไม่มี Bot Token ที่บันทึกไว้")
+    return {"botToken": token}
 
 
 @router.patch("/telegram")
@@ -82,7 +99,13 @@ def test_telegram_settings(
     group_id = setting_value(session, GROUP_KEY) or "ยังไม่ได้ตั้งค่า"
     delivery = send_telegram(
         session,
-        "MT Pulse — ทดสอบการแจ้งเตือน\nเชื่อมต่อ Telegram สำเร็จ",
+        "📣 ทดสอบการส่งข้อความเข้า Telegram",
+        [
+            "👥 กลุ่มเป้าหมาย: MT Pulse Notification Group",
+            f"🆔 Telegram Group ID: {group_id}",
+            "👤 ผู้ทดสอบ: System Settings",
+            "✅ สถานะ: ระบบส่งข้อความทดสอบสำเร็จ",
+        ],
         force=True,
     )
     session.add(
@@ -100,11 +123,8 @@ def test_telegram_settings(
     )
     session.commit()
     if delivery.status != "sent":
-        raise HTTPException(
-            status_code=502,
-            detail=f"ใช้ Token ที่บันทึกไว้ → Group / Chat ID {group_id}: {delivery.message}",
-        )
+        raise HTTPException(status_code=502, detail=delivery.message)
     return {
         "status": delivery.status,
-        "message": f"ใช้ Token ที่บันทึกไว้ → Group / Chat ID {group_id}: {delivery.message}",
+        "message": "ส่งข้อความทดสอบสำเร็จ",
     }

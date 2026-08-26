@@ -26,21 +26,26 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 @router.get("/export")
 def export_item_mappings(
     session: Annotated[Session, Depends(get_session)],
-    date_from: Annotated[date, Query()],
-    date_to: Annotated[date, Query()],
+    date_from: Annotated[date | None, Query()] = None,
+    date_to: Annotated[date | None, Query()] = None,
 ) -> StreamingResponse:
     modern_trade = session.scalar(select(ModernTrade).where(ModernTrade.code == "TWD"))
     if modern_trade is None:
         raise HTTPException(status_code=404, detail="ไม่พบ Modern Trade รหัส TWD")
 
+    min_date, max_date = session.execute(
+        select(func.min(SalesInventoryFact.data_date), func.max(SalesInventoryFact.data_date))
+    ).one()
+    range_from = date_from or min_date or date.today()
+    range_to = date_to or max_date or range_from
     source_rows = session.execute(
         select(
             SalesInventoryFact.source_sku,
             func.min(SalesInventoryFact.source_description),
         )
         .where(
-            SalesInventoryFact.data_date >= date_from,
-            SalesInventoryFact.data_date <= date_to,
+            SalesInventoryFact.data_date >= range_from,
+            SalesInventoryFact.data_date <= range_to,
         )
         .group_by(SalesInventoryFact.source_sku)
         .order_by(SalesInventoryFact.source_sku)
@@ -49,8 +54,8 @@ def export_item_mappings(
         select(ItemMapping)
         .where(
             ItemMapping.modern_trade_id == modern_trade.id,
-            ItemMapping.effective_from <= date_to,
-            (ItemMapping.effective_to.is_(None) | (ItemMapping.effective_to >= date_from)),
+            ItemMapping.effective_from <= range_to,
+            (ItemMapping.effective_to.is_(None) | (ItemMapping.effective_to >= range_from)),
         )
         .order_by(ItemMapping.effective_from)
     ).all()
@@ -67,6 +72,8 @@ def export_item_mappings(
                 wa_item_code=mapping.wa_item_code if mapping else "",
                 wa_item_description=(mapping.wa_item_description or "") if mapping else "",
                 status=mapping.status if mapping else "unmatched",
+                item_type=mapping.item_type if mapping else "normal",
+                report_status=mapping.report_status if mapping else "active",
             )
         )
     source_branch_rows = session.execute(
@@ -75,8 +82,8 @@ def export_item_mappings(
             func.min(SalesInventoryFact.source_branch_name),
         )
         .where(
-            SalesInventoryFact.data_date >= date_from,
-            SalesInventoryFact.data_date <= date_to,
+            SalesInventoryFact.data_date >= range_from,
+            SalesInventoryFact.data_date <= range_to,
         )
         .group_by(SalesInventoryFact.source_branch_code)
         .order_by(SalesInventoryFact.source_branch_code)
@@ -85,10 +92,10 @@ def export_item_mappings(
         select(BranchMapping)
         .where(
             BranchMapping.modern_trade_id == modern_trade.id,
-            BranchMapping.effective_from <= date_to,
+            BranchMapping.effective_from <= range_to,
             (
                 BranchMapping.effective_to.is_(None)
-                | (BranchMapping.effective_to >= date_from)
+                | (BranchMapping.effective_to >= range_from)
             ),
         )
         .order_by(BranchMapping.effective_from)
@@ -114,7 +121,7 @@ def export_item_mappings(
         )
 
     content = build_item_mapping_workbook(items, branches)
-    filename = export_filename(date_from, date_to)
+    filename = export_filename(range_from, range_to)
     return StreamingResponse(
         BytesIO(content),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -126,7 +133,7 @@ def export_item_mappings(
 async def import_item_mappings(
     session: Annotated[Session, Depends(get_session)],
     file: Annotated[UploadFile, File()],
-    effective_from: Annotated[date, Form()],
+    effective_from: Annotated[date | None, Form()] = None,
 ) -> dict:
     filename = file.filename or "item-mapping.xlsx"
     if not filename.lower().endswith(".xlsx"):
@@ -134,8 +141,11 @@ async def import_item_mappings(
     content = await file.read(MAX_UPLOAD_BYTES + 1)
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="ไฟล์มีขนาดเกิน 10 MB")
+    mapping_date = effective_from or session.scalar(
+        select(func.max(SalesInventoryFact.data_date))
+    ) or date.today()
     try:
-        report = import_item_mapping_workbook(session, content, effective_from, filename)
+        report = import_item_mapping_workbook(session, content, mapping_date, filename)
     except ValueError as exc:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(exc)) from exc

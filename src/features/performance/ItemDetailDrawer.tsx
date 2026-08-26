@@ -2,26 +2,27 @@ import { useEffect } from 'react'
 import { CircleAlert, CircleCheck, X } from 'lucide-react'
 import { formatMetric, sumMetric } from './performanceMath'
 import type { Branch, Metric, PerformanceItem, SelectedCell } from './types'
+import { formatDisplayDate } from '../../shared/dateFormat'
 
 interface ItemDetailDrawerProps {
   item: PerformanceItem
   selected: SelectedCell
   dates: string[]
-  branchId: string
+  branchIds: string[]
   metric: Metric
   branches: Branch[]
   onClose: () => void
 }
 
-const formatDate = (date: string) => {
+const formatDimension = (date: string) => {
   if (/^\d{4}-\d{2}$/.test(date)) {
     const [year, month] = date.split('-').map(Number)
     return new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(new Date(year, month - 1, 1))
   }
-  return new Intl.DateTimeFormat('th-TH-u-ca-gregory', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(`${date}T00:00:00`))
+  return formatDisplayDate(date)
 }
 
-export function ItemDetailDrawer({ item, selected, dates, branchId, metric, branches, onClose }: ItemDetailDrawerProps) {
+export function ItemDetailDrawer({ item, selected, dates, branchIds, metric, branches, onClose }: ItemDetailDrawerProps) {
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()
@@ -31,10 +32,13 @@ export function ItemDetailDrawer({ item, selected, dates, branchId, metric, bran
   }, [onClose])
 
   const points = item.points
-    .filter((point) => dates.includes(point.date) && (branchId === 'all' || point.branchId === branchId))
+    .filter((point) => dates.includes(point.date) && (branchIds.length === 0 || point.branchId === 'all' || branchIds.includes(point.branchId)))
     .sort((a, b) => b.date.localeCompare(a.date) || a.branchId.localeCompare(b.branchId))
+  const focusBranch = branches.find((branch) => branch.id === selected.dimensionKey)
   const focusLabel = selected.dimensionKey
-    ? branches.find((branch) => branch.id === selected.dimensionKey)?.name ?? formatDate(selected.dimensionKey)
+    ? focusBranch
+      ? `${focusBranch.id} - ${focusBranch.name}`
+      : formatDimension(selected.dimensionKey)
     : 'ข้อมูลที่เลือกทั้งหมด'
 
   return (
@@ -58,7 +62,7 @@ export function ItemDetailDrawer({ item, selected, dates, branchId, metric, bran
         </section>
 
         {item.mappingStatus === 'confirmed' ? (
-          <section className="mapping-note mapping-confirmed"><CircleCheck size={18} aria-hidden="true" /><div><strong>Mapping มีผลใช้งานแล้ว</strong><span>มีผลตั้งแต่ 20 ส.ค. 2026 · ดูประวัติได้ในหน้า Mapping</span></div></section>
+          <section className="mapping-note mapping-confirmed"><CircleCheck size={18} aria-hidden="true" /><div><strong>Mapping มีผลใช้งานแล้ว</strong><span>มีผลตั้งแต่ 20/08/2026 · ดูประวัติได้ในหน้า Mapping</span></div></section>
         ) : (
           <section className="mapping-note mapping-attention"><CircleAlert size={18} aria-hidden="true" /><div><strong>{item.mappingStatus === 'pending' ? 'Candidate รอการยืนยัน' : 'ไม่พบ Mapping Candidate'}</strong><span>การแก้ Mapping จะเปิดใช้งานหลังเชื่อม Backend Workflow</span></div></section>
         )}
@@ -71,7 +75,7 @@ export function ItemDetailDrawer({ item, selected, dates, branchId, metric, bran
               <tbody>
                 {points.map((point) => {
                   const branch = branches.find((entry) => entry.id === point.branchId)
-                  return <tr key={`${point.date}-${point.branchId}`}><td>{formatDate(point.date)}</td><td><strong className="mono">{point.branchId}</strong><small>{branch?.name}</small></td><td className={`numeric-column ${point.qty < 0 ? 'is-negative' : ''}`}>{formatMetric(point.qty, 'qty')}</td><td className={`numeric-column ${point.amount < 0 ? 'is-negative' : ''}`}>{formatMetric(point.amount, 'amount')}</td><td className="numeric-column">{formatMetric(point.stockOh, 'stockOh')}</td><td className="numeric-column">{formatMetric(point.stockOnOrder, 'stockOnOrder')}</td></tr>
+                  return <tr key={`${point.date}-${point.branchId}`}><td>{formatDisplayDate(point.date)}</td><td className="branch-inline"><strong className="mono">{point.branchId}</strong>{branch && <span> - {branch.name}</span>}</td><td className={`numeric-column ${point.qty < 0 ? 'is-negative' : ''}`}>{formatMetric(point.qty, 'qty')}</td><td className={`numeric-column ${point.amount < 0 ? 'is-negative' : ''}`}>{formatMetric(point.amount, 'amount')}</td><td className="numeric-column">{formatMetric(point.stockOh, 'stockOh')}</td><td className="numeric-column">{formatMetric(point.stockOnOrder, 'stockOnOrder')}</td></tr>
                 })}
               </tbody>
             </table>

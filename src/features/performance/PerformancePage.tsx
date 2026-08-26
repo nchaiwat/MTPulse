@@ -1,17 +1,76 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { CheckCircle2, Clock3, Download, FileCheck2, TriangleAlert, Upload } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { CheckCircle2, Clock3, Download, FileCheck2, TriangleAlert } from 'lucide-react'
 import { ItemDetailDrawer } from './ItemDetailDrawer'
 import { PerformanceMatrix } from './PerformanceMatrix'
 import { PerformanceToolbar } from './PerformanceToolbar'
-import { exportItemMappings, fetchPerformance, importItemMappings } from './performanceApi'
+import { downloadPerformanceReport, fetchPerformance, fetchSkuOptions } from './performanceApi'
 import { formatMetric, monthKey, monthKeys, pointsForView, sumMetric } from './performanceMath'
-import type { Branch, Dimension, MappingStatus, Metric, Mode, PerformanceItem, PerformanceResponse, SelectedCell } from './types'
+import type { Branch, BranchPeriod, Dimension, Metric, Mode, PerformanceItem, PerformanceResponse, SelectedCell, SkuOption } from './types'
+import { formatDisplayDate } from '../../shared/dateFormat'
 
 const emptyDates: string[] = []
 const emptyBranches: Branch[] = []
 const emptyItems: PerformanceItem[] = []
-const branchMatrixPageSize = 25
-const compactMatrixPageSize = 100
+const performanceViewStorageKey = 'mtpulse.performance.twd.current-view'
+
+interface PerformanceViewState {
+  mode: Mode
+  metric: Metric
+  monthFrom: string
+  monthTo: string
+  dimension: Dimension
+  dateFrom: string
+  dateTo: string
+  branchMonth: string
+  branchPeriod: BranchPeriod
+  branchIds: string[]
+  skuIds: string[]
+  page: number
+  heatmap: boolean
+  showDescriptions: boolean
+}
+
+const defaultPerformanceView: PerformanceViewState = {
+  mode: 'sales',
+  metric: 'amount',
+  dimension: 'branch',
+  monthFrom: '',
+  monthTo: '',
+  dateFrom: '',
+  dateTo: '',
+  branchMonth: 'latest',
+  branchPeriod: 'month',
+  branchIds: [],
+  skuIds: [],
+  page: 1,
+  heatmap: true,
+  showDescriptions: true,
+}
+
+const loadPerformanceView = (): PerformanceViewState => {
+  try {
+    const saved = window.localStorage.getItem(performanceViewStorageKey)
+    if (!saved) return defaultPerformanceView
+    const parsed = JSON.parse(saved) as Partial<PerformanceViewState> & {
+      dateRange?: string
+      branchDate?: string
+      branchId?: string
+    }
+    const legacyDate = parsed.branchDate && !['all', 'latest'].includes(parsed.branchDate)
+      ? parsed.branchDate
+      : parsed.dateRange && parsed.dateRange !== 'all' ? parsed.dateRange : ''
+    const branchIds = Array.isArray(parsed.branchIds) ? parsed.branchIds : parsed.branchId && parsed.branchId !== 'all' ? [parsed.branchId] : []
+    return { ...defaultPerformanceView, ...parsed, dateFrom: parsed.dateFrom ?? legacyDate, dateTo: parsed.dateTo ?? legacyDate, branchIds }
+  } catch {
+    return defaultPerformanceView
+  }
+}
+
+const formatDateRange = (dates: string[]) => {
+  if (dates.length === 0) return 'ไม่มีข้อมูล'
+  return dates.length === 1 ? formatDisplayDate(dates[0]) : formatDisplayDate(dates[0]) + ' – ' + formatDisplayDate(dates.at(-1)!)
+}
+
 const formatMonth = (month: string) => {
   const [year, monthNumber] = month.split('-').map(Number)
   return new Intl.DateTimeFormat('en-US', { month: 'short', year: 'numeric' }).format(new Date(year, monthNumber - 1, 1))
@@ -22,54 +81,83 @@ interface PerformancePageProps {
 }
 
 export function PerformancePage({ initialData }: PerformancePageProps) {
+  const [savedView] = useState(loadPerformanceView)
   const [data, setData] = useState<PerformanceResponse | null>(initialData ?? null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(!initialData)
-  const [mode, setMode] = useState<Mode>('sales')
-  const [metric, setMetric] = useState<Metric>('amount')
-  const [dimension, setDimension] = useState<Dimension>('branch')
-  const [dateRange, setDateRange] = useState('all')
-  const [branchMonth, setBranchMonth] = useState('latest')
-  const [branchId, setBranchId] = useState('all')
-  const [mappingStatus, setMappingStatus] = useState<MappingStatus | 'all'>('all')
-  const [search, setSearch] = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
-  const [page, setPage] = useState(1)
-  const [heatmap, setHeatmap] = useState(true)
-  const [showDescriptions, setShowDescriptions] = useState(true)
+  const [mode, setMode] = useState<Mode>(savedView.mode)
+  const [metric, setMetric] = useState<Metric>(savedView.metric)
+  const [dimension, setDimension] = useState<Dimension>(savedView.dimension)
+  const [dateFrom, setDateFrom] = useState(savedView.dateFrom)
+  const [dateTo, setDateTo] = useState(savedView.dateTo)
+  const [branchMonth, setBranchMonth] = useState(savedView.branchMonth)
+  const [branchPeriod, setBranchPeriod] = useState<BranchPeriod>(savedView.branchPeriod)
+  const [monthFrom, setMonthFrom] = useState(savedView.monthFrom)
+  const [monthTo, setMonthTo] = useState(savedView.monthTo)
+  const [branchIds, setBranchIds] = useState(savedView.branchIds)
+  const [skuIds, setSkuIds] = useState(savedView.skuIds)
+  const [skuOptions, setSkuOptions] = useState<SkuOption[]>(() => (initialData?.items ?? []).map((item) => ({
+    sku: item.sku,
+    twdDescription: item.twdDescription,
+    waItem: item.waItem,
+    waDescription: item.waDescription,
+    itemType: item.itemType ?? 'normal',
+  })))
+  const [skuOptionsLoading, setSkuOptionsLoading] = useState(!initialData)
+  const [page, setPage] = useState(savedView.page)
+  const [heatmap, setHeatmap] = useState(savedView.heatmap)
+  const [showDescriptions, setShowDescriptions] = useState(savedView.showDescriptions)
   const [selected, setSelected] = useState<SelectedCell | null>(null)
-  const [refreshKey, setRefreshKey] = useState(0)
-  const [isExporting, setIsExporting] = useState(false)
-  const [isImporting, setIsImporting] = useState(false)
-  const [exchangeMessage, setExchangeMessage] = useState<{ kind: 'success' | 'error', text: string } | null>(null)
-  const importInputRef = useRef<HTMLInputElement>(null)
-  const pageSize = dimension === 'branch' && branchId === 'all'
-    ? branchMatrixPageSize
-    : compactMatrixPageSize
+  const [isDownloading, setIsDownloading] = useState(false)
+  const [downloadMessage, setDownloadMessage] = useState<{ kind: 'success' | 'error', text: string } | null>(null)
+  const availableDates = data?.availableDates ?? data?.dates ?? emptyDates
 
   useEffect(() => {
-    const normalizedSearch = search.trim()
-    if (normalizedSearch === debouncedSearch) return
-    const timer = window.setTimeout(() => {
-      setIsLoading(true)
-      setDebouncedSearch(normalizedSearch)
-    }, 350)
-    return () => window.clearTimeout(timer)
-  }, [debouncedSearch, search])
+    const currentView: PerformanceViewState = {
+      mode,
+      metric,
+      dimension,
+      dateFrom,
+      dateTo,
+      branchMonth,
+      branchPeriod,
+      monthFrom,
+      monthTo,
+      branchIds,
+      skuIds,
+      page,
+      heatmap,
+      showDescriptions,
+    }
+    window.localStorage.setItem(performanceViewStorageKey, JSON.stringify(currentView))
+  }, [branchIds, branchMonth, branchPeriod, dateFrom, dateTo, dimension, heatmap, metric, mode, monthFrom, monthTo, page, showDescriptions, skuIds])
+
+
+  useEffect(() => {
+    if (initialData) return
+    const controller = new AbortController()
+    fetchSkuOptions(controller.signal)
+      .then(setSkuOptions)
+      .finally(() => { if (!controller.signal.aborted) setSkuOptionsLoading(false) })
+    return () => controller.abort()
+  }, [initialData])
 
   useEffect(() => {
     if (initialData) return
     const controller = new AbortController()
     fetchPerformance({
-      dateRange,
-      branchId,
-      mappingStatus,
-      search: debouncedSearch,
+      dateFrom,
+      dateTo,
+      branchIds,
+      skuIds,
+      search: '',
       page,
-      pageSize,
+      monthFrom,
+      monthTo,
       dimension,
       mode,
       branchMonth,
+      branchPeriod,
       signal: controller.signal,
     })
       .then(setData)
@@ -80,13 +168,26 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
       })
       .finally(() => { if (!controller.signal.aborted) setIsLoading(false) })
     return () => controller.abort()
-  }, [branchId, branchMonth, dateRange, debouncedSearch, dimension, initialData, mappingStatus, mode, page, pageSize, refreshKey])
+  }, [branchIds, branchMonth, branchPeriod, dateFrom, dateTo, dimension, initialData, mode, monthFrom, monthTo, page, skuIds])
 
-  const handleExport = async () => {
-    setIsExporting(true)
-    setExchangeMessage(null)
+  const handleDownload = async () => {
+    setIsDownloading(true)
+    setDownloadMessage(null)
     try {
-      const { blob, filename } = await exportItemMappings(dateRange)
+      const { blob, filename } = await downloadPerformanceReport({
+        dateFrom,
+        dateTo,
+        branchIds,
+        skuIds,
+        search: '',
+        page,
+        monthFrom,
+        monthTo,
+        dimension,
+        mode,
+        branchMonth,
+        branchPeriod,
+      }, metric, showDescriptions)
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = url
@@ -95,35 +196,13 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
       anchor.click()
       anchor.remove()
       window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
-      setExchangeMessage({ kind: 'success', text: 'Export Item และ Branch Mapping แล้ว' })
+      setDownloadMessage({ kind: 'success', text: 'Download รายงาน Excel ตามข้อมูลที่แสดงแล้ว' })
     } catch (error) {
-      setExchangeMessage({ kind: 'error', text: error instanceof Error ? error.message : 'Export Mapping ไม่สำเร็จ' })
+      setDownloadMessage({ kind: 'error', text: error instanceof Error ? error.message : 'Download รายงานไม่สำเร็จ' })
     } finally {
-      setIsExporting(false)
+      setIsDownloading(false)
     }
   }
-
-  const handleImport = async (file: File) => {
-    setIsImporting(true)
-    setExchangeMessage(null)
-    try {
-      const report = await importItemMappings(file, dateRange)
-      const details = [`Item ใหม่ ${report.inserted_pending}`, `Item เดิม ${report.unchanged}`]
-      if (report.conflicts) details.push(`ขัดแย้ง ${report.conflicts}`)
-      if (report.new_source_skus) details.push(`SKU ใหม่ ${report.new_source_skus}`)
-      details.push(`Branch ใหม่ ${report.branch_inserted_pending}`, `Branch อัปเดตชื่อ ${report.branch_updated}`, `Branch เดิม ${report.branch_unchanged}`)
-      if (report.branch_conflicts) details.push(`Branch ขัดแย้ง ${report.branch_conflicts}`)
-      setExchangeMessage({ kind: report.conflicts || report.branch_conflicts ? 'error' : 'success', text: `Import สำเร็จ: ${details.join(' · ')}` })
-      setIsLoading(true)
-      setRefreshKey((value) => value + 1)
-    } catch (error) {
-      setExchangeMessage({ kind: 'error', text: error instanceof Error ? error.message : 'Import Mapping ไม่สำเร็จ' })
-    } finally {
-      setIsImporting(false)
-      if (importInputRef.current) importInputRef.current.value = ''
-    }
-  }
-
   const dates = data?.dates ?? emptyDates
   const months = data?.months ?? monthKeys(dates)
   const branches = data?.branches ?? emptyBranches
@@ -131,37 +210,32 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
 
   const selectedBranchMonth = branchMonth === 'latest' ? data?.selectedMonth ?? months.at(-1) : branchMonth
   const selectedDates = useMemo(() => (
-    mode === 'sales' && dimension === 'branch' && selectedBranchMonth
+    dimension === 'month'
+      ? dates.filter((value) => (!monthFrom || monthKey(value) >= monthFrom) && (!monthTo || monthKey(value) <= monthTo))
+      : mode === 'sales' && dimension === 'branch' && branchPeriod === 'month' && selectedBranchMonth
       ? dates.filter((value) => monthKey(value) === selectedBranchMonth)
-      : dateRange === 'all' ? dates : [dateRange]
-  ), [dateRange, dates, dimension, mode, selectedBranchMonth])
+      : dates.filter((value) => (!dateFrom || value >= dateFrom) && (!dateTo || value <= dateTo))
+  ), [branchPeriod, dateFrom, dateTo, dates, dimension, mode, monthFrom, monthTo, selectedBranchMonth])
   const visibleItems = useMemo(() => {
     if (!initialData) return performanceItems
-    const term = search.trim().toLowerCase()
     return performanceItems.filter((item) => {
-      const matchesSearch = !term || [item.sku, item.twdDescription, item.waItem, item.waDescription]
-        .filter(Boolean)
-        .some((value) => value!.toLowerCase().includes(term))
-      const matchesMapping = mappingStatus === 'all' || item.mappingStatus === mappingStatus
-      const hasData = item.points.some((point) => selectedDates.includes(point.date) && (branchId === 'all' || point.branchId === branchId))
-      return matchesSearch && matchesMapping && hasData
+      const matchesSku = skuIds.length === 0 || skuIds.includes(item.sku)
+      const hasData = item.points.some((point) => selectedDates.includes(point.date) && (branchIds.length === 0 || branchIds.includes(point.branchId)))
+      return matchesSku && hasData
     })
-  }, [branchId, initialData, mappingStatus, performanceItems, search, selectedDates])
+  }, [branchIds, initialData, performanceItems, selectedDates, skuIds])
 
-  const allPoints = visibleItems.flatMap((item) => pointsForView(item, selectedDates, branchId, mode, 'branch'))
+  const allPoints = visibleItems.flatMap((item) => pointsForView(item, selectedDates, branchIds, mode, 'branch'))
   const hasServerSummary = !initialData && data?.summary
   const totalAmount = hasServerSummary ? hasServerSummary.amount : sumMetric(allPoints, 'amount')
   const totalQty = hasServerSummary ? hasServerSummary.qty : sumMetric(allPoints, 'qty')
-  const pendingCount = hasServerSummary
-    ? hasServerSummary.mappingAttention
-    : visibleItems.filter((item) => item.mappingStatus !== 'confirmed').length
   const activeBranches = !initialData && data
     ? data.meta.totalBranches
     : new Set(allPoints.map((point) => point.branchId)).size
   const selectedItem = selected ? performanceItems.find((item) => item.sku === selected.sku) : undefined
   const latestImport = data?.latestImport
   const latestDate = latestImport?.dataDate
-    ? new Intl.DateTimeFormat('th-TH-u-ca-gregory', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(`${latestImport.dataDate}T00:00:00`))
+    ? formatDisplayDate(latestImport.dataDate)
     : 'กำลังโหลด'
 
   return (
@@ -183,27 +257,33 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
           mode={mode}
           metric={metric}
           dimension={dimension}
-          dateRange={dateRange}
+          dateFrom={dateFrom}
+          dateTo={dateTo}
           branchMonth={branchMonth}
           selectedBranchMonth={selectedBranchMonth}
-          branchId={branchId}
-          mappingStatus={mappingStatus}
-          search={search}
+          monthFrom={monthFrom}
+          monthTo={monthTo}
+          branchPeriod={branchPeriod}
+          branchIds={branchIds}
+          skuIds={skuIds}
+          skuOptions={skuOptions}
+          skuOptionsLoading={skuOptionsLoading}
           heatmap={heatmap}
           showDescriptions={showDescriptions}
           branches={branches}
-          dates={dates}
+          availableDates={availableDates}
           months={months}
           onModeChange={setMode}
           onMetricChange={setMetric}
-          onDimensionChange={(value) => { setDimension(value); if (value === 'month') setDateRange('all'); setPage(1); setIsLoading(true); setLoadError(null) }}
-          onDateRangeChange={(value) => { setDateRange(value); setPage(1); setIsLoading(true); setLoadError(null) }}
+          onDimensionChange={(value) => { setDimension(value); setPage(1); setIsLoading(true); setLoadError(null) }}
+          onDateRangeChange={(from, to) => { setDateFrom(from); setDateTo(to); setPage(1); setIsLoading(true); setLoadError(null) }}
           onBranchMonthChange={(value) => { setBranchMonth(value); setPage(1); setIsLoading(true); setLoadError(null) }}
-          onBranchChange={(value) => { setBranchId(value); setPage(1); setIsLoading(true); setLoadError(null) }}
-          onMappingStatusChange={(value) => { setMappingStatus(value); setPage(1); setIsLoading(true); setLoadError(null) }}
-          onSearchChange={(value) => { setSearch(value); setPage(1); setLoadError(null) }}
+          onBranchPeriodChange={(value) => { setBranchPeriod(value); setPage(1); setIsLoading(true); setLoadError(null) }}
+          onBranchChange={(value) => { setBranchIds(value); setPage(1); setIsLoading(true); setLoadError(null) }}
+          onSkuChange={(value) => { setSkuIds(value); setPage(1); setIsLoading(true); setLoadError(null) }}
           onHeatmapChange={setHeatmap}
           onShowDescriptionsChange={setShowDescriptions}
+          onMonthRangeChange={(from, to) => { setMonthFrom(from); setMonthTo(to); setPage(1); setIsLoading(true); setLoadError(null) }}
         />
 
         {loadError && <div className="empty-state" role="alert"><strong>เชื่อมต่อ Backend ไม่สำเร็จ</strong><span>{loadError}</span></div>}
@@ -213,22 +293,19 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
           <article><span>Sales Qty</span><strong>{formatMetric(totalQty, 'qty')}</strong><small>{totalQty < 0 ? 'ยอด Return สุทธิ' : 'รวม Return และ Adjustment'}</small></article>
           <article><span>SKU ที่แสดง</span><strong>{visibleItems.length.toLocaleString('en-US')}</strong><small>จาก {(data?.meta.totalSkus ?? 0).toLocaleString('en-US')} SKU</small></article>
           <article><span>Branch ที่มียอด</span><strong>{activeBranches}</strong><small>จาก {data?.meta.totalBranches ?? 0} Branch ของ TWD</small></article>
-          <article data-attention={pendingCount > 0 || undefined}><span>Mapping ที่ต้องตรวจ</span><strong>{pendingCount}</strong><small>Item ที่ต้องตรวจสอบ</small></article>
         </section>
 
         <div className="matrix-heading">
-          <div><h3>{mode === 'sales' ? 'Sales' : 'Inventory'} ตาม {dimension === 'branch' ? 'Branch' : dimension === 'month' ? 'Month' : 'Date'}</h3><span>{metric === 'amount' ? 'Amount' : metric === 'qty' ? 'Qty' : metric === 'stockOh' ? 'Stock On Hand' : 'Stock On Order'} · {dimension === 'month' ? 'ทุกเดือนที่มีข้อมูล' : mode === 'sales' && dimension === 'branch' && selectedBranchMonth ? formatMonth(selectedBranchMonth) : selectedDates.length === 1 ? selectedDates[0] : '16–17 ส.ค. 2026'}</span></div>
+          <div><h3>{mode === 'sales' ? 'Sales' : 'Inventory'} ตาม {dimension === 'branch' ? 'Branch' : dimension === 'month' ? 'Month' : 'Date'}</h3><span>{metric === 'amount' ? 'Amount' : metric === 'qty' ? 'Qty' : metric === 'stockOh' ? 'Stock On Hand' : 'Stock On Order'} · {dimension === 'month' ? (monthFrom && monthTo ? `${formatMonth(monthFrom)} – ${formatMonth(monthTo)}` : 'ทุกเดือนที่มีข้อมูล') : mode === 'sales' && dimension === 'branch' && branchPeriod === 'month' && selectedBranchMonth ? formatMonth(selectedBranchMonth) : formatDateRange(selectedDates)}</span></div>
           <div className="matrix-heading-tools">
             <div className="heat-legend" aria-label="คำอธิบาย Heatmap"><span>ต่ำ</span><i className="heat-low" /><i className="heat-medium" /><i className="heat-high" /><span>สูง</span><i className="heat-negative" /><span>Return</span></div>
             <div className="matrix-actions">
-              <button type="button" disabled={isExporting || isImporting} onClick={handleExport}><Download size={15} />{isExporting ? 'กำลัง Export…' : 'Export Mapping'}</button>
-              <button type="button" disabled={isExporting || isImporting} onClick={() => importInputRef.current?.click()}><Upload size={15} />{isImporting ? 'กำลัง Import…' : 'Import Mapping'}</button>
-              <input ref={importInputRef} className="sr-only" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(event) => { const file = event.target.files?.[0]; if (file) void handleImport(file) }} />
+              <button type="button" disabled={isDownloading} onClick={() => void handleDownload()}><Download size={15} />{isDownloading ? 'กำลัง Download…' : 'Download Excel'}</button>
             </div>
           </div>
         </div>
 
-        {exchangeMessage && <div className={`exchange-message exchange-${exchangeMessage.kind}`} role="status">{exchangeMessage.text}</div>}
+        {downloadMessage && <div className={`exchange-message exchange-${downloadMessage.kind}`} role="status">{downloadMessage.text}</div>}
 
         <PerformanceMatrix
           items={data ? visibleItems : null}
@@ -238,7 +315,7 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
           totalPages={data?.meta.totalPages ?? 1}
           isLoading={isLoading}
           dates={selectedDates}
-          branchId={branchId}
+          branchIds={branchIds}
           mode={mode}
           metric={metric}
           dimension={dimension}
@@ -253,7 +330,7 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
       </div>
 
       {selected && selectedItem && (
-        <ItemDetailDrawer item={selectedItem} selected={selected} dates={selectedDates} branchId={branchId} metric={metric} branches={branches} onClose={() => setSelected(null)} />
+        <ItemDetailDrawer item={selectedItem} selected={selected} dates={selectedDates} branchIds={branchIds} metric={metric} branches={branches} onClose={() => setSelected(null)} />
       )}
     </>
   )

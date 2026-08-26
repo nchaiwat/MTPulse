@@ -1,12 +1,15 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 from cryptography.fernet import Fernet
+from fastapi import HTTPException
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
+from app.api import system_settings
 from app.api.imports import _preview
 from app.database import Base
 from app.importers.twd import TwdExtract, TwdSummary
@@ -73,7 +76,33 @@ def test_import_rejects_checksum_and_period_duplicates() -> None:
             import_twd_extract(session, extract("b" * 64))
 
 
-def test_telegram_token_is_encrypted_and_never_returned(monkeypatch) -> None:
+def test_telegram_message_uses_standard_header_and_no_bullets() -> None:
+    message = telegram.format_telegram_message(
+        "📣 ทดสอบการส่งข้อความเข้า Telegram",
+        [
+            "👥 กลุ่มเป้าหมาย: MT Pulse Notification Group",
+            "✅ สถานะ: สำเร็จ",
+        ],
+        occurred_at=datetime(
+            2026,
+            8,
+            25,
+            8,
+            37,
+            tzinfo=ZoneInfo("Asia/Bangkok"),
+        ),
+    )
+    assert message.splitlines() == [
+        "📦 MT Pulse · 25/08/2026 08:37 น.",
+        "────────────",
+        "📣 ทดสอบการส่งข้อความเข้า Telegram",
+        "👥 กลุ่มเป้าหมาย: MT Pulse Notification Group",
+        "✅ สถานะ: สำเร็จ",
+    ]
+    assert "•" not in message
+
+
+def test_telegram_token_is_encrypted_and_revealed_only_when_enabled(monkeypatch) -> None:
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
     key = Fernet.generate_key().decode()
@@ -82,6 +111,11 @@ def test_telegram_token_is_encrypted_and_never_returned(monkeypatch) -> None:
         "get_settings",
         lambda: SimpleNamespace(settings_encryption_key=key),
     )
+    monkeypatch.setattr(
+        system_settings,
+        "get_settings",
+        lambda: SimpleNamespace(allow_secret_reveal=True),
+    )
     with Session(engine) as session:
         telegram.set_bot_token(session, "123456:SECRET", "test")
         telegram.set_setting(session, telegram.GROUP_KEY, "-100123", secret=False, actor="test")
@@ -89,6 +123,7 @@ def test_telegram_token_is_encrypted_and_never_returned(monkeypatch) -> None:
         config = telegram.telegram_config(session)
         stored = telegram.setting_value(session, telegram.TOKEN_KEY)
         assert telegram.bot_token(session) == "123456:SECRET"
+        assert system_settings.get_telegram_token(session) == {"botToken": "123456:SECRET"}
     assert "SECRET" not in (stored or "")
     assert config == {
         "telegramConfigured": True,
@@ -96,6 +131,19 @@ def test_telegram_token_is_encrypted_and_never_returned(monkeypatch) -> None:
         "groupId": "-100123",
         "notifyManualImport": True,
     }
+
+
+def test_telegram_token_reveal_is_disabled_by_default(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(
+        system_settings,
+        "get_settings",
+        lambda: SimpleNamespace(allow_secret_reveal=False),
+    )
+    with Session(engine) as session, pytest.raises(HTTPException) as error:
+        system_settings.get_telegram_token(session)
+    assert error.value.status_code == 403
 
 
 def test_telegram_without_config_is_skipped() -> None:
@@ -135,4 +183,4 @@ def test_telegram_invalid_token_reports_specific_reason(monkeypatch) -> None:
         result = telegram.send_telegram(session, "test", force=True)
 
     assert result.status == "failed"
-    assert result.message == "Bot Token ไม่ถูกต้องหรือถูกยกเลิก"
+    assert result.message == "Telegram ปฏิเสธ Bot Token กรุณาตรวจสอบ Token ที่บันทึกไว้"

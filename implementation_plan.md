@@ -353,3 +353,126 @@ Backend ในระยะถัดไปจะแยกขอบเขตเช
 3. Frontend tests สำหรับ Navigation, Preview, Confirm, Error และ Log
 4. รัน Backend tests/Ruff, Frontend tests/Lint/Build และ Browser QA
 5. ทดสอบกับไฟล์ TWD จริงโดยใช้ Preview ก่อน; ห้าม Confirm ไฟล์ Period เดิมในฐานข้อมูล
+
+# System Monitoring — Phase 1 Implementation Plan
+
+## สรุป
+
+เพิ่มหน้า `Monitoring` แบบ Read-only เป็น Main Menu แยก ใช้ข้อมูลจริงจาก FastAPI และ PostgreSQL เปิด `pg_stat_statements` สำหรับ Slow Query และเก็บ Snapshot วันละหนึ่งรายการย้อนหลัง 365 วัน งาน Backup/Restore และ Maintenance Actions ยังเป็นงานภายหลัง
+
+## Architecture
+
+- Frontend: เพิ่ม `MonitoringPage`, API client, Loading/Error/Empty state และปุ่ม Refresh
+- Backend: เพิ่ม Monitoring API และ service สำหรับอ่าน PostgreSQL statistics โดย Query แบบ read-only
+- PostgreSQL: เปิด `shared_preload_libraries=pg_stat_statements` และสร้าง Extension ผ่าน Migration
+- Snapshot: ตาราง `monitoring_snapshots` มี Unique ต่อ `snapshot_date`, เก็บเวลาจับข้อมูล, trigger, health summary, database metrics, MT status และ Top Queries
+- Daily capture: เรียก service หลัง Import สำเร็จ; หากยังไม่มี Snapshot ของวันนั้น ให้สร้างเมื่อเปิด Monitoring; Manual Refresh ใช้ Upsert แถวของวันปัจจุบัน
+- Retention: ลบ Snapshot ที่เก่ากว่า 365 วันเฉพาะเมื่อมีการ Capture ใหม่
+
+## API Plan
+
+- `GET /api/monitoring` — อ่าน Current Health พร้อม History และสร้าง Daily Snapshot หากวันนั้นยังไม่มี
+- `POST /api/monitoring/refresh` — คำนวณใหม่และ Upsert Snapshot ของวันนี้
+- Response แยก `health`, `database`, `modernTrades`, `slowQueries`, `history` เพื่อให้ Frontend แสดงผลโดยไม่คำนวณ Business Status ซ้ำ
+
+## UI Plan
+
+- Main Menu: `Monitoring`
+- Header: เวลาที่ตรวจล่าสุดและปุ่ม `Refresh`
+- Row 1: Health Cards สำหรับ API, PostgreSQL, Data Date, Import และ Warning
+- Row 2: Database Size, Fact Records, Table/Index Size, Dead Tuples และ Connections
+- Section: Top 10 Slow Queries พร้อม Query ย่อ, Calls, Average, Total และ Rows
+- Section: Daily History ย้อนหลัง 365 วัน เรียงวันล่าสุดก่อน
+- ใช้สี Healthy/Warning/Critical ตาม Design System เดิมและไม่แก้หน้าปัจจุบัน
+
+## Phases
+
+1. Migration และ PostgreSQL configuration สำหรับ `pg_stat_statements` และ `monitoring_snapshots`
+2. Monitoring service/API พร้อม Daily Upsert, Import hook และ Retention
+3. Main Menu และ Monitoring UI
+4. Backend/Frontend tests, API verification, build และตรวจ Diff
+
+## Test Plan
+
+- API/Database unavailable, Warning threshold และ Healthy state
+- Daily Snapshot ไม่สร้างข้อมูลซ้ำ และ Manual Refresh เป็น Upsert
+- Retention ไม่เกิน 365 วัน
+- Import สำเร็จเรียก Snapshot โดยไม่ทำให้ Import ล้มเหลวหาก Monitoring มีปัญหา
+- Slow Query response จำกัด Top 10 และไม่แสดงค่าพารามิเตอร์จริง
+- Frontend แสดง Loading/Error/Health/History และ Refresh ได้
+- Full backend/frontend regression, lint และ production build
+
+## Out of Scope
+
+- Maintenance commands, Backup/Restore, Host Disk Free, Auto Refresh, Hourly History และ Authentication
+
+# สินค้าทดลองและตัวเลือกหลาย SKU — Implementation Plan
+
+## สรุป
+
+เพิ่ม Metadata ของ Item ที่เป็นอิสระจาก Mapping Status เพื่อรองรับสินค้าทดลองและการซ่อนย้อนหลังแบบไม่ลบข้อมูล พร้อมเปลี่ยนช่องค้นหา Item เดิมเป็น Searchable Multi-select SKU โดยคง Filter และ Matrix อื่นทั้งหมดไว้ตามเดิม
+
+## Data Model และ Migration
+
+- เพิ่ม `item_type` ค่าเริ่มต้น `normal` และ `report_status` ค่าเริ่มต้น `active` ใน Item Mapping
+- ทำ Migration ให้ Mapping เดิมทุกแถวเป็น `normal + active`
+- ใช้สถานะล่าสุดของ Item เป็น Global Report Scope; `inactive` ถูกตัดออกจากทุกช่วงวันที่
+- สร้าง Audit Event เมื่อ Import Excel เปลี่ยน Item Type หรือ Report Status
+
+## Excel Mapping Plan
+
+- เพิ่ม Column `Item Type` และ `Report Status` ใน Sheet `Item Mapping`
+- Parser รองรับไฟล์เก่าที่ไม่มี Column และช่องว่าง โดย Default เป็น `normal + active`
+- Validate เฉพาะค่า `normal/trial` และ `active/inactive`; ค่าอื่นต้องแสดง Error พร้อมเลขแถวและไม่เปลี่ยนข้อมูล
+- Export ต้องรวม Item inactive เพื่อให้ User เปิดกลับเป็น active ได้
+- Import ต้องอัปเดต Metadata ของ Mapping เดิมได้โดยไม่เปลี่ยน WA Item Code และไม่ทำลายกติกาห้ามแก้ Mapping ทับ
+
+## API และ Query Plan
+
+- เพิ่ม API อ่านรายการ SKU ที่ Active สำหรับ Multi-select พร้อม Search และ Pagination/Limit
+- `GET /api/performance` รับ SKU หลายรหัสแบบมีขอบเขต และใช้ Filter เดียวกันกับ Summary, Column Totals, Matrix, Pagination และ Export
+- ทุก Query รายงานต้อง Join/อ้างอิง Item Scope เพื่อไม่รวม `inactive` แม้ดูย้อนหลัง
+- Response Item เพิ่ม `itemType` เพื่อให้ Frontend แสดง Badge โดยไม่อนุมานจากสีหรือรหัส
+- จำกัดจำนวน SKU ต่อ Request และใช้ Index ที่เหมาะสม; ตรวจ Query Plan กับข้อมูลจริงก่อนเพิ่ม Index
+
+## Frontend Plan
+
+- เปลี่ยนช่องค้นหาเดิมเป็น `SkuMultiSelect` แบบ Searchable Dropdown
+- แสดง `ทุก SKU` หรือ `เลือก N SKU`; มี Checkbox, เลือกทั้งหมดจากผลค้นหา, ล้างการเลือก, ยกเลิก และแสดงผล
+- ใช้ Draft Selection ภายใน Dropdown และเรียก API เมื่อกดแสดงผลเท่านั้น
+- ใช้ Virtual Scroll สำหรับรายการ SKU และเก็บค่าที่เลือกใน Current View
+- Item Type `trial` ใช้พื้นเหลืองอ่อนเฉพาะส่วน Item พร้อม Badge `สินค้าทดลอง`; Cell ตัวเลขและ Heatmap ไม่เปลี่ยน
+
+## File และ Module Plan
+
+- `backend/app/models.py` + Alembic: Item metadata และค่า Default
+- `backend/app/services/item_mapping_exchange.py`: Excel columns, validation, update และ Audit
+- `backend/app/api/item_mappings.py`: Export Metadata ทั้ง Active/Inactive
+- `backend/app/api/performance.py`: Global active scope, multi-SKU filter และ Item Type response
+- `backend/app/services/performance_export.py`: ใช้ Filter SKU/Active ชุดเดียวกับหน้ารายงาน
+- `src/features/performance/`: Multi-select component, API contract, persisted state และ Trial style
+- Backend/Frontend tests: Excel compatibility, report totals, inactive historical exclusion และ multi-select consistency
+
+## Phased Implementation
+
+1. เพิ่ม Migration, Model และ Excel Import/Export พร้อม Regression Tests
+2. บังคับ Active Scope ใน Performance/Download และ Reconcile KPI, SUM, Matrix ย้อนหลัง
+3. เพิ่ม SKU Options API และ Searchable Multi-select แบบ Server-side/Virtualized
+4. เพิ่ม Trial Badge/สีเฉพาะ Item และ Current View persistence
+5. รัน Backend/Frontend tests, Lint, Build, API จริง, Microsoft Excel compatibility และ Browser QA
+
+## Verification
+
+- Excel เก่าไม่มี Column ใหม่ยัง Import ได้และกลายเป็น `normal + active`
+- `trial + active` รวมยอดเท่ากับ Item ปกติและแสดง Badge โดย Heatmap ไม่เปลี่ยน
+- เปลี่ยนเป็น `inactive` แล้วหายจากทุกช่วงเวลา, KPI, SUM, Download และ SKU selector แต่ยังอยู่ใน Mapping Export
+- เปลี่ยนกลับเป็น `active` แล้วข้อมูลย้อนหลังกลับมาแสดงครบ
+- เลือก SKU ที่รหัสไม่คล้ายกันหลายรายการแล้ว KPI, SUM, Matrix และ Download ตรงกัน
+- Branch, Date Range, Month, Description, Pagination, Current View และ Performance เดิมไม่ถดถอย
+
+## Out of Scope
+
+- หน้า Setting สำหรับแก้ Metadata ทีละ Item
+- การใช้ Excel Cell Color เป็นสถานะ
+- การลบ Fact หรือ Mapping ของ Item inactive
+- การเปลี่ยน UX/Logic ของ Branch, Date/Month และ Heatmap ที่ไม่เกี่ยวข้อง

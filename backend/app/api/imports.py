@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import tempfile
 from dataclasses import replace
 from pathlib import Path
@@ -14,7 +15,12 @@ from sqlalchemy.orm import Session
 from app.database import get_session
 from app.importers.twd import TwdExtract, TwdFormatError, extract_twd_file
 from app.models import AuditEvent, ImportBatch, ModernTrade
-from app.services.telegram import TelegramDelivery, send_telegram
+from app.services.monitoring import capture_monitoring_snapshot
+from app.services.telegram import (
+    TelegramDelivery,
+    format_thai_date,
+    send_telegram,
+)
 from app.services.twd_import import (
     DuplicateImportError,
     PeriodDuplicateError,
@@ -23,6 +29,7 @@ from app.services.twd_import import (
 
 router = APIRouter(prefix="/api/imports", tags=["imports"])
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+logger = logging.getLogger(__name__)
 
 
 def _extract_upload(content: bytes, filename: str) -> TwdExtract:
@@ -59,7 +66,7 @@ def _duplicate_reason(session: Session, extract: TwdExtract) -> str | None:
         )
     )
     if period_batch:
-        return f"TWD วันที่ {extract.data_date.isoformat()} มีข้อมูลใน Batch {period_batch.id} แล้ว"
+        return f"TWD วันที่ {format_thai_date(extract.data_date)} มีข้อมูลใน Batch {period_batch.id} แล้ว"
     return None
 
 
@@ -147,7 +154,13 @@ async def preview_import(
         message = f"ตรวจสอบไฟล์ไม่ผ่าน: {exc}"
         delivery = send_telegram(
             session,
-            f"MT Pulse — Manual Import Failed\nไฟล์: {filename}\nสาเหตุ: {message}",
+            "❌ ตรวจสอบไฟล์นำเข้าไม่สำเร็จ",
+            [
+                "🏪 Modern Trade: ไทวัสดุ (TWD)",
+                "📥 วิธีนำเข้า: Manual Upload",
+                f"📄 ไฟล์: {filename}",
+                f"⚠️ สาเหตุ: {message}",
+            ],
         )
         _record(
             session,
@@ -190,7 +203,13 @@ async def confirm_import(
         message = str(exc)
         delivery = send_telegram(
             session,
-            f"MT Pulse — Manual Import Failed\nMT: TWD\nไฟล์: {filename}\nสาเหตุ: {message}",
+            "❌ นำเข้าข้อมูลไทวัสดุไม่สำเร็จ",
+            [
+                "🏪 Modern Trade: ไทวัสดุ (TWD)",
+                "📥 วิธีนำเข้า: Manual Upload",
+                f"📄 ไฟล์: {filename}",
+                f"⚠️ สาเหตุ: {message}",
+            ],
         )
         _record(
             session,
@@ -202,19 +221,32 @@ async def confirm_import(
             notification=delivery,
         )
         raise HTTPException(status_code=409, detail=message) from exc
+    status_label = (
+        "สำเร็จพร้อมคำเตือน"
+        if batch.status == "imported_with_warnings"
+        else "สำเร็จ"
+    )
     delivery = send_telegram(
         session,
-        "\n".join(
-            [
-                "MT Pulse — Manual Import Completed",
-                "MT: TWD",
-                f"วันที่ข้อมูล: {batch.data_date.isoformat()}",
-                f"ไฟล์: {batch.source_filename}",
-                f"จำนวนรายการ: {batch.row_count:,}",
-            ]
-        ),
+        "✅ นำเข้าข้อมูลไทวัสดุสำเร็จ",
+        [
+            "🏪 Modern Trade: ไทวัสดุ (TWD)",
+            "📥 วิธีนำเข้า: Manual Upload",
+            f"📅 วันที่ข้อมูล: {format_thai_date(batch.data_date)}",
+            f"📄 ไฟล์: {batch.source_filename}",
+            f"🆔 Batch ID: {batch.id}",
+            f"✅ สถานะ: {status_label}",
+            f"📊 จำนวนรายการ: {batch.row_count:,}",
+            f"🏷️ จำนวน SKU: {batch.sku_count:,}",
+            f"🏬 จำนวนสาขา: {batch.store_count:,}",
+            f"💰 Amount: {batch.amount:,.2f}",
+            f"🔢 Qty: {batch.sales_qty:,.2f}",
+            f"📦 Stock On Hand: {batch.stock_on_hand:,.2f}",
+            f"🚚 Stock On Order: {batch.stock_on_order:,.2f}",
+            f"↩️ รายการติดลบ: {batch.negative_row_count:,}",
+        ],
     )
-    message = f"นำเข้าข้อมูล TWD วันที่ {batch.data_date.isoformat()} สำเร็จ"
+    message = f"นำเข้าข้อมูล TWD วันที่ {format_thai_date(batch.data_date)} สำเร็จ"
     _record(
         session,
         checksum=batch.checksum_sha256,
@@ -226,6 +258,17 @@ async def confirm_import(
         batch_id=batch.id,
         notification=delivery,
     )
+    try:
+        capture_monitoring_snapshot(
+            session,
+            trigger="import",
+            upsert_today=True,
+        )
+    except Exception:
+        session.rollback()
+        logger.exception(
+            "Import completed, but the daily monitoring snapshot could not be saved"
+        )
     return {
         "batchId": batch.id,
         "status": batch.status,

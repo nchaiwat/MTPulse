@@ -36,6 +36,9 @@ class ModernTrade(Base):
     show_unmatched_branches: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
+    report_page_size: Mapped[int] = mapped_column(
+        Integer, default=25, server_default="25"
+    )
 
 
 class ImportBatch(Base):
@@ -69,6 +72,10 @@ class ImportBatch(Base):
     stock_on_order: Mapped[Decimal] = mapped_column(QUANTITY)
     reconciliation_errors: Mapped[str | None] = mapped_column(Text)
     error_message: Mapped[str | None] = mapped_column(Text)
+    warning_resolution: Mapped[str | None] = mapped_column(String(32))
+    warning_resolution_note: Mapped[str | None] = mapped_column(Text)
+    warning_resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    warning_resolved_by: Mapped[str | None] = mapped_column(String(200))
     facts: Mapped[list["SalesInventoryFact"]] = relationship(
         back_populates="batch", cascade="all, delete-orphan"
     )
@@ -117,6 +124,12 @@ class ItemMapping(Base):
     wa_item_code: Mapped[str] = mapped_column(String(50))
     wa_item_description: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20), default="confirmed")
+    item_type: Mapped[str] = mapped_column(
+        String(20), default="normal", server_default="normal"
+    )
+    report_status: Mapped[str] = mapped_column(
+        String(20), default="active", server_default="active"
+    )
     effective_from: Mapped[date] = mapped_column(Date)
     effective_to: Mapped[date | None] = mapped_column(Date)
     changed_by: Mapped[str] = mapped_column(String(200))
@@ -164,3 +177,27 @@ class SystemSetting(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
     updated_by: Mapped[str] = mapped_column(String(200))
+
+
+class MonitoringSnapshot(Base):
+    __tablename__ = "monitoring_snapshots"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    snapshot_date: Mapped[date] = mapped_column(Date, unique=True, index=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    trigger: Mapped[str] = mapped_column(String(30))
+    overall_status: Mapped[str] = mapped_column(String(20))
+    fact_count: Mapped[int] = mapped_column(BigInteger)
+    database_size_bytes: Mapped[int] = mapped_column(BigInteger)
+    fact_table_size_bytes: Mapped[int] = mapped_column(BigInteger)
+    fact_indexes_size_bytes: Mapped[int] = mapped_column(BigInteger)
+    dead_tuple_count: Mapped[int] = mapped_column(BigInteger)
+    dead_tuple_ratio: Mapped[Decimal] = mapped_column(Numeric(10, 4))
+    active_connections: Mapped[int] = mapped_column(Integer)
+    max_connections: Mapped[int] = mapped_column(Integer)
+    latest_data_date: Mapped[date | None] = mapped_column(Date)
+    latest_import_status: Mapped[str | None] = mapped_column(String(32))
+    warning_count: Mapped[int] = mapped_column(Integer)
+    last_vacuum_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_analyze_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    modern_trades_json: Mapped[str] = mapped_column(Text)
+    slow_queries_json: Mapped[str] = mapped_column(Text)

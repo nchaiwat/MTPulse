@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from io import BytesIO
+from zipfile import ZipFile
 
 import openpyxl
 
@@ -27,12 +28,29 @@ def test_export_preserves_sku_as_text_and_includes_all_columns() -> None:
         "WA Item",
         "WA Description",
         "Mapping Status",
+        "Item Type",
+        "Report Status",
         "Import Note",
     ]
     assert sheet["A2"].value == "060424005"
     assert sheet["A2"].data_type == "s"
     assert sheet.freeze_panes == "A2"
     workbook.close()
+
+
+def test_export_does_not_overlap_worksheet_filter_with_excel_tables() -> None:
+    content = build_item_mapping_workbook(
+        [ExportItem("060424005", "สินค้าทดสอบ", "WA-001", "รายละเอียด", "confirmed")],
+        [ExportBranch("60001", "สาขาต้นทาง", "WA-BKK", "สำนักงานใหญ่", "confirmed")],
+    )
+
+    with ZipFile(BytesIO(content)) as archive:
+        for sheet_path in ("xl/worksheets/sheet1.xml", "xl/worksheets/sheet2.xml"):
+            sheet_xml = archive.read(sheet_path)
+            assert b"<tableParts" in sheet_xml
+            assert b"<autoFilter" not in sheet_xml
+        for table_path in ("xl/tables/table1.xml", "xl/tables/table2.xml"):
+            assert b"<autoFilter" in archive.read(table_path)
 
 
 def test_export_and_parse_branch_mapping_sheet() -> None:
@@ -261,3 +279,104 @@ def test_export_filename_includes_hhmmss() -> None:
         date(2026, 8, 17),
         datetime(2026, 8, 24, 14, 5, 9),
     ) == "TWD_Item_Mapping_2026-08-16_2026-08-17_140509.xlsx"
+
+def test_export_and_parse_item_report_metadata() -> None:
+    content = build_item_mapping_workbook(
+        [
+            ExportItem(
+                "ABCDE",
+                "สินค้าทดลอง",
+                "WXYZ",
+                "รายการสินค้าทดลองของ WA",
+                "confirmed",
+                item_type="trial",
+                report_status="inactive",
+            )
+        ]
+    )
+
+    workbook = openpyxl.load_workbook(BytesIO(content), data_only=True)
+    sheet = workbook["Item Mapping"]
+    assert sheet["F2"].value == "trial"
+    assert sheet["G2"].value == "inactive"
+    workbook.close()
+
+    parsed = parse_item_mapping_workbook(content)
+    assert parsed.candidates[0].item_type == "trial"
+    assert parsed.candidates[0].report_status == "inactive"
+
+
+def test_legacy_mapping_workbook_defaults_to_normal_and_active() -> None:
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "Item Mapping"
+    sheet.append(["TWD SKU", "WA Item", "Mapping Status"])
+    sheet.append(["ABCDE", "WXYZ", "confirmed"])
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+
+    candidate = parse_item_mapping_workbook(output.getvalue()).candidates[0]
+    assert candidate.item_type == "normal"
+    assert candidate.report_status == "active"
+
+
+def test_parse_rejects_invalid_item_report_metadata() -> None:
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "Item Mapping"
+    sheet.append(["TWD SKU", "WA Item", "Item Type", "Report Status"])
+    sheet.append(["ABCDE", "WXYZ", "sample", "deleted"])
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+
+    try:
+        parse_item_mapping_workbook(output.getvalue())
+    except ValueError as error:
+        assert "แถว 2" in str(error)
+        assert "Item Type" in str(error)
+    else:
+        raise AssertionError("Expected invalid metadata to be rejected")
+
+
+def test_import_updates_existing_item_report_metadata_without_changing_mapping() -> None:
+    existing = ItemMapping(
+        modern_trade_id=1,
+        source_sku="ABCDE",
+        source_description="สินค้าทดลอง",
+        wa_item_code="WXYZ",
+        wa_item_description="รายการสินค้าทดลองของ WA",
+        status="confirmed",
+        item_type="normal",
+        report_status="active",
+        effective_from=date(2026, 8, 16),
+        effective_to=None,
+        changed_by="original",
+    )
+    content = build_item_mapping_workbook(
+        [
+            ExportItem(
+                "ABCDE",
+                "สินค้าทดลอง",
+                "WXYZ",
+                "รายการสินค้าทดลองของ WA",
+                "confirmed",
+                item_type="trial",
+                report_status="inactive",
+            )
+        ]
+    )
+    session = _ExistingItemSession(existing)
+
+    import_item_mapping_workbook(
+        session, content, date(2026, 8, 26), "trial-item.xlsx"  # type: ignore[arg-type]
+    )
+
+    assert existing.wa_item_code == "WXYZ"
+    assert existing.item_type == "trial"
+    assert existing.report_status == "inactive"
+    assert any(
+        isinstance(value, AuditEvent) and value.action == "update_item_report_metadata"
+        for value in session.added
+    )

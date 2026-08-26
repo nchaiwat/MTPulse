@@ -23,12 +23,12 @@ export function metricValue(point: DataPoint, metric: Metric) {
 export function pointsForView(
   item: PerformanceItem,
   dates: string[],
-  branchId: string,
+  branchIds: string[],
   mode: Mode,
   dimension: Dimension,
 ) {
   let points = item.points.filter(
-    (point) => dates.includes(point.date) && (branchId === 'all' || point.branchId === branchId),
+    (point) => dates.includes(point.date) && (branchIds.length === 0 || point.branchId === 'all' || branchIds.includes(point.branchId)),
   )
 
   if (mode === 'inventory' && dimension === 'branch' && dates.length > 0) {

@@ -1,7 +1,9 @@
 export type Mode = 'sales' | 'inventory'
 export type Metric = 'amount' | 'qty' | 'stockOh' | 'stockOnOrder'
 export type Dimension = 'branch' | 'day' | 'month'
+export type BranchPeriod = 'month' | 'day'
 export type MappingStatus = 'confirmed' | 'pending' | 'unmatched'
+export type ItemType = 'normal' | 'trial'
 
 export interface Branch {
   id: string
@@ -23,9 +25,17 @@ export interface PerformanceItem {
   waItem: string | null
   waDescription: string | null
   mappingStatus: MappingStatus
+  itemType?: ItemType
   points: DataPoint[]
 }
 
+export interface SkuOption {
+  sku: string
+  twdDescription: string
+  waItem: string | null
+  waDescription: string | null
+  itemType: ItemType
+}
 export interface SelectedCell {
   sku: string
   dimensionKey?: string
@@ -34,6 +44,7 @@ export interface SelectedCell {
 export interface PerformanceResponse {
   branches: Branch[]
   dates: string[]
+  availableDates?: string[]
   months?: string[]
   selectedMonth?: string | null
   columnTotals?: Record<string, { amount: number, qty: number }>

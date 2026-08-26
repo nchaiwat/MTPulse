@@ -33,6 +33,8 @@ HEADERS = (
     "WA Item",
     "WA Description",
     "Mapping Status",
+    "Item Type",
+    "Report Status",
     "Import Note",
 )
 BRANCH_HEADERS = (
@@ -41,6 +43,8 @@ BRANCH_HEADERS = (
     "WA Branch",
     "WA Branch Description",
     "Mapping Status",
+    "Item Type",
+    "Report Status",
     "Import Note",
 )
 
@@ -52,6 +56,8 @@ class ExportItem:
     wa_item_code: str
     wa_item_description: str
     status: str
+    item_type: str = "normal"
+    report_status: str = "active"
 
 
 @dataclass(frozen=True)
@@ -70,6 +76,8 @@ class ImportCandidate:
     wa_item_code: str
     wa_item_description: str
     status: str
+    item_type: str = "normal"
+    report_status: str = "active"
 
 
 @dataclass(frozen=True)
@@ -121,6 +129,23 @@ def _import_status(value: Any) -> str:
     return status if status in {"confirmed", "pending"} else "pending"
 
 
+def _metadata_value(
+    value: Any,
+    *,
+    allowed: set[str],
+    default: str,
+    column: str,
+    excel_row: int,
+) -> str:
+    normalized = _text(value).lower()
+    if not normalized:
+        return default
+    if normalized not in allowed:
+        choices = ", ".join(sorted(allowed))
+        raise ValueError(f"แถว {excel_row}: {column} ต้องเป็น {choices}")
+    return normalized
+
+
 def _identifier(value: Any, width: int) -> str:
     if value in (None, ""):
         return ""
@@ -147,7 +172,6 @@ def _style_mapping_sheet(sheet, row_count: int, table_name: str, widths: tuple[i
         cell.alignment = Alignment(vertical="center")
     sheet.freeze_panes = "A2"
     last_column = openpyxl.utils.get_column_letter(len(widths))
-    sheet.auto_filter.ref = f"A1:{last_column}{max(1, row_count + 1)}"
     sheet.row_dimensions[1].height = 24
     for column, width in enumerate(widths, start=1):
         sheet.column_dimensions[openpyxl.utils.get_column_letter(column)].width = width
@@ -161,6 +185,8 @@ def _style_mapping_sheet(sheet, row_count: int, table_name: str, widths: tuple[i
             showColumnStripes=False,
         )
         sheet.add_table(table)
+    else:
+        sheet.auto_filter.ref = f"A1:{last_column}1"
 
 
 def build_item_mapping_workbook(
@@ -178,6 +204,8 @@ def build_item_mapping_workbook(
             item.wa_item_code,
             item.wa_item_description,
             item.status,
+            item.item_type,
+            item.report_status,
             "กรอก WA Item และ WA Description แล้ว Import กลับเข้าระบบ"
             if not item.wa_item_code
             else "มี Mapping ในระบบแล้ว",
@@ -185,7 +213,9 @@ def build_item_mapping_workbook(
         for column, value in enumerate(values, start=1):
             _set_text(sheet.cell(row=row_number, column=column), value)
 
-    _style_mapping_sheet(sheet, len(items), "TWDItemMapping", (16, 48, 22, 48, 18, 52))
+    _style_mapping_sheet(
+        sheet, len(items), "TWDItemMapping", (16, 48, 22, 48, 18, 15, 17, 52)
+    )
 
     branch_sheet = workbook.create_sheet(BRANCH_SHEET_NAME)
     branch_sheet.append(BRANCH_HEADERS)
@@ -216,6 +246,9 @@ def build_item_mapping_workbook(
         "5. Import จะไม่แก้ทับ Mapping เดิม และรายการใหม่จะเข้าระบบเป็นสถานะรอตรวจสอบ",
         "6. หากใช้สูตร VLOOKUP ให้เปิดไฟล์และ Save ด้วย Excel ก่อน Import เพื่อบันทึกค่าที่คำนวณแล้ว",
         "7. ใช้ Sheet 'Branch Mapping' เพื่อกรอก WA Branch และชื่อ Branch ที่ต้องการแสดงในระบบ",
+        "8. Item Type ใช้ normal หรือ trial (เว้นว่าง = normal)",
+        "9. Report Status ใช้ active หรือ inactive (เว้นว่าง = active); "
+        "inactive จะไม่แสดงและไม่รวมยอดย้อนหลัง",
     )
     for row, note in enumerate(notes, start=1):
         _set_text(instructions.cell(row=row, column=1), note)
@@ -244,12 +277,14 @@ def parse_item_mapping_workbook(content: bytes) -> ParsedItemWorkbook:
         if missing:
             raise ValueError(f"ไม่พบ Column ที่จำเป็น: {', '.join(missing)}")
 
-        candidate_sets: dict[str, set[tuple[str, str, str, str]]] = {}
+        candidate_sets: dict[str, set[tuple[str, str, str, str, str, str]]] = {}
         errors: list[str] = []
         row_count = skipped_blank = 0
         description_index = header_map.get("WA Description")
         source_description_index = header_map.get("TWD Description")
         status_index = header_map.get("Mapping Status")
+        item_type_index = header_map.get("Item Type")
+        report_status_index = header_map.get("Report Status")
         for excel_row, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
             if not any(value not in (None, "") for value in row):
                 continue
@@ -271,6 +306,24 @@ def parse_item_mapping_workbook(content: bytes) -> ParsedItemWorkbook:
                 if status_index is not None and status_index < len(row)
                 else None
             )
+            item_type = _metadata_value(
+                row[item_type_index]
+                if item_type_index is not None and item_type_index < len(row)
+                else None,
+                allowed={"normal", "trial"},
+                default="normal",
+                column="Item Type",
+                excel_row=excel_row,
+            )
+            report_status = _metadata_value(
+                row[report_status_index]
+                if report_status_index is not None and report_status_index < len(row)
+                else None,
+                allowed={"active", "inactive"},
+                default="active",
+                column="Report Status",
+                excel_row=excel_row,
+            )
             if not sku:
                 errors.append(f"แถว {excel_row}: ไม่มี TWD SKU")
                 continue
@@ -281,7 +334,14 @@ def parse_item_mapping_workbook(content: bytes) -> ParsedItemWorkbook:
                 errors.append(f"แถว {excel_row}: รหัสยาวเกิน 50 ตัวอักษร")
                 continue
             candidate_sets.setdefault(sku, set()).add(
-                (source_description, wa_item, wa_description, status)
+                (
+                    source_description,
+                    wa_item,
+                    wa_description,
+                    status,
+                    item_type,
+                    report_status,
+                )
             )
 
         conflicts = tuple(sorted(sku for sku, values in candidate_sets.items() if len(values) > 1))
@@ -437,6 +497,33 @@ def import_item_mapping_workbook(
                             ),
                         )
                     )
+                if (
+                    current.item_type != candidate.item_type
+                    or current.report_status != candidate.report_status
+                ):
+                    before = {
+                        "item_type": current.item_type,
+                        "report_status": current.report_status,
+                    }
+                    current.item_type = candidate.item_type
+                    current.report_status = candidate.report_status
+                    current.changed_by = actor
+                    session.add(
+                        AuditEvent(
+                            entity_type="item_mapping",
+                            entity_id=candidate.source_sku,
+                            action="update_item_report_metadata",
+                            actor=actor,
+                            before_json=json.dumps(before, ensure_ascii=False),
+                            after_json=json.dumps(
+                                {
+                                    "item_type": current.item_type,
+                                    "report_status": current.report_status,
+                                },
+                                ensure_ascii=False,
+                            ),
+                        )
+                    )
                 unchanged += 1
             else:
                 existing_conflicts += 1
@@ -455,6 +542,8 @@ def import_item_mapping_workbook(
             wa_item_code=candidate.wa_item_code,
             wa_item_description=candidate.wa_item_description or None,
             status=candidate.status,
+            item_type=candidate.item_type,
+            report_status=candidate.report_status,
             effective_from=effective_from,
             effective_to=None,
             changed_by=actor,

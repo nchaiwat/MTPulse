@@ -4,24 +4,28 @@ import {
   BarChart3,
   ChevronDown,
   Database,
-  GitCompareArrows,
+  HeartPulse,
   Settings,
 } from 'lucide-react'
 import { ImportPage } from '../features/imports/ImportPage'
+import { MonitoringPage } from '../features/monitoring/MonitoringPage'
 import { PerformancePage } from '../features/performance/PerformancePage'
 import { SettingsPage } from '../features/settings/SettingsPage'
 
-type AppPage = 'performance' | 'imports' | 'settings'
+type AppPage = 'performance' | 'imports' | 'monitoring' | 'settings'
 
 const pageMeta: Record<AppPage, { eyebrow: string; title: string }> = {
   performance: { eyebrow: 'รายงาน / ไทวัสดุ', title: 'รายงานไทวัสดุ' },
   imports: { eyebrow: 'สถานะข้อมูล / นำเข้าข้อมูล', title: 'นำเข้าข้อมูล' },
+  monitoring: { eyebrow: 'System health', title: 'Monitoring' },
   settings: { eyebrow: 'การตั้งค่า', title: 'การตั้งค่า' },
 }
 
 export function App() {
   const [page, setPage] = useState<AppPage>('performance')
   const [openMenu, setOpenMenu] = useState({ reports: true, data: true })
+  const [correctiveBatchId, setCorrectiveBatchId] = useState<number | null>(null)
+  const [settingsFocusKey, setSettingsFocusKey] = useState(0)
   const meta = pageMeta[page]
 
   return (
@@ -45,11 +49,11 @@ export function App() {
             <button className="nav-group-label" type="button" aria-expanded={openMenu.data} aria-controls="data-status-submenu" onClick={() => setOpenMenu((current) => ({ ...current, data: !current.data }))}>
               <Database size={17} aria-hidden="true" /><span>สถานะข้อมูล</span><ChevronDown size={16} aria-hidden="true" />
             </button>
-            {openMenu.data && <div className="nav-submenu" id="data-status-submenu"><button className="nav-item nav-subitem" aria-label="สถานะข้อมูล นำเข้าข้อมูล" data-active={page === 'imports' || undefined} aria-current={page === 'imports' ? 'page' : undefined} type="button" onClick={() => setPage('imports')}><span>นำเข้าข้อมูล</span></button></div>}
+            {openMenu.data && <div className="nav-submenu" id="data-status-submenu"><button className="nav-item nav-subitem" aria-label="สถานะข้อมูล นำเข้าข้อมูล" data-active={page === 'imports' || undefined} aria-current={page === 'imports' ? 'page' : undefined} type="button" onClick={() => { setCorrectiveBatchId(null); setPage('imports') }}><span>นำเข้าข้อมูล</span></button></div>}
           </section>
 
-          <button className="nav-item" disabled type="button">
-            <GitCompareArrows size={17} aria-hidden="true" /><span>Mapping</span><small>ภายหลัง</small>
+          <button className="nav-item nav-main-item" aria-label="Monitoring" data-active={page === 'monitoring' || undefined} aria-current={page === 'monitoring' ? 'page' : undefined} type="button" onClick={() => setPage('monitoring')}>
+            <HeartPulse size={17} aria-hidden="true" /><span>Monitoring</span>
           </button>
 
           <button className="nav-item nav-main-item" aria-label="การตั้งค่า" data-active={page === 'settings' || undefined} aria-current={page === 'settings' ? 'page' : undefined} type="button" onClick={() => setPage('settings')}>
@@ -69,8 +73,9 @@ export function App() {
           <div className="user-chip" aria-label="Current user"><span>CN</span><div><strong>Chaiwat N.</strong><small>เจ้าของ Workspace</small></div></div>
         </header>
         {page === 'performance' && <PerformancePage />}
-        {page === 'imports' && <ImportPage />}
-        {page === 'settings' && <SettingsPage />}
+        {page === 'imports' && <ImportPage correctiveBatchId={correctiveBatchId} />}
+        {page === 'monitoring' && <MonitoringPage onOpenImports={(batchId) => { setCorrectiveBatchId(batchId); setPage('imports') }} onOpenCoverage={() => { setSettingsFocusKey(Date.now()); setPage('settings') }} />}
+        {page === 'settings' && <SettingsPage focusCoverageKey={settingsFocusKey} />}
       </main>
     </div>
   )

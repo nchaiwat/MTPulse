@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, CheckCircle2, FileSpreadsheet, History, UploadCloud } from 'lucide-react'
 import { confirmImport, fetchImportActivity, previewImport, type ImportActivity, type ImportPreview } from './importApi'
+import { ImportCorrectivePanel } from './ImportCorrectivePanel'
+import { formatDisplayDate, formatDisplayDateTime } from '../../shared/dateFormat'
 
 const number = new Intl.NumberFormat('th-TH', { maximumFractionDigits: 2 })
-const dateTime = new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium', timeStyle: 'short' })
 
 function statusLabel(status: string) {
   if (status === 'imported' || status === 'imported_with_warnings') return 'สำเร็จ'
@@ -12,7 +13,7 @@ function statusLabel(status: string) {
   return 'ไม่สำเร็จ'
 }
 
-export function ImportPage() {
+export function ImportPage({ correctiveBatchId = null }: { correctiveBatchId?: number | null }) {
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<ImportPreview | null>(null)
   const [activities, setActivities] = useState<ImportActivity[]>([])
@@ -59,6 +60,7 @@ export function ImportPage() {
 
   return (
     <div className="import-page page-content">
+      {correctiveBatchId !== null && <ImportCorrectivePanel batchId={correctiveBatchId} onCompleted={() => void loadActivity()} />}
       <section className="import-workflow" aria-labelledby="import-heading">
         <header className="import-intro">
           <div>
@@ -98,7 +100,7 @@ export function ImportPage() {
         {preview && (
           <div className="preview-stage" data-blocked={!preview.canImport || undefined}>
             <header>
-              <div><span className="stage-number">2</span><div><span className="eyebrow">ผลการตรวจสอบ</span><h3>{preview.detectedMtName} · {preview.dataDate}</h3></div></div>
+              <div><span className="stage-number">2</span><div><span className="eyebrow">ผลการตรวจสอบ</span><h3>{preview.detectedMtName} · {formatDisplayDate(preview.dataDate)}</h3></div></div>
               <span className={`preview-state ${preview.canImport ? 'ready' : 'blocked'}`}>
                 {preview.canImport ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
                 {preview.canImport ? 'พร้อมนำเข้า' : 'ไม่สามารถนำเข้า'}
@@ -106,7 +108,7 @@ export function ImportPage() {
             </header>
             <dl className="preview-grid">
               <div><dt>MT</dt><dd>{preview.detectedMt}</dd></div>
-              <div><dt>วันที่ข้อมูล</dt><dd>{preview.dataDate}</dd></div>
+              <div><dt>วันที่ข้อมูล</dt><dd>{formatDisplayDate(preview.dataDate)}</dd></div>
               <div><dt>รายการ</dt><dd>{number.format(preview.rowCount)}</dd></div>
               <div><dt>SKU</dt><dd>{number.format(preview.skuCount)}</dd></div>
               <div><dt>Branch</dt><dd>{number.format(preview.branchCount)}</dd></div>
@@ -133,8 +135,8 @@ export function ImportPage() {
           {activities.map((item) => (
             <article key={item.id}>
               <span className={`activity-status ${item.status}`} aria-hidden="true" />
-              <div><strong>{item.message}</strong><small>{item.mtCode} · {item.filename}{item.dataDate ? ` · ข้อมูล ${item.dataDate}` : ''}</small></div>
-              <div className="activity-time"><span>{statusLabel(item.status)}</span><time>{dateTime.format(new Date(item.occurredAt))}</time></div>
+              <div><strong>{item.message}</strong><small>{item.mtCode} · {item.filename}{item.dataDate ? ` · ข้อมูล ${formatDisplayDate(item.dataDate)}` : ''}</small></div>
+              <div className="activity-time"><span>{statusLabel(item.status)}</span><time>{formatDisplayDateTime(item.occurredAt)}</time></div>
             </article>
           ))}
         </div>

@@ -1,29 +1,39 @@
-import { CalendarDays, Eye, EyeOff, Search, SlidersHorizontal } from 'lucide-react'
-import type { Branch, Dimension, MappingStatus, Metric, Mode } from './types'
+import { CalendarDays, Eye, EyeOff, SlidersHorizontal } from 'lucide-react'
+import { BranchMultiSelect } from './BranchMultiSelect'
+import { DateRangePicker } from './DateRangePicker'
+import { MonthRangePicker } from './MonthRangePicker'
+import { SkuMultiSelect } from './SkuMultiSelect'
+import type { Branch, BranchPeriod, Dimension, Metric, Mode, SkuOption } from './types'
 
 interface PerformanceToolbarProps {
   mode: Mode
   metric: Metric
   dimension: Dimension
-  dateRange: string
+  dateFrom: string
+  monthFrom: string
+  monthTo: string
+  dateTo: string
   branchMonth: string
   selectedBranchMonth?: string
-  branchId: string
-  mappingStatus: MappingStatus | 'all'
-  search: string
+  branchPeriod: BranchPeriod
+  branchIds: string[]
+  skuIds: string[]
+  skuOptions: SkuOption[]
+  skuOptionsLoading: boolean
   heatmap: boolean
   showDescriptions: boolean
   branches: Branch[]
-  dates: string[]
+  availableDates: string[]
   months: string[]
   onModeChange: (mode: Mode) => void
   onMetricChange: (metric: Metric) => void
   onDimensionChange: (dimension: Dimension) => void
-  onDateRangeChange: (dateRange: string) => void
+  onDateRangeChange: (dateFrom: string, dateTo: string) => void
+  onMonthRangeChange: (monthFrom: string, monthTo: string) => void
   onBranchMonthChange: (month: string) => void
-  onBranchChange: (branchId: string) => void
-  onMappingStatusChange: (status: MappingStatus | 'all') => void
-  onSearchChange: (search: string) => void
+  onBranchPeriodChange: (period: BranchPeriod) => void
+  onBranchChange: (branchIds: string[]) => void
+  onSkuChange: (skuIds: string[]) => void
   onHeatmapChange: (enabled: boolean) => void
   onShowDescriptionsChange: (enabled: boolean) => void
 }
@@ -74,6 +84,15 @@ export function PerformanceToolbar(props: PerformanceToolbarProps) {
           </div>
         </div>
 
+        {props.mode === 'sales' && props.dimension === 'branch' && (
+          <div className="control-group">
+            <span className="control-label">ช่วงข้อมูล</span>
+            <div className="segmented-control">
+              <button type="button" aria-pressed={props.branchPeriod === 'month'} onClick={() => props.onBranchPeriodChange('month')}>รายเดือน</button>
+              <button type="button" aria-pressed={props.branchPeriod === 'day'} onClick={() => props.onBranchPeriodChange('day')}>รายวัน</button>
+            </div>
+          </div>
+        )}
         <div className="control-group view-control">
           <span className="control-label">View</span>
           <div className="view-actions">
@@ -91,44 +110,32 @@ export function PerformanceToolbar(props: PerformanceToolbarProps) {
       </section>
 
       <section className="filter-bar" aria-label="ตัวกรอง Performance">
-        <label className="search-field">
-          <span>ค้นหา Item</span>
-          <div><Search size={16} aria-hidden="true" /><input type="search" value={props.search} onChange={(event) => props.onSearchChange(event.target.value)} placeholder="SKU หรือรายละเอียด TWD / WA" /></div>
-        </label>
+        <SkuMultiSelect
+          options={props.skuOptions}
+          selectedSkuIds={props.skuIds}
+          loading={props.skuOptionsLoading}
+          onApply={props.onSkuChange}
+        />
 
-        <label>
-          <span>{props.mode === 'sales' && props.dimension !== 'day' ? 'เดือน' : 'ช่วงวันที่'}</span>
-          <div className="select-wrap">
-            <CalendarDays size={16} aria-hidden="true" />
-            {props.mode === 'sales' && props.dimension === 'month' ? (
-              <select aria-label="เดือน" value="all" disabled><option value="all">ทุกเดือนที่มีข้อมูล</option></select>
-            ) : props.mode === 'sales' && props.dimension === 'branch' ? (
+        {props.dimension === 'month' ? (
+          <MonthRangePicker monthFrom={props.monthFrom} monthTo={props.monthTo} months={props.months} onApply={props.onMonthRangeChange} />
+        ) : props.mode === 'sales' && props.dimension === 'branch' && props.branchPeriod === 'month' ? (
+          <label>
+            <span>เดือน</span>
+            <div className="select-wrap">
+              <CalendarDays size={16} aria-hidden="true" />
               <select aria-label="เดือน" value={props.branchMonth} onChange={(event) => props.onBranchMonthChange(event.target.value)}>
                 <option value="latest">เดือนล่าสุด{props.selectedBranchMonth ? ` · ${formatMonth(props.selectedBranchMonth)}` : ''}</option>
                 {props.months.map((month) => <option value={month} key={month}>{formatMonth(month)}</option>)}
               </select>
-            ) : (
-              <select value={props.dateRange} onChange={(event) => props.onDateRangeChange(event.target.value)}><option value="all">ทุกวันที่นำเข้า</option>{props.dates.map((date) => <option value={date} key={date}>{formatDate(date)}</option>)}</select>
-            )}
-          </div>
-        </label>
+            </div>
+          </label>
+        ) : (
+          <DateRangePicker dateFrom={props.dateFrom} dateTo={props.dateTo} availableDates={props.availableDates} onApply={props.onDateRangeChange} />
+        )}
 
-        <label>
-          <span>Branch</span>
-          <select value={props.branchId} onChange={(event) => props.onBranchChange(event.target.value)}>
-            <option value="all">ทุก Branch</option>
-            {props.branches.map((branch) => <option value={branch.id} key={branch.id}>{branch.id} · {branch.name}</option>)}
-          </select>
-        </label>
+        <BranchMultiSelect branches={props.branches} selectedBranchIds={props.branchIds} onApply={props.onBranchChange} />
 
-        <label>
-          <span>Mapping</span>
-          <select value={props.mappingStatus} onChange={(event) => props.onMappingStatusChange(event.target.value as MappingStatus | 'all')}>
-            <option value="all">ทุกสถานะ</option>
-            <option value="confirmed">ยืนยันแล้ว</option>
-            <option value="pending">รอตรวจสอบ</option>
-          </select>
-        </label>
 
         <label className="heatmap-toggle">
           <input type="checkbox" checked={props.heatmap} onChange={(event) => props.onHeatmapChange(event.target.checked)} />
@@ -139,9 +146,6 @@ export function PerformanceToolbar(props: PerformanceToolbarProps) {
     </>
   )
 }
-  const formatDate = (date: string) => new Intl.DateTimeFormat('th-TH-u-ca-gregory', {
-    day: 'numeric', month: 'short', year: 'numeric',
-  }).format(new Date(`${date}T00:00:00`))
 
 const formatMonth = (month: string) => {
   const [year, monthNumber] = month.split('-').map(Number)

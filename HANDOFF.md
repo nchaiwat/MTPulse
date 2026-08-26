@@ -1,8 +1,71 @@
 # MTPulse — Handoff ก่อน Restart
 
-อัปเดตล่าสุด: 21 สิงหาคม 2026 (Asia/Bangkok)
+อัปเดตล่าสุด: 26 สิงหาคม 2026 (Asia/Bangkok)
 
 เอกสารนี้เป็นจุดเริ่มต้นสำหรับการทำงานต่อหลัง Restart เครื่อง ให้เปิดอ่านไฟล์นี้ก่อน แล้วจึงอ่าน `PROJECT_CONTEXT.md`, `PRD.md` และ `implementation_plan.md` เมื่อต้องการรายละเอียดเพิ่ม
+
+## สถานะล่าสุด 26 สิงหาคม 2026 — Initial Import TWD
+
+> ส่วนนี้มีผลเหนือข้อมูลเก่าด้านล่างที่กล่าวถึง VPS, Upload Agent, UNC เดิม หรือจำนวนข้อมูลเดิม
+
+### ข้อกำหนดที่ยืนยันแล้ว
+
+- ระบบจะติดตั้งแบบ On-Premise และเข้าถึง UNC โดยตรง จึงไม่ใช้ Upload Agent
+- UNC หลัก: `\\WA-NAS-IT03\FileShare-2\SaleOut_RPT\`
+- TWD: `\\WA-NAS-IT03\FileShare-2\SaleOut_RPT\TWD\`
+- ตัวอย่าง MT อื่น: TA ใช้ `\\WA-NAS-IT03\FileShare-2\SaleOut_RPT\TA\`
+- RPA สร้างโฟลเดอร์รายวันและวาง Excel ไว้ภายใน ระบบต้องค้นหา `.xls`/`.xlsx` แบบ recursive
+- ห้ามแก้ไข ย้าย เปลี่ยนชื่อ หรือลบไฟล์ต้นฉบับ ให้คัดลอกไปพื้นที่ชั่วคราวก่อนอ่าน แล้วลบเฉพาะไฟล์ชั่วคราว
+- ป้องกัน Import ซ้ำด้วย checksum และ import history โดยคงไฟล์ต้นฉบับไว้
+- Initial historical import ทำครั้งเดียว ส่วน Daily import ใช้เวลา Schedule กลางเพียงเวลาเดียว แต่ตอนนี้ให้ Schedule เป็นค่าว่างไว้ก่อน
+- ไม่ต้องออกแบบ retry/lookback สำหรับกรณี RPA มาช้า เพราะผู้ใช้จะจัด Gap ของ RPA และ Schedule เอง
+
+### ผล Preview จาก UNC — ยังไม่ได้ Import จริง
+
+- พบไฟล์ทั้งหมด 548 ไฟล์
+- ข้อมูล TWD เดิมในฐานข้อมูล: 20 batches ช่วง `2026-07-14` ถึง `2026-08-23` รวม 250,856 fact rows
+- พร้อม Import แบบไม่กำกวม: 455 ไฟล์ / 4,887,580 rows
+- Candidate รวมกรณีเลือกไฟล์แรกของ period ที่ชนกัน: 458 ไฟล์ / 4,922,309 rows
+- ช่วงวันที่ Candidate: `2025-01-02` ถึง `2026-08-24`
+- ซ้ำกับ checksum ในฐานข้อมูล 27 ไฟล์ และ checksum ซ้ำภายในแหล่งข้อมูล 52 ไฟล์
+- ไฟล์ไม่ถูกต้อง 8 ไฟล์: 7 ไฟล์ขนาด 0 byte และ `2025-06-26\AC6C7232-17B9-4895-A0B8-F5FCB31808E1.xls` มีโครงสร้างเสีย
+- วันที่ข้อมูลชนกัน 3 periods จึงยังห้ามเลือกอัตโนมัติหรือ Import ทั้งคู่
+- 457 จาก 458 candidate files มี reconciliation warning ซึ่งสอดคล้องกับพฤติกรรมไฟล์ต้นทาง ให้ใช้ผลรวมระดับแถวและเก็บ source totals ไว้ตรวจสอบตามกติกาที่ตกลงไว้
+- ผล Preview เต็มอยู่ที่ `backend/.tmp_initial_twd_preview.json`
+
+### Period ที่มีไฟล์ขัดแย้ง
+
+1. `2026-01-07`
+   - `2026-01-08`: 11,475 rows, 99 stores, 1,621 SKUs, Amount 1,386,002.85, Qty 440
+   - `2026-01-09`: สรุปเท่ากันแต่ checksum ต่างกัน
+2. `2026-01-22`
+   - `2026-01-23`: 11,417 rows, 99 stores, 1,642 SKUs, Amount 0, Qty 0
+   - `2026-01-24`: 9,346 rows, 92 stores, 1,543 SKUs, Amount 1,074,752.28, Qty 389
+   - เป็นความขัดแย้งชัดเจน ห้ามเลือกอัตโนมัติ
+3. `2026-05-24`
+   - `2026-05-25`: 11,837 rows, 102 stores, 1,918 SKUs, Amount 1,126,720.24, Qty 379
+   - `2026-05-26`: สรุปเท่ากันแต่ checksum ต่างกัน
+
+### จุดเริ่มงานครั้งถัดไป
+
+1. อ่านส่วนสถานะล่าสุดนี้ก่อน และอย่าเริ่ม Preview ใหม่โดยไม่จำเป็น
+2. ขอคำยืนยันผู้ใช้ก่อน Import จริง ข้อเสนอปัจจุบันคือ Import 455 ไฟล์ที่ไม่กำกวมก่อน
+3. ข้าม 79 ไฟล์ซ้ำและ 8 ไฟล์ไม่ถูกต้อง และพัก 3 periods ที่ขัดแย้งไว้ให้ผู้ใช้เลือกภายหลัง
+4. ก่อน Import ประมาณ 4.89 ล้าน rows ให้พิจารณา bulk insert ที่ยังคง business rules และ audit เดิม เพราะ `session.add_all()` อาจช้าเกินไป
+5. หลัง Import ตรวจ batch/fact count, min/max date, duplicate, warning, coverage และ performance ของหน้ารายงาน
+6. ผู้ใช้ยังไม่ได้ยืนยัน Import และ ณ จุด Handoff นี้ยังไม่มี historical file ใดถูกเขียนเข้าฐานข้อมูล
+
+### ไฟล์ชั่วคราวและหมายเหตุฐานข้อมูล
+
+- `backend/.tmp_initial_twd_preview.json` — ผล Preview เต็ม 548 ไฟล์ มี business metadata ห้าม commit
+- `backend/tmp_preview_initial_twd_concurrent.py` — Preview แบบ 4 workers ที่ใช้งานสำเร็จ
+- `backend/.tmp_preview_initial_twd.py` — script แบบ single worker ที่เลิกใช้แล้ว
+- `backend/tmp_preview_marker.txt` — test marker
+- เมื่อจบงานให้ลบไฟล์ชั่วคราวข้างต้น แต่ห้ามลบก่อนนำข้อมูลที่จำเป็นไปใช้งานต่อ
+- `localhost:5432` และ `127.0.0.1:5432` ชี้ไปยัง Windows PostgreSQL อีกตัวและเกิด SSPI failure
+- Preview ครั้งล่าสุดเชื่อม Docker PostgreSQL ผ่าน host IP `192.168.10.140`; IP อาจเปลี่ยน จึงต้องตรวจสอบใหม่ครั้งหน้า
+- ตรวจฐานข้อมูลใน container ได้ด้วย `docker compose exec -T db psql -U mtpulse -d mtpulse ...`
+- ห้ามหยุดหรือแก้ไข Windows PostgreSQL ตัวอื่นโดยไม่ได้รับคำสั่งชัดเจน
 
 ## 1. สถานะปัจจุบัน
 

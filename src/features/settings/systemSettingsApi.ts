@@ -40,6 +40,13 @@ export async function saveTelegramSettings(input: {
   return response.json() as Promise<TelegramSettings>
 }
 
+export async function fetchTelegramToken(): Promise<string> {
+  const response = await fetch(`${apiBaseUrl}/api/settings/system/telegram/token`)
+  if (!response.ok) throw new Error(await detail(response))
+  const payload = await response.json() as { botToken: string }
+  return payload.botToken
+}
+
 export async function testTelegram(): Promise<string> {
   const response = await fetch(`${apiBaseUrl}/api/settings/system/telegram/test`, { method: 'POST' })
   if (!response.ok) throw new Error(await detail(response))

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 import httpx
 from cryptography.fernet import Fernet, InvalidToken
@@ -12,6 +15,7 @@ from app.models import SystemSetting
 TOKEN_KEY = "telegram_bot_token"
 GROUP_KEY = "telegram_group_id"
 NOTIFY_MANUAL_KEY = "telegram_notify_manual_import"
+BANGKOK_TIMEZONE = ZoneInfo("Asia/Bangkok")
 
 
 class SettingsCryptoError(ValueError):
@@ -22,6 +26,25 @@ class SettingsCryptoError(ValueError):
 class TelegramDelivery:
     status: str
     message: str
+
+
+def format_thai_date(value: date) -> str:
+    return value.strftime("%d/%m/%Y")
+
+
+def format_telegram_message(
+    title: str,
+    details: Sequence[str] = (),
+    *,
+    occurred_at: datetime | None = None,
+) -> str:
+    timestamp = occurred_at or datetime.now(BANGKOK_TIMEZONE)
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=BANGKOK_TIMEZONE)
+    else:
+        timestamp = timestamp.astimezone(BANGKOK_TIMEZONE)
+    header = f"📦 MT Pulse · {format_thai_date(timestamp.date())} {timestamp:%H:%M} น."
+    return "\n".join([header, "────────────", title, *details])
 
 
 def _fernet() -> Fernet:
@@ -85,7 +108,10 @@ def _rejected_delivery(response: httpx.Response, payload: dict) -> TelegramDeliv
     error_code = payload.get("error_code") or response.status_code
     description = str(payload.get("description") or "").lower()
     if error_code == 401:
-        return TelegramDelivery("failed", "Bot Token ไม่ถูกต้องหรือถูกยกเลิก")
+        return TelegramDelivery(
+            "failed",
+            "Telegram ปฏิเสธ Bot Token กรุณาตรวจสอบ Token ที่บันทึกไว้",
+        )
     if error_code == 400 and "chat not found" in description:
         return TelegramDelivery(
             "failed",
@@ -99,7 +125,13 @@ def _rejected_delivery(response: httpx.Response, payload: dict) -> TelegramDeliv
     return TelegramDelivery("failed", f"Telegram ปฏิเสธคำขอ (รหัส {error_code})")
 
 
-def send_telegram(session: Session, message: str, *, force: bool = False) -> TelegramDelivery:
+def send_telegram(
+    session: Session,
+    title: str,
+    details: Sequence[str] = (),
+    *,
+    force: bool = False,
+) -> TelegramDelivery:
     if not force and setting_value(session, NOTIFY_MANUAL_KEY) == "false":
         return TelegramDelivery("skipped", "ปิดการแจ้งเตือน Manual Import")
     group_id = setting_value(session, GROUP_KEY)
@@ -112,7 +144,10 @@ def send_telegram(session: Session, message: str, *, force: bool = False) -> Tel
     try:
         response = httpx.post(
             f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": group_id, "text": message},
+            json={
+                "chat_id": group_id,
+                "text": format_telegram_message(title, details),
+            },
             timeout=10,
         )
     except httpx.HTTPError:

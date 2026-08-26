@@ -296,3 +296,73 @@ Discovery สำหรับ Frontend UX Milestone ได้รับอนุ�
 - Confirm แล้วข้อมูล Period ใหม่ปรากฏในรายงานและยอด Reconcile กับ Preview
 - Duplicate ทั้ง checksum และ MT+Period ถูกปฏิเสธโดยไม่สร้าง Fact เพิ่ม
 - Log แสดง Preview, Import, Duplicate, Failed และผล Telegram ด้วยข้อความที่ผู้ใช้เข้าใจได้
+
+## System Monitoring — Phase 1
+
+### วัตถุประสงค์
+
+- เพิ่ม `Monitoring` เป็น Main Menu สำหรับตรวจสุขภาพ Application, PostgreSQL และ Data Pipeline โดยไม่ต้องเข้าถึงเครื่อง Server โดยตรง
+- โหลดสถานะเมื่อเปิดหน้าและเมื่อผู้ใช้กด `Refresh` เท่านั้น ไม่มี Auto Refresh
+- เก็บ Monitoring Snapshot วันละหนึ่งชุดย้อนหลัง 365 วัน เพื่อดูแนวโน้มโดยไม่สร้างภาระระดับนาทีหรือชั่วโมง
+
+### ขอบเขตที่ต้องมี
+
+- Health Cards: API, PostgreSQL, วันที่ข้อมูลล่าสุด, Import ล่าสุด และจำนวน Warning
+- Database Detail: จำนวน Fact Records, ขนาด Database/Table/Index, Dead Tuple, Last Vacuum/Analyze และ Connections เทียบกับค่าสูงสุด
+- Top 10 Slow Queries จาก `pg_stat_statements`: Query แบบ Normalize และย่อ, Calls, Average Time, Total Time และ Rows
+- บันทึก Snapshot หลัง Daily Import สำเร็จ และใช้การเปิด Monitoring ครั้งแรกของวันเป็น Fallback เมื่อวันนั้นไม่มี Import
+- การกด Refresh คำนวณสถานะใหม่และ Upsert Snapshot ของวันปัจจุบัน โดยยังคงมีเพียงหนึ่ง Snapshot ต่อวัน
+- แสดงประวัติรายวันย้อนหลังไม่เกิน 365 วัน
+
+### กฎสถานะเริ่มต้น
+
+- PostgreSQL ติดต่อไม่ได้เป็น Critical
+- Data Date ล่าช้าเกิน Expected Lag สอง Calendar Days เป็น Warning
+- Import ล่าสุดล้มเหลวหรือมี Warning ให้สะท้อนในภาพรวม
+- Connection Usage ตั้งแต่ 80% เป็น Warning และตั้งแต่ 95% เป็น Critical
+- Dead Tuple Ratio ตั้งแต่ 10% เป็น Warning
+- `pg_stat_statements` ใช้งานไม่ได้เป็น Warning พร้อมข้อความอธิบาย
+
+### ไม่รวมใน Phase นี้
+
+- Clear Log, VACUUM, REINDEX, Optimize หรือคำสั่ง Maintenance ใด ๆ
+- Backup/Restore และการตั้งค่า Retention ของ Backup
+- Auto Refresh, Real-time Monitoring และ Snapshot ระดับชั่วโมง
+- Physical Disk Free ของ VPS/Database Volume ซึ่งต้องเชื่อม Host Monitoring ตอน Production
+- Authentication และสิทธิ์ Admin สำหรับ Monitoring
+
+## Requirement เพิ่มเติม: สินค้าทดลองและตัวเลือกหลาย SKU
+
+### Objective
+
+- รองรับ Item ที่ผู้ใช้เพิ่มผ่าน Excel เพื่อใช้เป็นสินค้าทดลอง โดยแยกจากสถานะ Mapping อย่างชัดเจน
+- ให้ผู้ใช้เลือก SKU หลายรายการเพื่อเปรียบเทียบในรายงานได้สะดวก โดยไม่เพิ่มช่องค้นหาซ้ำซ้อน
+
+### Business Rules: สินค้าทดลอง
+
+- `Mapping Status` ยังคงใช้ `confirmed`, `pending` และ `unmatched` ตาม Workflow เดิม
+- เพิ่ม `Item Type` เป็น `normal` หรือ `trial` และ `Report Status` เป็น `active` หรือ `inactive`
+- ไฟล์ Excel เก่าหรือช่องที่ไม่ระบุค่า ให้ถือเป็น `normal + active`
+- Item ทุกประเภทที่เป็น `active` ต้องแสดงและรวมใน KPI, SUM และ Download Excel ตามปกติ
+- `trial + active` แสดงพื้นสีเหลืองอ่อนที่ส่วน Item พร้อม Badge `สินค้าทดลอง` โดยไม่เปลี่ยนสี Cell ตัวเลขหรือ Heatmap
+- `inactive` ต้องไม่แสดงและไม่รวมยอดทั้งข้อมูลปัจจุบันและย้อนหลัง แต่ห้ามลบ Fact, Mapping หรือ Audit History
+- Item ที่ `inactive` ยังต้องอยู่ใน Mapping Export เพื่อให้เปลี่ยนกลับเป็น `active` ผ่าน Excel ได้
+- การกำหนดและเปลี่ยน `Item Type`/`Report Status` ทำผ่าน Mapping Excel เท่านั้น และต้องมี Audit Log
+
+### Workflow: เลือกหลาย SKU
+
+- เปลี่ยนช่องค้นหา Item เดิมเป็นตัวเลือกหลาย SKUที่มีช่องค้นหาอยู่ภายใน Dropdown
+- ค้นหาได้จาก TWD SKU, TWD Description, WA Item และ WA Description
+- รองรับ Checkbox, เลือกทั้งหมดจากผลค้นหา, ล้างการเลือก และปุ่มแสดงผล
+- เมื่อยังไม่เลือก ให้หมายถึง SKU ที่ Active ทั้งหมด; เมื่อเลือกแล้วให้แสดงจำนวน เช่น `เลือก 3 SKU`
+- การค้นหาภายใน Dropdown ต้องไม่ Refresh รายงานจนกดแสดงผล
+- KPI, SUM, Matrix, Pagination, Detail และ Download Excel ต้องใช้ SKU ชุดเดียวกัน
+- Item ที่ `inactive` ต้องไม่ปรากฏในตัวเลือก SKU
+- เก็บ SKU ที่เลือกไว้ใน Current View เช่นเดียวกับ Filter อื่น และใช้ Virtual Scroll/Server-side Query เพื่อรองรับ SKU จำนวนมาก
+
+### Non-goals
+
+- ไม่เพิ่มหน้าจอแก้ Item Type หรือ Report Status ทีละ Item ในหน้า Setting
+- ไม่ใช้สี Cell ใน Excel เป็นข้อมูลสถานะ
+- ไม่ลบข้อมูลย้อนหลังของ Item ที่ inactive
+- ไม่แก้ Logic Branch, Date/Month, Heatmap หรือ Mapping Status เดิมนอกเหนือจากการใช้ Filter Item Active
