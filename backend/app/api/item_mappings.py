@@ -35,7 +35,11 @@ def export_item_mappings(
         raise HTTPException(status_code=404, detail="ไม่พบ Modern Trade รหัส TWD")
 
     min_date, max_date = session.execute(
-        select(func.min(SalesInventoryFact.data_date), func.max(SalesInventoryFact.data_date))
+        select(
+            func.min(SalesInventoryFact.data_date), func.max(SalesInventoryFact.data_date)
+        ).where(
+            SalesInventoryFact.modern_trade_id == modern_trade.id
+        )
     ).one()
     range_from = date_from or min_date or bangkok_today()
     range_to = date_to or max_date or range_from
@@ -46,6 +50,7 @@ def export_item_mappings(
         )
         .where(
             SalesInventoryFact.data_date >= range_from,
+            SalesInventoryFact.modern_trade_id == modern_trade.id,
             SalesInventoryFact.data_date <= range_to,
         )
         .group_by(SalesInventoryFact.source_sku)
@@ -84,6 +89,7 @@ def export_item_mappings(
         )
         .where(
             SalesInventoryFact.data_date >= range_from,
+            SalesInventoryFact.modern_trade_id == modern_trade.id,
             SalesInventoryFact.data_date <= range_to,
         )
         .group_by(SalesInventoryFact.source_branch_code)
@@ -143,7 +149,10 @@ async def import_item_mappings(
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="ไฟล์มีขนาดเกิน 10 MB")
     mapping_date = effective_from or session.scalar(
-        select(func.max(SalesInventoryFact.data_date))
+        select(func.max(SalesInventoryFact.data_date)).where(
+            SalesInventoryFact.modern_trade_id
+            == select(ModernTrade.id).where(ModernTrade.code == "TWD").scalar_subquery()
+        )
     ) or bangkok_today()
     try:
         report = import_item_mapping_workbook(session, content, mapping_date, filename)

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.importers.twd import TwdExtract, extract_twd_file
 from app.models import ImportBatch, ModernTrade, SalesInventoryFact
+from app.services.monthly_sales_summary import refresh_monthly_sales_summary
 
 
 class DuplicateImportError(ValueError):
@@ -48,7 +49,9 @@ def import_twd_extract(session: Session, extract: TwdExtract) -> ImportBatch:
     batch = _build_batch(mt.id, extract)
     session.add(batch)
     session.flush()
-    session.add_all(_build_facts(batch.id, extract))
+    session.add_all(_build_facts(mt.id, batch.id, extract))
+    session.flush()
+    refresh_monthly_sales_summary(session, mt.id, extract.data_date)
     batch.status = "imported_with_warnings" if extract.reconciliation_errors else "imported"
     batch.finished_at = datetime.now(UTC)
     session.commit()
@@ -80,7 +83,9 @@ def replace_twd_batch(
 
     replacement = _build_batch(batch.modern_trade_id, extract)
     session.execute(delete(SalesInventoryFact).where(SalesInventoryFact.batch_id == batch.id))
-    session.add_all(_build_facts(batch.id, extract))
+    session.add_all(_build_facts(batch.modern_trade_id, batch.id, extract))
+    session.flush()
+    refresh_monthly_sales_summary(session, batch.modern_trade_id, extract.data_date)
 
     for field in (
         "source_path",
@@ -110,6 +115,7 @@ def replace_twd_batch(
     session.flush()
     return batch
 
+
 def _build_batch(modern_trade_id: int, extract: TwdExtract) -> ImportBatch:
     summary = extract.summary
     return ImportBatch(
@@ -134,9 +140,12 @@ def _build_batch(modern_trade_id: int, extract: TwdExtract) -> ImportBatch:
     )
 
 
-def _build_facts(batch_id: int, extract: TwdExtract) -> list[SalesInventoryFact]:
+def _build_facts(
+    modern_trade_id: int, batch_id: int, extract: TwdExtract
+) -> list[SalesInventoryFact]:
     return [
         SalesInventoryFact(
+            modern_trade_id=modern_trade_id,
             batch_id=batch_id,
             data_date=extract.data_date,
             source_branch_code=row.branch_code,

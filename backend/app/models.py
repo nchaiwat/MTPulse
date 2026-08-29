@@ -87,10 +87,16 @@ class SalesInventoryFact(Base):
         UniqueConstraint(
             "batch_id", "source_branch_code", "source_sku", name="uq_fact_batch_branch_sku"
         ),
-        Index("ix_fact_date_sku", "data_date", "source_sku"),
-        Index("ix_fact_date_branch", "data_date", "source_branch_code"),
+        Index("ix_fact_mt_date_sku", "modern_trade_id", "data_date", "source_sku"),
+        Index(
+            "ix_fact_mt_date_branch",
+            "modern_trade_id",
+            "data_date",
+            "source_branch_code",
+        ),
     )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    modern_trade_id: Mapped[int] = mapped_column(ForeignKey("modern_trades.id"))
     batch_id: Mapped[int] = mapped_column(ForeignKey("import_batches.id", ondelete="CASCADE"))
     data_date: Mapped[date] = mapped_column(Date)
     source_branch_code: Mapped[str] = mapped_column(String(30))
@@ -110,6 +116,34 @@ class SalesInventoryFact(Base):
     last_sold_date: Mapped[date | None] = mapped_column(Date)
     last_receive_date: Mapped[date | None] = mapped_column(Date)
     batch: Mapped[ImportBatch] = relationship(back_populates="facts")
+
+
+class MonthlySalesSummary(Base):
+    __tablename__ = "monthly_sales_summaries"
+    __table_args__ = (
+        Index(
+            "ix_monthly_sales_mt_month_sku",
+            "modern_trade_id",
+            "month_start",
+            "source_sku",
+        ),
+        Index(
+            "ix_monthly_sales_mt_month_branch",
+            "modern_trade_id",
+            "month_start",
+            "source_branch_code",
+        ),
+    )
+    modern_trade_id: Mapped[int] = mapped_column(
+        ForeignKey("modern_trades.id"), primary_key=True
+    )
+    month_start: Mapped[date] = mapped_column(Date, primary_key=True)
+    source_sku: Mapped[str] = mapped_column(String(50), primary_key=True)
+    source_branch_code: Mapped[str] = mapped_column(String(30), primary_key=True)
+    source_branch_name: Mapped[str] = mapped_column(String(300))
+    source_description: Mapped[str | None] = mapped_column(Text)
+    amount: Mapped[Decimal] = mapped_column(MONEY)
+    sales_qty: Mapped[Decimal] = mapped_column(QUANTITY)
 
 
 class ItemMapping(Base):

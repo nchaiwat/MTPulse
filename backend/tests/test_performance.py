@@ -13,6 +13,7 @@ from app.models import (
     ModernTrade,
     SalesInventoryFact,
 )
+from app.services.monthly_sales_summary import refresh_monthly_sales_summary
 
 
 def test_month_bounds_supports_leap_year() -> None:
@@ -133,6 +134,7 @@ def test_performance_uses_fact_description_when_mapping_description_is_missing()
                     changed_by="test",
                 ),
                 SalesInventoryFact(
+                    modern_trade_id=1,
                     id=1,
                     batch_id=1,
                     data_date=date(2026, 8, 17),
@@ -148,6 +150,8 @@ def test_performance_uses_fact_description_when_mapping_description_is_missing()
                 ),
             ]
         )
+        session.commit()
+        refresh_monthly_sales_summary(session, 1, date(2026, 8, 17))
         session.commit()
 
         result = performance(
@@ -235,6 +239,7 @@ def test_branch_month_uses_current_mapping_for_historical_facts() -> None:
                     changed_by="test",
                 ),
                 SalesInventoryFact(
+                    modern_trade_id=1,
                     id=1,
                     batch_id=1,
                     data_date=date(2026, 7, 26),
@@ -249,6 +254,7 @@ def test_branch_month_uses_current_mapping_for_historical_facts() -> None:
                     stock_on_order=0,
                 ),
                 SalesInventoryFact(
+                    modern_trade_id=1,
                     id=2,
                     batch_id=2,
                     data_date=date(2026, 8, 16),
@@ -264,6 +270,9 @@ def test_branch_month_uses_current_mapping_for_historical_facts() -> None:
                 ),
             ]
         )
+        session.commit()
+        refresh_monthly_sales_summary(session, 1, date(2026, 7, 26))
+        refresh_monthly_sales_summary(session, 1, date(2026, 8, 16))
         session.commit()
 
         result = performance(
@@ -384,6 +393,7 @@ def test_performance_unmatched_visibility_controls_rows_and_every_total() -> Non
 
         def fact(fact_id: int, sku: str, branch: str, amount: int) -> SalesInventoryFact:
             return SalesInventoryFact(
+                modern_trade_id=1,
                 id=fact_id,
                 batch_id=1,
                 data_date=date(2026, 8, 17),
@@ -570,6 +580,7 @@ def test_inactive_item_is_excluded_globally_and_multi_sku_filter_is_consistent()
 
         def fact(fact_id: int, sku: str, amount: int, qty: int) -> SalesInventoryFact:
             return SalesInventoryFact(
+                modern_trade_id=1,
                 id=fact_id,
                 batch_id=1,
                 data_date=date(2026, 8, 17),
@@ -673,6 +684,7 @@ def test_sku_options_uses_latest_fact_description_when_mapping_description_is_mi
         )
         session.add(
             SalesInventoryFact(
+                modern_trade_id=1,
                 id=1,
                 batch_id=1,
                 data_date=date(2026, 8, 23),

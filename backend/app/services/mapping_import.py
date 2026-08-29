@@ -134,9 +134,19 @@ def import_mapping_workbook(
     if modern_trade is None:
         raise ValueError("ยังไม่มี Modern Trade รหัส TWD ในฐานข้อมูล")
 
-    source_items = set(session.scalars(select(distinct(SalesInventoryFact.source_sku))).all())
+    source_items = set(
+        session.scalars(
+            select(distinct(SalesInventoryFact.source_sku)).where(
+                SalesInventoryFact.modern_trade_id == modern_trade.id
+            )
+        ).all()
+    )
     source_branches = set(
-        session.scalars(select(distinct(SalesInventoryFact.source_branch_code))).all()
+        session.scalars(
+            select(distinct(SalesInventoryFact.source_branch_code)).where(
+                SalesInventoryFact.modern_trade_id == modern_trade.id
+            )
+        ).all()
     )
     eligible_items = [item for item in extract.items if item.source_sku in source_items]
     eligible_branches = [
