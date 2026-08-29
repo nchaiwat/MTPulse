@@ -332,6 +332,15 @@ git -c safe.directory=D:/Python/MTPulse status --short --branch
 - เปลี่ยน Matrix รายวันตาม Branch ไปใช้ `grain=branch_range` ซึ่งรวมข้อมูลบน PostgreSQL ก่อนส่ง
 - Raw daily points ยังโหลดแบบ lazy เฉพาะเมื่อเปิด Item Detail จึงไม่ตัดความสามารถดูรายละเอียดเดิม
 - เพิ่ม Loading overlay พร้อม spinner เหนือตารางทั้งตอนเปิดครั้งแรกและตอนเปลี่ยน Filter/Page
-- Regression: Backend ทั้งหมด 46 tests ผ่าน, Frontend ทั้งหมด 34 tests ผ่าน, Ruff files ที่แก้ผ่าน, ESLint `src` ผ่าน และ production build ผ่าน
+- หลัง Deploy `grain=branch_range` เหลือ 8,150 points / 0.83 MB / 0.66–0.74 วินาที และ Item Detail รายวันประมาณ 0.43 วินาที
+- Deployment commit: `726943f Optimize daily branch performance loading`
 
-หลัง Deploy ให้เปรียบเทียบ `/api/performance?grain=branch_range&page=1` กับ baseline ข้างต้น และ smoke test Sales Amount/Qty รายวันทุก Branch, Item Detail และ Download Excel
+## 16. เวลา Asia/Bangkok และแสดง SKU ทั้งหมด
+
+- Database ยังเก็บ timestamp เป็น UTC ตามมาตรฐาน แต่ทุกจุดที่แสดงต่อ User ใช้ Asia/Bangkok (UTC+7)
+- เพิ่ม `backend/app/local_time.py` เป็นจุดกลางสำหรับ Bangkok time
+- แก้เวลาใน Data Coverage Excel ทั้ง `วันที่สร้างรายงาน` และ `Import เมื่อ`, ชื่อไฟล์ Data Coverage/Mapping/Report, Monitoring และ Telegram
+- ตรวจจาก Test Server แล้ว: HTTP header เวลา UTC `04:56` แต่ชื่อไฟล์เป็นเวลาไทย `11:56`; Cell วันที่สร้างรายงานเป็น `11:57`
+- หน้า Setting > ไทวัสดุ > การแสดงผลรายงาน มีตัวเลือก `ทั้งหมด`; Database ใช้ค่า `0` เป็น sentinel และ API แปลงเป็นจำนวน SKU จริงก่อน query
+- Regression: Backend 47 tests, Frontend 35 tests, Ruff, ESLint และ production build ผ่าน
+- Commit/Deployment: `9045ca8 Fix Bangkok time displays and add all SKU option`
