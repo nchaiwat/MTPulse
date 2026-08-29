@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Bell, Eye, EyeOff, Send } from 'lucide-react'
+import { FileShareSettingsCard } from './FileShareSettingsCard'
 import { fetchTelegramSettings, fetchTelegramToken, saveTelegramSettings, testTelegram } from './systemSettingsApi'
 
 type SettingsMessage = { text: string; tone: 'success' | 'error' }
@@ -78,6 +79,7 @@ export function SystemSettingsPage({ embedded = false }: { embedded?: boolean })
 
   return (
     <div className={`system-settings-page ${embedded ? 'system-settings-page-embedded' : 'page-content'}`}>
+      <FileShareSettingsCard />
       <section className="telegram-settings" aria-labelledby="telegram-heading">
         <header>
           <div><span className="setting-icon"><Bell size={19} aria-hidden="true" /></span><div><span className="eyebrow">System notification</span><h3 id="telegram-heading">Telegram</h3><p>ส่งเหตุการณ์สำคัญของ MT Pulse ไปยัง Group กลาง</p></div></div>

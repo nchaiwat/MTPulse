@@ -476,3 +476,97 @@ Backend ในระยะถัดไปจะแยกขอบเขตเช
 - การใช้ Excel Cell Color เป็นสถานะ
 - การลบ Fact หรือ Mapping ของ Item inactive
 - การเปลี่ยน UX/Logic ของ Branch, Date/Month และ Heatmap ที่ไม่เกี่ยวข้อง
+
+# FileShare/UNC Connection — Phase 1 Implementation Plan
+
+## สรุป
+
+เพิ่ม Zone `FileShare` ใน System Settings ให้ Development Admin บันทึกและทดสอบ Base UNC/Credential กลาง พร้อมกำหนด Subfolder ต่อ MT โดยยังไม่ Scan หรือ Import ไฟล์จาก UNC และไม่เปลี่ยน Functional/UI ที่ทำงานดีอยู่แล้ว
+
+## Goals และ Non-goals
+
+### Goals
+
+- เก็บ Base UNC และ NAS Credential ชุดเดียวสำหรับทุก MT อย่างเข้ารหัส
+- เก็บ Source Subfolder ต่อ MT เช่น `TWD` และประกอบ Full UNC ฝั่ง Backend
+- ทดสอบ Read-only access จาก API Container ไปยัง Base UNC และ MT Folder
+- แสดง Secret Reveal เฉพาะ Development/Test Flag และวาง Authorization Boundary สำหรับ AD ในอนาคต
+- บันทึก Audit Event สำหรับ Save และ Test Connection
+
+### Non-goals
+
+- Initial Import, Scheduled Import, Background Worker, Retry หรือ File Claim
+- AD Login/User Management implementation ในรอบนี้
+- การปรับ Report, Mapping, Monitoring, Telegram หรือ Manual Upload เดิม
+
+## Technical Architecture
+
+- เพิ่ม `MTPULSE_AUTH_MODE=development|ad`; Phase นี้ใช้ `development` และ Backend dependency คืน Development System Admin โดยไม่ใช้ Credential ที่ Hard Code ใน Source
+- Admin FileShare endpoints อยู่ใต้ Authorization dependency เดียวกัน เพื่อเปลี่ยนเป็น AD Session/Role ได้ภายหลังโดยไม่รื้อ Business Service
+- Backend เชื่อม SMB โดยตรงจาก Container ไป TCP 445 ตามค่าที่เก็บในฐานข้อมูล ไม่พึ่ง Windows User Session และไม่ต้อง Restart Docker เมื่อแก้ Path
+- ใช้ Encryption Service/Server Key ชุดเดียวกับ System Secret ที่มีอยู่ แต่แยก Setting Keys และ Audit Payload ออกจาก Telegram
+- Test Connection ทำเฉพาะ Connect/List/Read Metadata; ห้ามสร้าง, แก้, ย้าย หรือลบไฟล์บน NAS
+- ตั้ง Timeout และคืน Error Category เช่น DNS/Network, Authentication, Share Not Found, Permission Denied และ MT Folder Missing
+
+## Data Model Draft
+
+- System FileShare Settings: Base UNC, Domain, Username, Encrypted Password, Configured At/By, Last Tested At และ Last Test Result
+- Modern Trade Source Profile: `modern_trade_id`, `source_subfolder`, Enabled และ Audit Metadata
+- ไม่เก็บ Full UNC ซ้ำต่อ MT; Backend ประกอบจาก Base UNC + Subfolder และ Validate ป้องกัน Path Traversal
+- Password และ Secret ห้ามปรากฏใน Audit `before_json`/`after_json`
+
+## API Plan
+
+- `GET /api/admin/fileshare-settings` — คืนค่าที่ Mask แล้วและสถานะ Configured/Test ล่าสุด
+- `PUT /api/admin/fileshare-settings` — บันทึก Base UNC/Domain/Username และแทน Password เฉพาะเมื่อส่งค่าใหม่
+- `POST /api/admin/fileshare-settings/test` — ทดสอบ Credential ที่บันทึกหรือ Draft ที่ Admin กำลังกรอก โดยไม่ Persist Draft อัตโนมัติ
+- `GET /api/admin/modern-trades/sources` — อ่าน Subfolder และ Test Status ของทุก MT
+- `PUT /api/admin/modern-trades/{code}/source` — บันทึก Subfolder ของ MT
+- ทุก Endpoint ใช้ Admin dependency และสร้าง Audit Event ตามความเหมาะสม
+
+## UI Plan
+
+- System Settings เพิ่มกรอบ `FileShare` แยกจากกรอบ `Telegram`
+- Fields: Base UNC, Domain, Username, Password พร้อมปุ่มลูกตาตาม Environment Flag
+- แสดงสถานะ Configured, Last Tested และปุ่ม `ทดสอบการเชื่อมต่อ`
+- ภายในกรอบเดียวกันแสดง MT Source Profiles เป็นรายการ MT Code/Name, Subfolder, Full Path Preview และผลทดสอบ
+- ใช้ Layout/Design Token เดิมและไม่เพิ่มเมนูหลักใหม่
+
+## File และ Module Plan
+
+- `backend/app/config.py`: Auth mode และ Secret Reveal safeguards
+- `backend/app/models.py` + Alembic: FileShare Settings/MT Source Profile fields หรือ tables
+- `backend/app/api/`: Admin FileShare/MT Source endpoints
+- `backend/app/services/`: Secret persistence, UNC normalization และ SMB test adapter
+- `backend/app/main.py`: register router
+- `src/features/settings/`: FileShare Zone, API client, Save/Test states และ masked secret UX
+- Tests: encryption/masking, path validation, role boundary, SMB error mapping, Audit และ UI states
+
+## Phased Implementation
+
+1. เพิ่ม Config, Migration, Models และ encrypted settings พร้อม unit tests
+2. เพิ่ม SMB adapter และ Test Connection API โดย mock network ใน automated tests
+3. เพิ่ม Admin APIs, Audit Log และ MT Source Profile
+4. เพิ่ม FileShare Zone ใน System Settings โดยไม่แก้ Telegram Zone
+5. ทดสอบกับ UNC จริงจาก Test Server, รัน full regression, lint/build และ deploy หลัง Backup
+
+## Verification และ Release Checklist
+
+- Migration upgrade/downgrade ผ่านบนฐานข้อมูลสำเนา
+- Password ถูกเข้ารหัส, ไม่อยู่ใน API/log/audit และช่องว่างไม่ลบค่าที่บันทึกเดิม
+- Development Secret Reveal ทำงานเมื่อ Flag เปิด และถูกปฏิเสธเมื่อ Flag ปิด
+- ทดสอบ `\\WA-NAS-IT03\FileShare-2\SaleOut_RPT\TWD` จาก Test Server แบบ Read-only ได้
+- Wrong Password, DNS/Port 445, Share/Folder ไม่พบ และ Permission Denied แสดงสาเหตุแยกกัน
+- Report, Manual Upload, Mapping, Monitoring และ Telegram regression tests ผ่าน
+
+## Phase ถัดไปหลัง Phase 1
+
+- AD Authentication, User Profile และ Roles: System Admin, Data Operator, Viewer
+- Bootstrap Admin จาก `.env.server`
+- Initial Import แบบ Preview/Confirm ครั้งเดียว
+- Daily Scheduled Import เวลาเดียวสำหรับทุก MT พร้อม Idempotency, Log และ Telegram Summary
+
+## Open Decisions
+
+- AD Server/Domain, LDAPS/StartTLS และ Username format จะกำหนดเมื่อเริ่ม Authentication Phase
+- เลือกและ Pin SMB client dependency หลังพิสูจน์การเชื่อมต่อกับ NAS จริงบน Test Server

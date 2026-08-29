@@ -366,3 +366,60 @@ Discovery สำหรับ Frontend UX Milestone ได้รับอนุ�
 - ไม่ใช้สี Cell ใน Excel เป็นข้อมูลสถานะ
 - ไม่ลบข้อมูลย้อนหลังของ Item ที่ inactive
 - ไม่แก้ Logic Branch, Date/Month, Heatmap หรือ Mapping Status เดิมนอกเหนือจากการใช้ Filter Item Active
+
+## Requirement เพิ่มเติม: FileShare/UNC Connection — Phase 1
+
+### สถานะ
+
+- Discovery ได้ข้อสรุปแล้ว รออนุมัติ Implementation Plan ก่อนเริ่มเขียนโค้ด
+- Requirement นี้แทนแนวคิด On-Premise Upload Agent เดิม เพราะ MT Pulse จะติดตั้ง On-Premise และเข้าถึง FileShare ได้โดยตรง
+
+### Objective
+
+- ให้ System Admin กำหนดและทดสอบการเชื่อมต่อ FileShare กลางจากหน้า System Settings
+- เตรียม Source Profile ของแต่ละ Modern Trade โดยใช้ Base UNC และ Subfolder ของ MT
+- Phase นี้ทำเฉพาะการบันทึกและทดสอบการเชื่อมต่อ ยังไม่ Scan หรือ Import ไฟล์จาก UNC
+
+### Users และ Authorization Direction
+
+- `System Admin`: จัดการ User, AD Setting, FileShare Credential, Base UNC, Telegram, Schedule, Initial Import และ Corrective
+- `Data Operator`: ดูรายงาน, Download, Manual Upload, Mapping, Import Log และ Corrective แต่เข้าถึง Secret/System Settings ไม่ได้
+- `Viewer`: ดูรายงานและ Download เท่านั้น
+- AD ใช้ตรวจ Username/Password เท่านั้น ส่วน User Profile, Active Status และ Role เก็บใน MT Pulse
+- MT Pulse ห้ามเก็บ Password ของ AD
+- Admin คนแรกจะ Bootstrap จาก `MTPULSE_BOOTSTRAP_ADMIN_USERNAME` ใน `.env.server`
+- ระหว่าง Development ใช้ `MTPULSE_AUTH_MODE=development` เพื่อจำลอง System Admin; ห้าม Hard Code User/Password ลง Source Code
+- ภายหลังเปลี่ยนเป็น `MTPULSE_AUTH_MODE=ad` โดยคง Authorization Boundary และ Admin APIs เดิม
+
+### FileShare Configuration
+
+- NAS ใช้ Username/Password ชุดเดียวสำหรับทุก MT
+- System Admin เป็นผู้กำหนด Base UNC, Domain (ถ้ามี), Username และ Password เพียงจุดเดียว
+- ตัวอย่าง Base UNC: `\\WA-NAS-IT03\FileShare-2\SaleOut_RPT`
+- แต่ละ MT เก็บเฉพาะ Subfolder เช่น `TWD` หรือ `TA`; ระบบประกอบ Full UNC โดยไม่ให้ User กรอก Credential ซ้ำ
+- Password ต้องเข้ารหัสในฐานข้อมูลด้วย Server Encryption Key และ API ห้ามส่ง Secret โดยไม่ผ่านสิทธิ์
+- Test/Development เปิดเผย Secret ที่บันทึกแล้วได้เมื่อ Environment Flag อนุญาต; Production ต้องปิดความสามารถนี้
+- ปุ่ม `ทดสอบการเชื่อมต่อ` ต้องตรวจ Server/Share, สิทธิ์อ่าน Base UNC และ Subfolder ของแต่ละ MT โดยไม่แก้ไขหรือลบ Source File
+- ผลทดสอบต้องแสดงข้อความที่เข้าใจได้, เวลาทดสอบ, MT Folder ที่พบ/ไม่พบ และบันทึก Audit Log โดยไม่เปิดเผย Password
+
+### Manual Upload และ Future Import
+
+- User ทุก MT ใช้หน้า Manual Upload กลางร่วมกัน ไม่แยก User ประจำ MT
+- ระบบ Detect MT, Preview และให้ User ยืนยันก่อน Import ทีละไฟล์ตาม Workflow เดิม
+- Initial Import, Scheduled Import และการสั่งนำเข้าใหม่จาก UNC เป็นสิทธิ์ System Admin และอยู่นอก Phase 1
+- ใน Phase ถัดไปใช้เวลา Schedule กลางหนึ่งเวลาและประมวลผลทุก MT; ป้องกันซ้ำด้วย MT, Data Date และ SHA-256
+
+### Success Criteria
+
+- Admin บันทึก Base UNC และ Credential ได้โดย Password ไม่ปรากฏใน API response ปกติ
+- Admin ทดสอบ Base UNC และ TWD Subfolder จาก Ubuntu/Docker ได้ พร้อมผลสำเร็จหรือสาเหตุที่ล้มเหลว
+- Data Operator และ Viewer เรียก Admin FileShare APIs หรืออ่าน Secret ไม่ได้เมื่อเปิด AD Authentication
+- การ Save/Test สร้าง Audit Log และไม่กระทบ Report, Manual Upload, Import Pipeline หรือ Telegram เดิม
+- Backend/Frontend regression tests เดิมผ่านทั้งหมด
+
+### Out of Scope — Phase 1
+
+- Initial Historical Scan/Import
+- Daily Scheduled Import และ Retry Worker
+- AD Login implementation และหน้าจัดการ User
+- การเปลี่ยนหน้า Report, Mapping, Monitoring หรือ Manual Upload เดิม

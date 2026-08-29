@@ -57,7 +57,7 @@ describe('App navigation', () => {
 
     expect(screen.getByRole('heading', { level: 1, name: 'การตั้งค่า' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 2, name: 'ไทวัสดุ' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 2, name: 'การแจ้งเตือน' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'การตั้งค่าระบบ' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'การตั้งค่า' })).toHaveAttribute('aria-current', 'page')
     expect(screen.queryByText('มี Token บันทึกอยู่')).not.toBeInTheDocument()
     expect(screen.getByDisplayValue('https://api.telegram.org')).toBeInTheDocument()

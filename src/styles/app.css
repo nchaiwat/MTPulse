@@ -496,3 +496,111 @@
 @media (max-width: 480px) {
   .date-range-inputs { grid-template-columns: 1fr; }
 }
+/* FileShare system settings */
+.fileshare-settings {
+  max-width: none;
+  overflow: hidden;
+  margin-bottom: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.fileshare-settings > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.fileshare-settings > header > div { display: flex; align-items: center; gap: 10px; }
+.fileshare-settings h3 { margin: 3px 0 2px; font-size: 17px; }
+.fileshare-settings header p { margin: 0; color: var(--text-600); font-size: 11px; }
+.fileshare-form {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1.25fr 1.25fr;
+  align-items: start;
+  gap: 14px;
+  padding: 16px 18px;
+}
+.fileshare-form label, .fileshare-profiles label {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  color: var(--text-900);
+  font-size: 11px;
+  font-weight: 700;
+}
+.fileshare-form input[type="text"], .fileshare-form input[type="password"], .fileshare-profiles input[type="text"] {
+  width: 100%;
+  height: 38px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  color: var(--text-900);
+  background: white;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  font-size: 12px;
+}
+.fileshare-form small, .fileshare-profiles small { color: var(--text-600); font-size: 9px; font-weight: 500; }
+.fileshare-base { grid-column: 1 / 3; }
+.fileshare-profiles { border-top: 1px solid var(--line); }
+.fileshare-profile-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 18px;
+  background: #f7fafa;
+  border-bottom: 1px solid var(--line);
+}
+.fileshare-profile-heading strong, .fileshare-profile-heading small { display: block; }
+.fileshare-profile-heading > span { color: var(--text-600); font-size: 9px; }
+.fileshare-profile-heading > span[data-status="success"] { color: var(--teal-700); }
+.fileshare-profile-heading > span[data-status="failed"] { color: var(--red-700); }
+.fileshare-profiles article {
+  display: grid;
+  grid-template-columns: minmax(145px, .8fr) minmax(160px, 1fr) minmax(280px, 2fr) minmax(145px, .8fr);
+  align-items: center;
+  gap: 14px;
+  padding: 11px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.fileshare-profiles article:last-child { border-bottom: 0; }
+.fileshare-profile-toggle { grid-template-columns: 18px 1fr !important; align-items: center; }
+.fileshare-profile-toggle strong, .fileshare-profile-toggle small { display: block; }
+.fileshare-path { min-width: 0; display: grid; gap: 5px; }
+.fileshare-path > span { color: var(--text-900); font-size: 11px; font-weight: 700; }
+.fileshare-path code {
+  overflow: hidden;
+  padding: 9px 10px;
+  color: var(--text-700);
+  background: #f5f8f8;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fileshare-result { display: flex; align-items: center; gap: 6px; color: var(--text-600); font-size: 10px; }
+.fileshare-result[data-status="success"] { color: var(--teal-700); }
+.fileshare-result[data-status="failed"] { color: var(--red-700); }
+.empty-fileshare-profile { margin: 0; padding: 20px; color: var(--text-600); text-align: center; font-size: 10px; }
+.fileshare-settings > footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--line);
+}
+@media (max-width: 900px) {
+  .fileshare-form { grid-template-columns: 1fr 1fr; }
+  .fileshare-base { grid-column: 1 / -1; }
+  .fileshare-profiles article { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 760px) {
+  .fileshare-settings > header { align-items: flex-start; flex-direction: column; }
+  .fileshare-form, .fileshare-profiles article { grid-template-columns: 1fr; }
+  .fileshare-base { grid-column: auto; }
+  .fileshare-profile-heading { align-items: flex-start; flex-direction: column; }
+}

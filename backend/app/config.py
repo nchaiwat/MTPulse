@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -10,6 +11,7 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173"]
     settings_encryption_key: str | None = None
     allow_secret_reveal: bool = False
+    auth_mode: Literal["development", "ad"] = "development"
 
 
 @lru_cache

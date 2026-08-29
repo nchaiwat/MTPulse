@@ -25,7 +25,7 @@ export function SettingsPage({ focusCoverageKey = 0 }: { focusCoverageKey?: numb
       <section className="settings-zone" aria-labelledby="system-zone-heading">
         <header className="settings-zone-heading">
           <span className="settings-zone-icon"><Bell size={19} aria-hidden="true" /></span>
-          <div><span className="eyebrow">System</span><h2 id="system-zone-heading">การแจ้งเตือน</h2><p>กำหนดช่องทางแจ้งเหตุการณ์สำคัญของระบบ</p></div>
+          <div><span className="eyebrow">System</span><h2 id="system-zone-heading">การตั้งค่าระบบ</h2><p>กำหนดการเชื่อมต่อข้อมูลและการแจ้งเตือนส่วนกลาง</p></div>
         </header>
         <SystemSettingsPage embedded />
       </section>

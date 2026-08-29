@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 
 from app.api.data_coverage import router as data_coverage_router
+from app.api.fileshare_settings import router as fileshare_settings_router
 from app.api.import_correctives import router as import_correctives_router
 from app.api.imports import router as imports_router
 from app.api.item_mappings import router as item_mappings_router
@@ -29,6 +30,7 @@ app.include_router(imports_router)
 app.include_router(import_correctives_router)
 app.include_router(system_settings_router)
 app.include_router(twd_settings_router)
+app.include_router(fileshare_settings_router)
 app.include_router(monitoring_router)
 
 

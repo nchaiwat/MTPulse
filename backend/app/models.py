@@ -39,6 +39,10 @@ class ModernTrade(Base):
     report_page_size: Mapped[int] = mapped_column(
         Integer, default=25, server_default="25"
     )
+    source_subfolder: Mapped[str | None] = mapped_column(String(255))
+    source_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
 
 
 class ImportBatch(Base):
