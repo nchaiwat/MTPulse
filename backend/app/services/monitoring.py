@@ -3,15 +3,14 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta
 from decimal import Decimal
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.local_time import bangkok_now
 from app.models import ImportBatch, ModernTrade, MonitoringSnapshot
 
-BANGKOK_TIMEZONE = ZoneInfo("Asia/Bangkok")
 STATUS_RANK = {"healthy": 0, "warning": 1, "critical": 2}
 
 
@@ -70,7 +69,7 @@ def _slow_queries(session: Session) -> tuple[bool, list[dict[str, object]]]:
 
 
 def collect_monitoring_metrics(session: Session) -> dict[str, object]:
-    now = datetime.now(BANGKOK_TIMEZONE)
+    now = bangkok_now()
     fact_count = int(
         session.scalar(select(func.coalesce(func.sum(ImportBatch.row_count), 0))) or 0
     )
@@ -260,7 +259,7 @@ def capture_monitoring_snapshot(
     upsert_today: bool,
 ) -> dict[str, object]:
     metrics = collect_monitoring_metrics(session)
-    snapshot_date = datetime.now(BANGKOK_TIMEZONE).date()
+    snapshot_date = bangkok_now().date()
     snapshot = session.scalar(
         select(MonitoringSnapshot).where(MonitoringSnapshot.snapshot_date == snapshot_date)
     )

@@ -8,6 +8,8 @@ import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
+from app.local_time import as_bangkok, as_bangkok_excel, bangkok_now
+
 
 @dataclass(frozen=True)
 class CoverageBatch:
@@ -26,7 +28,7 @@ def data_coverage_filename(
     year: int,
     current_time: datetime | None = None,
 ) -> str:
-    timestamp = (current_time or datetime.now()).strftime("%Y%m%d_%H%M%S")
+    timestamp = as_bangkok(current_time or bangkok_now()).strftime("%Y%m%d_%H%M%S")
     return f"{mt_code}_Data_Coverage_{year}_{timestamp}.xlsx"
 
 
@@ -53,6 +55,7 @@ def build_data_coverage_workbook(
     year: int,
     end_date: date,
     batches: list[CoverageBatch],
+    current_time: datetime | None = None,
 ) -> bytes:
     start_date = date(year, 1, 1)
     dates = _dates_in_range(start_date, end_date)
@@ -83,7 +86,7 @@ def build_data_coverage_workbook(
         ("วันที่มีข้อมูล", None),
         ("วันที่ขาดข้อมูล", None),
         ("ความครบถ้วน", None),
-        ("วันที่สร้างรายงาน", datetime.now()),
+        ("วันที่สร้างรายงาน", as_bangkok_excel(current_time or bangkok_now())),
     )
     for row_number, (label, value) in enumerate(summary_rows, start=3):
         summary.cell(row_number, 1, label)
@@ -151,9 +154,7 @@ def build_data_coverage_workbook(
                 if batch.status == "imported_with_warnings"
                 else "สำเร็จ"
             )
-        finished_at = batch.finished_at if batch else None
-        if finished_at and finished_at.tzinfo:
-            finished_at = finished_at.replace(tzinfo=None)
+        finished_at = as_bangkok_excel(batch.finished_at) if batch and batch.finished_at else None
         values = (
             data_date,
             _thai_day_name(data_date),

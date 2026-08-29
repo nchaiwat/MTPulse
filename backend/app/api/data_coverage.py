@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_session
+from app.local_time import bangkok_today
 from app.models import ImportBatch, ModernTrade
 from app.services.data_coverage_export import (
     CoverageBatch,
@@ -26,7 +27,7 @@ def export_data_coverage(
     mt_code: Annotated[str, Query(min_length=1, max_length=20)],
     year: Annotated[int, Query(ge=2025, le=9999)],
 ) -> StreamingResponse:
-    today = date.today()
+    today = bangkok_today()
     if year > today.year:
         raise HTTPException(status_code=422, detail="เลือกปีได้ไม่เกินปีปัจจุบัน")
 

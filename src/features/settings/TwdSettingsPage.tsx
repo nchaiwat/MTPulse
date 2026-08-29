@@ -121,7 +121,7 @@ export function TwdSettingsPage({ embedded = false }: { embedded?: boolean }) {
         ...current,
         reportPageSize: saved.reportPageSize,
       }))
-      setMessage(`ตั้งค่ารายงานให้แสดง ${saved.reportPageSize} SKU ต่อหน้าแล้ว`)
+      setMessage(saved.reportPageSize === 0 ? 'ตั้งค่ารายงานให้แสดง SKU ทั้งหมดแล้ว' : `ตั้งค่ารายงานให้แสดง ${saved.reportPageSize} SKU ต่อหน้าแล้ว`)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'บันทึกจำนวน SKU ต่อหน้าไม่สำเร็จ')
     } finally {
@@ -195,6 +195,7 @@ export function TwdSettingsPage({ embedded = false }: { embedded?: boolean }) {
           <div className="report-display-actions">
             <label htmlFor="report-page-size">SKU ต่อหน้า</label>
             <select id="report-page-size" aria-label="จำนวน SKU ต่อหน้า" value={settings.reportPageSize} disabled={isLoading || isPageSizeUpdating} onChange={(event) => void handlePageSizeChange(Number(event.target.value))}>
+              <option value={0}>ทั้งหมด</option>
               {[25, 50, 100].map((size) => <option key={size} value={size}>{size} SKU</option>)}
             </select>
           </div>

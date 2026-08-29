@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from io import BytesIO
 from zipfile import ZipFile
 
@@ -279,6 +279,11 @@ def test_export_filename_includes_hhmmss() -> None:
         date(2026, 8, 17),
         datetime(2026, 8, 24, 14, 5, 9),
     ) == "TWD_Item_Mapping_2026-08-16_2026-08-17_140509.xlsx"
+    assert export_filename(
+        date(2026, 8, 16),
+        date(2026, 8, 17),
+        datetime(2026, 8, 29, 17, 30, tzinfo=UTC),
+    ) == "TWD_Item_Mapping_2026-08-16_2026-08-17_003000.xlsx"
 
 def test_export_and_parse_item_report_metadata() -> None:
     content = build_item_mapping_workbook(

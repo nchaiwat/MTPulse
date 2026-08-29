@@ -444,6 +444,22 @@ def test_performance_unmatched_visibility_controls_rows_and_every_total() -> Non
             grain="day",
             period_month=None,
         )
+        modern_trade.report_page_size = 0
+        session.commit()
+        all_skus = performance(
+            session,
+            date_from=date(2026, 8, 17),
+            date_to=date(2026, 8, 17),
+            page=1,
+            page_size=None,
+            branch_id=None,
+            branch_ids=None,
+            mapping_status=None,
+            hide_unmapped=False,
+            search=None,
+            grain="day",
+            period_month=None,
+        )
 
     assert hidden["summary"] == {"amount": 100.0, "qty": 1.0, "mappingAttention": 0}
     assert hidden["meta"]["totalSkus"] == 1
@@ -464,6 +480,9 @@ def test_performance_unmatched_visibility_controls_rows_and_every_total() -> Non
     assert selected["summary"]["amount"] == 300.0
     assert selected["columnTotals"] == {"MAPPED-BRANCH": {"amount": 300.0, "qty": 2.0}}
     assert selected["meta"]["pageSize"] == 50
+    assert all_skus["meta"]["pageSize"] == 2
+    assert all_skus["meta"]["totalPages"] == 1
+    assert len(all_skus["items"]) == 2
 
 
 def test_inactive_item_is_excluded_globally_and_multi_sku_filter_is_consistent() -> None:

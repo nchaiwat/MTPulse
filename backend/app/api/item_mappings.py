@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.database import get_session
+from app.local_time import bangkok_today
 from app.models import BranchMapping, ItemMapping, ModernTrade, SalesInventoryFact
 from app.services.item_mapping_exchange import (
     ExportBranch,
@@ -36,7 +37,7 @@ def export_item_mappings(
     min_date, max_date = session.execute(
         select(func.min(SalesInventoryFact.data_date), func.max(SalesInventoryFact.data_date))
     ).one()
-    range_from = date_from or min_date or date.today()
+    range_from = date_from or min_date or bangkok_today()
     range_to = date_to or max_date or range_from
     source_rows = session.execute(
         select(
@@ -143,7 +144,7 @@ async def import_item_mappings(
         raise HTTPException(status_code=413, detail="ไฟล์มีขนาดเกิน 10 MB")
     mapping_date = effective_from or session.scalar(
         select(func.max(SalesInventoryFact.data_date))
-    ) or date.today()
+    ) or bangkok_today()
     try:
         report = import_item_mapping_workbook(session, content, mapping_date, filename)
     except ValueError as exc:

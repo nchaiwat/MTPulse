@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from io import BytesIO
 
 import openpyxl
@@ -158,3 +158,10 @@ def test_performance_export_filename_has_view_and_unique_timestamp() -> None:
     )
 
     assert filename == "TWD_Sales_Amount_Branch_20260825_123456.xlsx"
+
+    assert performance_export_filename(
+        "sales",
+        "amount",
+        "day",
+        datetime(2026, 8, 29, 17, 30, tzinfo=UTC),
+    ) == "TWD_Sales_Amount_Branch_20260830_003000.xlsx"

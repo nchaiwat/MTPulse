@@ -120,10 +120,10 @@ def update_report_page_size(
     update: ReportPageSizeUpdate,
     session: Annotated[Session, Depends(get_session)],
 ) -> dict:
-    if update.report_page_size not in (25, 50, 100):
+    if update.report_page_size not in (0, 25, 50, 100):
         raise HTTPException(
             status_code=422,
-            detail="จำนวน SKU ต่อหน้าต้องเป็น 25, 50 หรือ 100",
+            detail="จำนวน SKU ต่อหน้าต้องเป็น ทั้งหมด, 25, 50 หรือ 100",
         )
     modern_trade = _twd(session)
     before = {"report_page_size": modern_trade.report_page_size}

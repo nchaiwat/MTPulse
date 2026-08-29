@@ -5,6 +5,8 @@ import openpyxl
 from openpyxl.formatting.rule import CellIsRule, ColorScaleRule
 from openpyxl.styles import Alignment, Font, PatternFill
 
+from app.local_time import as_bangkok, bangkok_now
+
 METRIC_LABELS = {
     "amount": "Amount",
     "qty": "Qty",
@@ -20,7 +22,7 @@ def _display_date(value: str) -> str:
 def performance_export_filename(
     mode: str, metric: str, grain: str, current_time: datetime | None = None
 ) -> str:
-    timestamp = (current_time or datetime.now()).strftime("%Y%m%d_%H%M%S")
+    timestamp = as_bangkok(current_time or bangkok_now()).strftime("%Y%m%d_%H%M%S")
     view = (
         "Branch"
         if grain in {"branch_month", "branch_range", "day"}
@@ -98,7 +100,7 @@ def build_performance_workbook(
         else "ไม่มีข้อมูล"
     )
     sheet.merge_cells(start_row=2, start_column=1, end_row=2, end_column=len(headers))
-    sheet.cell(2, 1, f"ช่วงข้อมูล: {period} | Export: {datetime.now():%d/%m/%Y %H:%M:%S}")
+    sheet.cell(2, 1, f"ช่วงข้อมูล: {period} | Export: {bangkok_now():%d/%m/%Y %H:%M:%S}")
     sheet.cell(4, 1, "SUM")
     for column, header in enumerate(headers, start=1):
         sheet.cell(5, column, header)

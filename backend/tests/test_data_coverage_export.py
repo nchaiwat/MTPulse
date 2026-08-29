@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from io import BytesIO
 
 import openpyxl
@@ -63,3 +63,36 @@ def test_data_coverage_filename_contains_mt_year_and_timestamp() -> None:
     )
 
     assert filename == "TWD_Data_Coverage_2026_20260825_143510.xlsx"
+
+
+def test_data_coverage_times_are_exported_in_bangkok_time() -> None:
+    content = build_data_coverage_workbook(
+        mt_code="TWD",
+        mt_name="ไทวัสดุ",
+        year=2026,
+        end_date=date(2026, 1, 1),
+        batches=[
+            CoverageBatch(
+                batch_id=1,
+                data_date=date(2026, 1, 1),
+                status="imported",
+                branch_count=90,
+                item_count=113,
+                row_count=1000,
+                source_filename="source.xlsx",
+                finished_at=datetime(2026, 1, 1, 1, 30, tzinfo=UTC),
+            )
+        ],
+        current_time=datetime(2026, 8, 29, 4, 25, 37, tzinfo=UTC),
+    )
+
+    workbook = openpyxl.load_workbook(BytesIO(content), data_only=False)
+    assert workbook["สรุป"]["B10"].value == datetime(2026, 8, 29, 11, 25, 37)
+    assert workbook["รายละเอียดรายวัน"]["K2"].value == datetime(2026, 1, 1, 8, 30)
+    workbook.close()
+
+    assert data_coverage_filename(
+        "TWD",
+        2026,
+        datetime(2026, 8, 29, 17, 30, tzinfo=UTC),
+    ) == "TWD_Data_Coverage_2026_20260830_003000.xlsx"

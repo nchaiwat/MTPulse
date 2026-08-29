@@ -11,6 +11,7 @@ from sqlalchemy import Integer, cast, distinct, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.database import get_session
+from app.local_time import bangkok_today
 from app.models import BranchMapping, ImportBatch, ItemMapping, ModernTrade, SalesInventoryFact
 from app.services.performance_export import (
     build_performance_workbook,
@@ -81,7 +82,7 @@ def performance(
     available_months = sorted({value.strftime("%Y-%m") for value in all_dates})
     min_date = all_dates[0] if all_dates else None
     max_date = all_dates[-1] if all_dates else None
-    range_from = date_from or min_date or date.today()
+    range_from = date_from or min_date or bangkok_today()
     range_to = date_to or max_date or range_from
     selected_month = None
     if grain == "branch_month":
@@ -102,7 +103,7 @@ def performance(
         filters.append(SalesInventoryFact.data_date >= range_from)
     if date_to or grain == "branch_month":
         filters.append(SalesInventoryFact.data_date <= range_to)
-    resolved_page_size = page_size or modern_trade.report_page_size
+    requested_page_size = page_size if page_size is not None else modern_trade.report_page_size
     twd_id = modern_trade.id
     mapping_reference_date = max_date or range_to
     active_mapping_filters = (
@@ -192,6 +193,7 @@ def performance(
         mapping_skus = select(ItemMapping.source_sku).where(*mapping_candidate_filters)
         candidate_skus = fact_skus.union(mapping_skus).subquery()
     total_skus = session.scalar(select(func.count()).select_from(candidate_skus)) or 0
+    resolved_page_size = max(total_skus, 1) if requested_page_size == 0 else requested_page_size
     total_amount, total_qty = session.execute(
         select(
             func.coalesce(func.sum(SalesInventoryFact.amount), 0),
@@ -547,7 +549,7 @@ def sku_options(
             ImportBatch.modern_trade_id == modern_trade.id,
             ImportBatch.status.in_(("imported", "imported_with_warnings")),
         )
-    ) or date.today()
+    ) or bangkok_today()
     active_mapping_filters = (
         ItemMapping.modern_trade_id == modern_trade.id,
         ItemMapping.effective_from <= mapping_reference_date,

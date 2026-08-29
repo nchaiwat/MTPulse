@@ -3,20 +3,18 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
-from zoneinfo import ZoneInfo
 
 import httpx
 from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.local_time import BANGKOK_TIMEZONE, bangkok_now
 from app.models import SystemSetting
 
 TOKEN_KEY = "telegram_bot_token"
 GROUP_KEY = "telegram_group_id"
 NOTIFY_MANUAL_KEY = "telegram_notify_manual_import"
-BANGKOK_TIMEZONE = ZoneInfo("Asia/Bangkok")
-
 
 class SettingsCryptoError(ValueError):
     pass
@@ -38,7 +36,7 @@ def format_telegram_message(
     *,
     occurred_at: datetime | None = None,
 ) -> str:
-    timestamp = occurred_at or datetime.now(BANGKOK_TIMEZONE)
+    timestamp = occurred_at or bangkok_now()
     if timestamp.tzinfo is None:
         timestamp = timestamp.replace(tzinfo=BANGKOK_TIMEZONE)
     else:

@@ -12,13 +12,14 @@ from openpyxl.worksheet.table import Table, TableStyleInfo
 from sqlalchemy import distinct, select
 from sqlalchemy.orm import Session
 
+from app.local_time import as_bangkok, bangkok_now
 from app.models import AuditEvent, BranchMapping, ItemMapping, ModernTrade, SalesInventoryFact
 
 
 def export_filename(
     date_from: date, date_to: date, current_time: datetime | None = None
 ) -> str:
-    timestamp = (current_time or datetime.now()).strftime("%H%M%S")
+    timestamp = as_bangkok(current_time or bangkok_now()).strftime("%H%M%S")
     return (
         f"TWD_Item_Mapping_{date_from.isoformat()}_{date_to.isoformat()}_"
         f"{timestamp}.xlsx"
