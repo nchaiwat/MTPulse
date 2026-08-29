@@ -7,6 +7,17 @@ afterEach(() => window.localStorage.removeItem('mtpulse.performance.twd.current-
 
 
 describe('PerformancePage', () => {
+  it('shows a visible loading indicator over the matrix while refreshing data', async () => {
+    const user = userEvent.setup()
+    render(<PerformancePage initialData={samplePerformanceResponse} />)
+
+    await user.click(screen.getByRole('button', { name: 'รายวัน' }))
+
+    const loading = screen.getByRole('status', { name: 'กำลังโหลดข้อมูล Performance' })
+    expect(loading).toHaveTextContent('กำลังโหลดข้อมูล…')
+    expect(loading.querySelector('svg')).toHaveClass('matrix-loading-spinner')
+  })
+
   it('switches between branch and day matrix views', async () => {
     const user = userEvent.setup()
     render(<PerformancePage initialData={samplePerformanceResponse} />)

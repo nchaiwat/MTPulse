@@ -152,6 +152,11 @@
 .matrix-frame { position: relative; min-width: 0; background: var(--surface); border: 1px solid var(--line); }
 .matrix-frame .matrix-scroll { transition: opacity 160ms ease; }
 .matrix-frame[data-loading] .matrix-scroll { opacity: .58; }
+.matrix-loading-overlay { position: absolute; inset: 15px 0 49px; z-index: 20; display: grid; place-items: center; background: rgb(247 249 249 / .72); backdrop-filter: blur(1px); }
+.matrix-loading-state { display: grid; justify-items: center; gap: 6px; padding: 16px 22px; color: var(--text-600); background: rgb(255 255 255 / .96); border: 1px solid var(--line-strong); border-radius: 8px; box-shadow: 0 8px 24px rgb(16 38 61 / .12); font-size: 11px; }
+.matrix-loading-state strong { color: var(--text-900); font-size: 12px; }
+.matrix-loading-spinner { color: var(--teal-600); animation: matrix-spin 800ms linear infinite; }
+@keyframes matrix-spin { to { transform: rotate(360deg); } }
 .matrix-top-scroll { width: 100%; height: 15px; overflow-x: auto; overflow-y: hidden; background: #f7f9f9; border-bottom: 1px solid var(--line); }
 .matrix-top-scroll:focus-visible { outline: 2px solid var(--teal-600); outline-offset: -2px; }
 .matrix-top-scroll-spacer { height: 1px; }
@@ -208,13 +213,17 @@
 .page-jump input { width: 54px; height: 36px; padding: 0 5px; color: var(--text-900); background: var(--surface); border: 1px solid var(--line-strong); border-radius: 4px; text-align: center; font-family: "Cascadia Mono", Consolas, monospace; font-size: 11px; font-weight: 700; }
 .empty-state { min-height: 300px; display: grid; place-content: center; gap: 5px; color: var(--text-600); text-align: center; background: var(--surface); border: 1px solid var(--line); }
 .empty-state strong { color: var(--text-900); }
-.matrix-skeleton { min-height: 340px; display: grid; align-content: start; gap: 1px; padding-top: 48px; overflow: hidden; background: var(--line); border: 1px solid var(--line); }
+.matrix-skeleton { position: relative; min-height: 340px; display: grid; align-content: start; gap: 1px; padding-top: 48px; overflow: hidden; background: var(--line); border: 1px solid var(--line); }
+.matrix-skeleton .matrix-loading-state { position: absolute; inset: 50% auto auto 50%; z-index: 1; transform: translate(-50%, -50%); }
 .matrix-skeleton span { height: 41px; background: linear-gradient(90deg, #f7f9f9 20%, #e9efef 50%, #f7f9f9 80%); background-size: 200% 100%; animation: skeleton-pulse 1.2s ease-in-out infinite; }
 @keyframes skeleton-pulse { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { .matrix-loading-spinner { animation: none; } }
 .drawer-layer { position: fixed; inset: 0; z-index: 50; display: flex; justify-content: flex-end; background: rgb(10 26 42 / .32); }
 .detail-drawer { width: min(540px, 100vw); height: 100%; overflow: auto; color: var(--text-900); background: var(--surface); box-shadow: var(--shadow-drawer); animation: drawer-in 180ms ease-out; }
 @keyframes drawer-in { from { transform: translateX(24px); opacity: .6; } to { transform: translateX(0); opacity: 1; } }
 .drawer-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 20px; color: white; background: var(--ink-900); }
+.drawer-detail-loading, .drawer-detail-error { min-height: 180px; display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--text-600); border: 1px solid var(--line); }
+.drawer-detail-error { color: var(--red-700); background: var(--red-100); }
 .drawer-header .eyebrow { color: #9fb3c5; }
 .drawer-header h2 { margin: 4px 0; font-family: "Cascadia Mono", Consolas, monospace; font-size: 22px; }
 .drawer-header p { max-width: 450px; margin: 0; color: #c6d4df; font-size: 12px; line-height: 1.45; }

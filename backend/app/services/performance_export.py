@@ -21,7 +21,13 @@ def performance_export_filename(
     mode: str, metric: str, grain: str, current_time: datetime | None = None
 ) -> str:
     timestamp = (current_time or datetime.now()).strftime("%Y%m%d_%H%M%S")
-    view = "Branch" if grain in {"branch_month", "day"} else "Month" if grain == "month" else "Date"
+    view = (
+        "Branch"
+        if grain in {"branch_month", "branch_range", "day"}
+        else "Month"
+        if grain == "month"
+        else "Date"
+    )
     return f"TWD_{mode.title()}_{METRIC_LABELS[metric].replace(' ', '')}_{view}_{timestamp}.xlsx"
 
 
@@ -36,7 +42,11 @@ def build_performance_workbook(
     branch_ids: list[str] | None = None,
 ) -> bytes:
     dimension = (
-        "branch" if grain in {"branch_month", "day"} else "month" if grain == "month" else "date"
+        "branch"
+        if grain in {"branch_month", "branch_range", "day"}
+        else "month"
+        if grain == "month"
+        else "date"
     )
     dates = list(report["dates"])
     selected_dates = (

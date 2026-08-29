@@ -3,7 +3,7 @@ import { CheckCircle2, Clock3, Download, FileCheck2, TriangleAlert } from 'lucid
 import { ItemDetailDrawer } from './ItemDetailDrawer'
 import { PerformanceMatrix } from './PerformanceMatrix'
 import { PerformanceToolbar } from './PerformanceToolbar'
-import { downloadPerformanceReport, fetchPerformance, fetchSkuOptions } from './performanceApi'
+import { downloadPerformanceReport, fetchPerformance, fetchPerformanceItemDetail, fetchSkuOptions } from './performanceApi'
 import { formatMetric, monthKey, monthKeys, pointsForView, sumMetric } from './performanceMath'
 import type { Branch, BranchPeriod, Dimension, Metric, Mode, PerformanceItem, PerformanceResponse, SelectedCell, SkuOption } from './types'
 import { formatDisplayDate } from '../../shared/dateFormat'
@@ -108,6 +108,7 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
   const [heatmap, setHeatmap] = useState(savedView.heatmap)
   const [showDescriptions, setShowDescriptions] = useState(savedView.showDescriptions)
   const [selected, setSelected] = useState<SelectedCell | null>(null)
+  const [detailResult, setDetailResult] = useState<{ key: string, item: PerformanceItem | null, error: string | null } | null>(null)
   const [isDownloading, setIsDownloading] = useState(false)
   const [downloadMessage, setDownloadMessage] = useState<{ kind: 'success' | 'error', text: string } | null>(null)
   const availableDates = data?.availableDates ?? data?.dates ?? emptyDates
@@ -169,6 +170,34 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
       .finally(() => { if (!controller.signal.aborted) setIsLoading(false) })
     return () => controller.abort()
   }, [branchIds, branchMonth, branchPeriod, dateFrom, dateTo, dimension, initialData, mode, monthFrom, monthTo, page, skuIds])
+
+  const needsDailyDetail = Boolean(selected && !initialData && mode === 'sales' && dimension === 'branch' && branchPeriod === 'day')
+  const detailRequestKey = needsDailyDetail && selected
+    ? [selected.sku, dateFrom, dateTo, branchIds.join(','), monthFrom, monthTo].join('|')
+    : ''
+  useEffect(() => {
+    if (!selected?.sku || !detailRequestKey) return
+    const controller = new AbortController()
+    fetchPerformanceItemDetail({
+      dateFrom,
+      dateTo,
+      branchIds,
+      skuIds,
+      search: '',
+      page: 1,
+      monthFrom,
+      monthTo,
+      dimension,
+      mode,
+      branchMonth,
+      branchPeriod,
+    }, selected.sku, controller.signal)
+      .then((item) => setDetailResult({ key: detailRequestKey, item, error: null }))
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) setDetailResult({ key: detailRequestKey, item: null, error: error instanceof Error ? error.message : 'โหลดรายละเอียดรายวันไม่สำเร็จ' })
+      })
+    return () => controller.abort()
+  }, [branchIds, branchMonth, branchPeriod, dateFrom, dateTo, detailRequestKey, dimension, mode, monthFrom, monthTo, selected?.sku, skuIds])
 
   const handleDownload = async () => {
     setIsDownloading(true)
@@ -233,6 +262,8 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
     ? data.meta.totalBranches
     : new Set(allPoints.map((point) => point.branchId)).size
   const selectedItem = selected ? performanceItems.find((item) => item.sku === selected.sku) : undefined
+  const currentDetail = detailResult?.key === detailRequestKey ? detailResult : null
+  const detailLoading = Boolean(detailRequestKey && !currentDetail)
   const latestImport = data?.latestImport
   const latestDate = latestImport?.dataDate
     ? formatDisplayDate(latestImport.dataDate)
@@ -330,7 +361,7 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
       </div>
 
       {selected && selectedItem && (
-        <ItemDetailDrawer item={selectedItem} selected={selected} dates={selectedDates} branchIds={branchIds} metric={metric} branches={branches} onClose={() => setSelected(null)} />
+        <ItemDetailDrawer item={currentDetail?.item ?? selectedItem} selected={selected} dates={selectedDates} branchIds={branchIds} metric={metric} branches={branches} isLoading={detailLoading} loadError={currentDetail?.error} onClose={() => setSelected(null)} />
       )}
     </>
   )

@@ -61,7 +61,10 @@ def performance(
     mapping_status: Annotated[Literal["confirmed", "pending", "unmatched"] | None, Query()] = None,
     hide_unmapped: Annotated[bool, Query()] = False,
     search: Annotated[str | None, Query(max_length=200)] = None,
-    grain: Annotated[Literal["day", "day_total", "month", "branch_month"], Query()] = "day",
+    grain: Annotated[
+        Literal["day", "day_total", "month", "branch_month", "branch_range"],
+        Query(),
+    ] = "day",
     period_month: Annotated[str | None, Query(max_length=7)] = None,
 ) -> dict:
     modern_trade = session.scalar(select(ModernTrade).where(ModernTrade.code == "TWD"))
@@ -215,7 +218,7 @@ def performance(
         or 0
     )
     column_totals: dict[str, dict[str, float]] = {}
-    if grain in ("branch_month", "day"):
+    if grain in ("branch_month", "branch_range", "day"):
         total_rows = session.execute(
             select(
                 SalesInventoryFact.source_branch_code,
@@ -272,6 +275,7 @@ def performance(
     daily_rows = []
     monthly_rows = []
     monthly_branch_rows = []
+    branch_range_rows = []
     if grain == "day_total":
         daily_rows = session.execute(
             select(
@@ -305,6 +309,19 @@ def performance(
         ).all()
     elif grain == "branch_month":
         monthly_branch_rows = session.execute(
+            select(
+                SalesInventoryFact.source_sku,
+                func.min(SalesInventoryFact.source_description),
+                SalesInventoryFact.source_branch_code,
+                func.sum(SalesInventoryFact.amount),
+                func.sum(SalesInventoryFact.sales_qty),
+            )
+            .where(*filters, SalesInventoryFact.source_sku.in_(skus))
+            .group_by(SalesInventoryFact.source_sku, SalesInventoryFact.source_branch_code)
+            .order_by(SalesInventoryFact.source_sku, SalesInventoryFact.source_branch_code)
+        ).all()
+    elif grain == "branch_range":
+        branch_range_rows = session.execute(
             select(
                 SalesInventoryFact.source_sku,
                 func.min(SalesInventoryFact.source_description),
@@ -440,6 +457,19 @@ def performance(
         item["points"].append(
             {
                 "date": selected_month,
+                "branchId": source_branch_code,
+                "amount": _number(amount),
+                "qty": _number(qty),
+                "stockOh": 0,
+                "stockOnOrder": 0,
+            }
+        )
+
+    for source_sku, source_description, source_branch_code, amount, qty in branch_range_rows:
+        item = item_for(source_sku, source_description)
+        item["points"].append(
+            {
+                "date": range_to.isoformat(),
                 "branchId": source_branch_code,
                 "amount": _number(amount),
                 "qty": _number(qty),
@@ -601,7 +631,7 @@ def export_performance(
     ] = None,
     search: Annotated[str | None, Query(max_length=200)] = None,
     grain: Annotated[
-        Literal["day", "day_total", "month", "branch_month"], Query()
+        Literal["day", "day_total", "month", "branch_month", "branch_range"], Query()
     ] = "day",
     period_month: Annotated[str | None, Query(max_length=7)] = None,
     mode: Annotated[Literal["sales", "inventory"], Query()] = "sales",

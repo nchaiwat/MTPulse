@@ -310,3 +310,28 @@ git -c safe.directory=D:/Python/MTPulse status --short --branch
 - [ ] Month View เรียงเดือนตามเวลา
 - [ ] Amount/Qty สลับได้
 - [ ] Git status สะอาดก่อนเริ่มงานใหม่
+
+## 14. Ubuntu Test Server และข้อมูลทดสอบ (29/08/2026)
+
+- Test Server: `wa-mtpluse-test` (`192.168.68.129`), Ubuntu 24.04.4 LTS, i7-1255U, RAM 15 GiB
+- URL: `http://192.168.68.129`; Source: `/opt/mtpulse`; ใช้ `compose.server.yaml`
+- Docker Engine 29.7.2 / Compose 5.5.0; PostgreSQL 17, API และ Web healthy
+- Deployment commit เริ่มต้น: `271beb2 Add Ubuntu server Docker deployment`
+- ย้าย PostgreSQL จาก Local สำเร็จ พร้อม Settings encryption key; ตรวจ Bot Token decrypt ได้โดยไม่แสดงค่าจริง
+- Backup ก่อน Restore: `/opt/mtpulse/backups/server-before-local-20260829.dump`
+- Backup environment: `/opt/mtpulse/backups/.env.server.before-local-restore-20260829`
+- ลบ dump/key ชั่วคราวหลังย้ายแล้ว; Local database ต้นทางและ Server backup ยังอยู่
+
+## 15. Performance รายวันทุกสาขา
+
+เมื่อ Test Server มี 376,420 fact records และตั้ง 100 SKU ต่อหน้า:
+
+- Algorithm เดิม `grain=day` ส่ง 244,499 points / 23.9 MB / 4.20–4.29 วินาที สำหรับหน้าแรก
+- 1 Branch ใช้ 0.15 วินาที และ 1 วันทุก Branch ใช้ 0.23 วินาที จึงยืนยันว่าคอขวดคือ payload ระดับ SKU × Branch × Day ไม่ใช่กำลังเครื่อง
+- Query รวมเป็น SKU × Branch ให้ 5,765 แถว และใช้ประมาณ 243 ms จาก `EXPLAIN (ANALYZE, BUFFERS)`
+- เปลี่ยน Matrix รายวันตาม Branch ไปใช้ `grain=branch_range` ซึ่งรวมข้อมูลบน PostgreSQL ก่อนส่ง
+- Raw daily points ยังโหลดแบบ lazy เฉพาะเมื่อเปิด Item Detail จึงไม่ตัดความสามารถดูรายละเอียดเดิม
+- เพิ่ม Loading overlay พร้อม spinner เหนือตารางทั้งตอนเปิดครั้งแรกและตอนเปลี่ยน Filter/Page
+- Regression: Backend ทั้งหมด 46 tests ผ่าน, Frontend ทั้งหมด 34 tests ผ่าน, Ruff files ที่แก้ผ่าน, ESLint `src` ผ่าน และ production build ผ่าน
+
+หลัง Deploy ให้เปรียบเทียบ `/api/performance?grain=branch_range&page=1` กับ baseline ข้างต้น และ smoke test Sales Amount/Qty รายวันทุก Branch, Item Detail และ Download Excel

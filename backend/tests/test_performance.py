@@ -292,6 +292,19 @@ def test_branch_month_uses_current_mapping_for_historical_facts() -> None:
             grain="day",
             period_month=None,
         )
+        branch_range_result = performance(
+            session,
+            date_from=date(2026, 7, 26),
+            date_to=date(2026, 8, 16),
+            page=1,
+            page_size=25,
+            branch_id=None,
+            mapping_status=None,
+            hide_unmapped=False,
+            search=None,
+            grain="branch_range",
+            period_month=None,
+        )
 
     assert result["meta"]["totalSkus"] == 1
     assert result["meta"]["totalBranches"] == 1
@@ -299,6 +312,20 @@ def test_branch_month_uses_current_mapping_for_historical_facts() -> None:
     assert result["columnTotals"] == {"HISTORICAL-BRANCH": {"amount": 100.0, "qty": 2.0}}
     assert day_result["dates"] == ["2026-07-26"]
     assert day_result["columnTotals"] == {"HISTORICAL-BRANCH": {"amount": 100.0, "qty": 2.0}}
+    assert branch_range_result["dates"] == ["2026-07-26", "2026-08-16"]
+    assert branch_range_result["columnTotals"] == {
+        "HISTORICAL-BRANCH": {"amount": 100.0, "qty": 2.0}
+    }
+    assert branch_range_result["items"][0]["points"] == [
+        {
+            "date": "2026-08-16",
+            "branchId": "HISTORICAL-BRANCH",
+            "amount": 100.0,
+            "qty": 2.0,
+            "stockOh": 0,
+            "stockOnOrder": 0,
+        }
+    ]
 
 
 def test_performance_unmatched_visibility_controls_rows_and_every_total() -> None:

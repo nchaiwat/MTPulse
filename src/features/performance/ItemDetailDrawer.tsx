@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { CircleAlert, CircleCheck, X } from 'lucide-react'
+import { CircleAlert, CircleCheck, LoaderCircle, X } from 'lucide-react'
 import { formatMetric, sumMetric } from './performanceMath'
 import type { Branch, Metric, PerformanceItem, SelectedCell } from './types'
 import { formatDisplayDate } from '../../shared/dateFormat'
@@ -11,6 +11,8 @@ interface ItemDetailDrawerProps {
   branchIds: string[]
   metric: Metric
   branches: Branch[]
+  isLoading?: boolean
+  loadError?: string | null
   onClose: () => void
 }
 
@@ -22,7 +24,7 @@ const formatDimension = (date: string) => {
   return formatDisplayDate(date)
 }
 
-export function ItemDetailDrawer({ item, selected, dates, branchIds, metric, branches, onClose }: ItemDetailDrawerProps) {
+export function ItemDetailDrawer({ item, selected, dates, branchIds, metric, branches, isLoading = false, loadError = null, onClose }: ItemDetailDrawerProps) {
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()
@@ -69,7 +71,7 @@ export function ItemDetailDrawer({ item, selected, dates, branchIds, metric, bra
 
         <section className="daily-breakdown">
           <div className="section-heading"><div><span className="eyebrow">SKU × Branch × Day</span><h3>รายละเอียดรายวัน</h3></div><span>Metric ที่เลือก: {metric === 'amount' ? 'Amount' : metric}</span></div>
-          <div className="drawer-table-wrap">
+          {isLoading ? <div className="drawer-detail-loading" role="status"><LoaderCircle className="matrix-loading-spinner" size={22} aria-hidden="true" />กำลังโหลดรายละเอียดรายวัน…</div> : loadError ? <div className="drawer-detail-error" role="alert">{loadError}</div> : <div className="drawer-table-wrap">
             <table>
               <thead><tr><th>วันที่</th><th>Branch</th><th className="numeric-column">Qty</th><th className="numeric-column">Amount</th><th className="numeric-column">Stock OH</th><th className="numeric-column">On Order</th></tr></thead>
               <tbody>
@@ -79,7 +81,7 @@ export function ItemDetailDrawer({ item, selected, dates, branchIds, metric, bra
                 })}
               </tbody>
             </table>
-          </div>
+          </div>}
         </section>
       </aside>
     </div>

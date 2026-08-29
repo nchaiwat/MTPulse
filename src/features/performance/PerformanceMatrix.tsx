@@ -1,5 +1,5 @@
 import { memo, useLayoutEffect, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, LoaderCircle } from 'lucide-react'
 import { aggregateByDimension, formatMetric, heatLevel, monthKeys, pointsForView, sumMetric } from './performanceMath'
 import type { Branch, Dimension, Metric, Mode, PerformanceItem, SelectedCell } from './types'
 import { formatDisplayDate } from '../../shared/dateFormat'
@@ -182,7 +182,7 @@ function PaginationControls({ page, totalPages, isLoading, onPageChange }: Pick<
 
 export function PerformanceMatrix({ items, branches, totalSkus, page, totalPages, isLoading, dates, branchIds, mode, metric, dimension, heatmap, showDescriptions, columnTotals, grandTotal, selected, onSelect, onPageChange }: PerformanceMatrixProps) {
   if (items === null) {
-    return <div className="matrix-skeleton" aria-label="กำลังโหลดข้อมูล Performance" aria-busy="true">{Array.from({ length: 7 }, (_, index) => <span key={index} />)}</div>
+    return <div className="matrix-skeleton" aria-busy="true">{Array.from({ length: 7 }, (_, index) => <span key={index} />)}<div className="matrix-loading-state" role="status" aria-label="กำลังโหลดข้อมูล Performance"><LoaderCircle className="matrix-loading-spinner" size={28} aria-hidden="true" /><strong>กำลังโหลดข้อมูล…</strong></div></div>
   }
 
   if (items.length === 0) {
@@ -191,6 +191,7 @@ export function PerformanceMatrix({ items, branches, totalSkus, page, totalPages
 
   return (
     <div className="matrix-frame" data-loading={isLoading || undefined} aria-busy={isLoading}>
+      {isLoading && <div className="matrix-loading-overlay" role="status" aria-label="กำลังโหลดข้อมูล Performance"><div className="matrix-loading-state"><LoaderCircle className="matrix-loading-spinner" size={28} aria-hidden="true" /><strong>กำลังโหลดข้อมูล…</strong><span>กำลังเตรียมข้อมูลตามตัวกรอง</span></div></div>}
       <MatrixTable items={items} branches={branches} dates={dates} branchIds={branchIds} mode={mode} metric={metric} dimension={dimension} heatmap={heatmap} showDescriptions={showDescriptions} columnTotals={columnTotals} grandTotal={grandTotal} selected={selected} onSelect={onSelect} />
       <footer className="matrix-footer">
         <span>แสดง {items.length.toLocaleString('en-US')} จาก {totalSkus.toLocaleString('en-US')} SKU</span>

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { downloadPerformanceReport, fetchPerformance, fetchSkuOptions } from './performanceApi'
+import { downloadPerformanceReport, fetchPerformance, fetchPerformanceItemDetail, fetchSkuOptions } from './performanceApi'
 
 describe('fetchPerformance', () => {
   afterEach(() => vi.restoreAllMocks())
@@ -113,12 +113,37 @@ describe('fetchPerformance', () => {
     })
 
     const url = String(fetchMock.mock.calls[0][0])
-    expect(url).toContain('grain=day')
+    expect(url).toContain('grain=branch_range')
     expect(url).toContain('date_from=2026-08-05')
     expect(url).toContain('date_to=2026-08-13')
     expect(url).toContain('branch_ids=60016%2C60923')
     expect(url).toContain('sku_ids=60406627%2CABCDE')
     expect(url).not.toContain('period_month')
+  })
+
+  it('keeps raw daily points available only when an item detail is opened', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ items: [] }), { status: 200 }),
+    )
+
+    await fetchPerformanceItemDetail({
+      dateFrom: '2026-08-05',
+      dateTo: '2026-08-13',
+      branchIds: [],
+      monthFrom: '',
+      monthTo: '',
+      search: '',
+      page: 1,
+      dimension: 'branch',
+      mode: 'sales',
+      branchMonth: 'latest',
+      branchPeriod: 'day',
+    }, '60406627')
+
+    const url = new URL(String(fetchMock.mock.calls[0][0]), 'http://localhost')
+    expect(url.searchParams.get('grain')).toBe('day')
+    expect(url.searchParams.get('sku_ids')).toBe('60406627')
+    expect(url.searchParams.get('page')).toBe('1')
   })
 
   it('downloads every matching row without pagination parameters', async () => {
