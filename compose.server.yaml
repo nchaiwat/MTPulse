@@ -1,0 +1,62 @@
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - compute_query_id=on
+    environment:
+      POSTGRES_DB: mtpulse
+      POSTGRES_USER: mtpulse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - mtpulse-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mtpulse -d mtpulse"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    command:
+      - sh
+      - -c
+      - python -m alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+    environment:
+      MTPULSE_DATABASE_URL: postgresql+psycopg://mtpulse:${POSTGRES_PASSWORD}@db:5432/mtpulse
+      MTPULSE_CORS_ORIGINS: '["http://${MTPULSE_SERVER_HOST}"]'
+      MTPULSE_SETTINGS_ENCRYPTION_KEY: ${MTPULSE_SETTINGS_ENCRYPTION_KEY:?MTPULSE_SETTINGS_ENCRYPTION_KEY is required}
+      MTPULSE_ALLOW_SECRET_REVEAL: ${MTPULSE_ALLOW_SECRET_REVEAL:-false}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend.Dockerfile
+      args:
+        VITE_API_BASE_URL: ""
+    restart: unless-stopped
+    ports:
+      - "${MTPULSE_HTTP_PORT:-80}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  mtpulse-postgres:
