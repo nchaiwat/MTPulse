@@ -1,15 +1,18 @@
 import json
+from datetime import datetime, time, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth import require_system_admin
 from app.config import get_settings
 from app.database import get_session
-from app.models import AuditEvent, ModernTrade
+from app.local_time import BANGKOK_TIMEZONE, bangkok_now
+from app.models import AuditEvent, ImportRun, ModernTrade
+from app.services.automatic_import import initial_scan_completed, run_payload
 from app.services.fileshare import (
     BASE_UNC_KEY,
     DOMAIN_KEY,
@@ -41,6 +44,14 @@ class SourceProfileUpdate(BaseModel):
     code: str = Field(max_length=20)
     subfolder: str = Field(max_length=255)
     enabled: bool = True
+    schedule_enabled: bool = False
+    schedule_time: time | None = None
+
+    @model_validator(mode="after")
+    def validate_schedule_time(self) -> "SourceProfileUpdate":
+        if self.schedule_enabled and self.schedule_time is None:
+            raise ValueError("กรุณาระบุเวลาเมื่อเปิด Schedule")
+        return self
 
 
 class FileShareSettingsUpdate(BaseModel):
@@ -76,6 +87,23 @@ def _response(session: Session) -> dict:
     for mt in _modern_trades(session):
         folder = mt.source_subfolder or (mt.code if mt.code == "TWD" else "")
         full_path = compose_unc(base_unc, folder) if base_unc and folder else ""
+        last_run = session.scalar(
+            select(ImportRun)
+            .where(ImportRun.modern_trade_id == mt.id)
+            .order_by(ImportRun.requested_at.desc(), ImportRun.id.desc())
+            .limit(1)
+        )
+        next_run_at = None
+        if mt.schedule_enabled and mt.schedule_time:
+            now = bangkok_now()
+            candidate = datetime.combine(
+                now.date(),
+                mt.schedule_time,
+                tzinfo=BANGKOK_TIMEZONE,
+            )
+            if candidate <= now:
+                candidate += timedelta(days=1)
+            next_run_at = candidate.isoformat()
         profiles.append(
             {
                 "code": mt.code,
@@ -83,6 +111,13 @@ def _response(session: Session) -> dict:
                 "subfolder": folder,
                 "enabled": mt.source_enabled,
                 "fullPath": full_path,
+                "scheduleEnabled": mt.schedule_enabled,
+                "scheduleTime": (
+                    mt.schedule_time.strftime("%H:%M") if mt.schedule_time else None
+                ),
+                "initialScanCompleted": initial_scan_completed(session, mt.id),
+                "lastRun": run_payload(last_run, mt) if last_run else None,
+                "nextRunAt": next_run_at,
             }
         )
     return {
@@ -158,7 +193,14 @@ def update_fileshare_settings(
         "username": setting_value(session, USERNAME_KEY),
         "password_configured": bool(setting_value(session, PASSWORD_KEY)),
         "profiles": {
-            mt.code: {"subfolder": mt.source_subfolder, "enabled": mt.source_enabled}
+            mt.code: {
+                "subfolder": mt.source_subfolder,
+                "enabled": mt.source_enabled,
+                "schedule_enabled": mt.schedule_enabled,
+                "schedule_time": (
+                    mt.schedule_time.isoformat() if mt.schedule_time else None
+                ),
+            }
             for mt in modern_trades
         },
     }
@@ -176,13 +218,24 @@ def update_fileshare_settings(
         if profile:
             mt.source_subfolder = profile.subfolder
             mt.source_enabled = profile.enabled
+            mt.schedule_enabled = profile.schedule_enabled
+            mt.schedule_time = profile.schedule_time
     after = {
         "base_unc": base_unc,
         "domain": update.domain.strip(),
         "username": update.username.strip(),
         "password_updated": bool(update.password and update.password.strip()),
         "profiles": {
-            code: {"subfolder": profile.subfolder, "enabled": profile.enabled}
+            code: {
+                "subfolder": profile.subfolder,
+                "enabled": profile.enabled,
+                "schedule_enabled": profile.schedule_enabled,
+                "schedule_time": (
+                    profile.schedule_time.isoformat()
+                    if profile.schedule_time
+                    else None
+                ),
+            }
             for code, profile in profiles.items()
         },
     }

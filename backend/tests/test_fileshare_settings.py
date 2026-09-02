@@ -142,6 +142,13 @@ def test_connection_test_is_read_only_and_resets_cache(monkeypatch) -> None:
     assert results[0].status == "success"
 
 
+def test_dns_resolution_error_has_actionable_message() -> None:
+    error = OSError("[Errno -2] Name or service not known")
+    assert fileshare.safe_fileshare_error(error) == (
+        "ไม่พบชื่อ Server จาก DNS กรุณาใช้ชื่อเต็ม เช่น server.domain"
+    )
+
+
 def test_development_auth_stub_and_ad_boundary(monkeypatch) -> None:
     monkeypatch.setattr(
         auth,

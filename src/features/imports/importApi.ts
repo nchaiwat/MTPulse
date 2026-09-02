@@ -95,7 +95,11 @@ export async function confirmImport(file: File, checksum: string) {
   form.append('expected_checksum', checksum)
   const response = await fetch(`${apiBaseUrl}/api/imports/confirm`, { method: 'POST', body: form })
   if (!response.ok) throw new Error(await errorMessage(response))
-  return response.json() as Promise<{ message: string; notification: { status: string; message: string } }>
+  return response.json() as Promise<{
+    message: string
+    pendingSkus: string[]
+    notification: { status: string; message: string }
+  }>
 }
 
 export async function fetchImportActivity(signal?: AbortSignal): Promise<ImportActivity[]> {

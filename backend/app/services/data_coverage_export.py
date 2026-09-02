@@ -194,7 +194,6 @@ def build_data_coverage_workbook(
         showColumnStripes=False,
     )
     detail.add_table(table)
-    detail.auto_filter.ref = f"A1:K{last_detail_row}"
 
     output = BytesIO()
     workbook.save(output)

@@ -423,3 +423,120 @@ Discovery สำหรับ Frontend UX Milestone ได้รับอนุ�
 - Daily Scheduled Import และ Retry Worker
 - AD Login implementation และหน้าจัดการ User
 - การเปลี่ยนหน้า Report, Mapping, Monitoring หรือ Manual Upload เดิม
+
+## Requirement เพิ่มเติม: Existing Application Visual Refresh
+
+### สถานะ
+
+- Product Owner อนุมัติ UI Plan เมื่อ 1 กันยายน 2026
+- รอบนี้เป็น Visual Refresh ของระบบเดิมเท่านั้น ยังไม่สร้าง Dashboard ภาพรวม, Dashboard ราย MT, Top SKU, Top Branch หรือ Chart ใหม่
+
+### Objective
+
+- ปรับภาพลักษณ์ MT Pulse ให้เป็น Modern, Clean และ Premium แบบ Internal SaaS/Data Tool
+- คง React + Vite และเพิ่ม Tailwind CSS กับ Shadcn/UI foundation แบบ Incremental
+- ใช้สีหลัก `#02abff`, Neutral Surface, Soft Shadow และมุมโค้งอย่างพอดี
+- ทำให้ Sidebar, Top Bar, Forms, Panels, Tables และ Feedback States ใช้ภาษาภาพเดียวกัน
+
+### Strict TWD Performance Constraint
+
+- หน้า TWD Performance เป็น Operational Data Tool ไม่ใช่ Dashboard
+- ห้ามเปลี่ยน Layout, JSX structure, Component hierarchy, Function, State, Event handler, API call, Query parameter, Business Logic และ Data Logic
+- ห้ามเปลี่ยน Filter, Search, Branch/Date/Month, Amount/Qty, Inventory, KPI, SUM, Heatmap Logic, Pagination, Page Size, Drawer, Mapping, Import/Export และ Current View
+- ห้ามแทน Control เดิมในหน้า TWD ด้วย Shadcn Component
+- ปรับได้เฉพาะ Design Token, สี, Font, Border, Radius, Shadow และ Hover/Focus/Loading/Empty/Error presentation
+- Matrix ต้องแสดงข้อมูลและคอลัมน์ครบ ใช้ Horizontal Scroll เดิม และห้ามซ่อนหรือยุบข้อมูลเพื่อ Mobile
+
+### Responsive Scope
+
+- รอบนี้ไม่เพิ่ม Responsive Behavior ใหม่และไม่ลบพฤติกรรมเดิมที่มีอยู่
+- Dashboard ภาพรวมและ Dashboard ราย MT ที่จะสร้างในอนาคตจึงค่อยออกแบบ Responsive สำหรับ Mobile/Tablet/Desktop
+- หน้า Operational อื่นยังคง Desktop-first เพื่อรักษาความชัดเจนของข้อมูลและ Workflow
+
+### App Shell Navigation เพิ่มเติม
+
+- Navigation ต้องอยู่ด้านซ้ายแบบ Vertical ทุกขนาดหน้าจอ และไม่เปลี่ยนเป็นเมนูแนวนอนด้านบน
+- Sidebar เปิดแบบเต็มเป็นค่าเริ่มต้นและมีปุ่มย่อ/ขยายที่เห็นชัด
+- เมื่อย่อ Sidebar ให้เหลือ Icon Rail กว้างประมาณ 72px เพื่อเพิ่มพื้นที่แสดงผล โดยยังเข้าถึงทุกเมนูได้ด้วย Mouse, Keyboard และ Screen Reader
+- การเปลี่ยน Navigation Shell นี้ห้ามกระทบ Layout, Function หรือ Logic ภายในหน้า TWD Performance
+
+### Success Criteria
+
+- หน้าเดิมทุกหน้ามี Visual Language ที่สม่ำเสมอและใช้ Primary `#02abff`
+- Function และผลลัพธ์ทั้งหมดก่อน/หลัง Visual Refresh เหมือนเดิม
+- Git diff ของ `src/features/performance/*.ts` และ `*.tsx` ต้องว่าง
+- Frontend/Backend regression tests, lint และ production build ผ่าน โดยแยกบันทึกปัญหา Baseline เดิมที่อยู่นอกขอบเขต
+
+## TWD Numeric Excel Error Handling
+
+- เซลล์ตัวเลขจากไฟล์ TWD ที่เป็น Excel Error เช่น `#VALUE!` ห้ามถูกตีความเป็น Error Code เชิงตัวเลข
+- ระบบไม่นำเซลล์ Error มารวมยอด และต้องแสดงคำเตือนพร้อม Field, Error Type และจำนวนเซลล์
+- การแก้ข้อมูลย้อนหลังต้องอ้างอิงไฟล์ต้นทางที่ Checksum และ Data Date ตรงกับ Batch เท่านั้น
+- ก่อนแก้ต้องทำ Dry-run, ตรวจ Branch × SKU ครบถ้วน, สำรองฐานข้อมูล และบันทึก Audit Event
+
+## Requirement เพิ่มเติม: Automatic FileShare Import — TWD Phase 1
+
+### Objective
+
+- ให้ System Admin ตั้งเวลา Import วันละ 1 เวลาแยกต่อ Modern Trade ตามเขตเวลา `Asia/Bangkok`
+- เพิ่ม `Run ทันที` โดยใช้ Import Pipeline และกฎ Idempotency เดียวกับ Scheduled Run
+- Phase แรกทำเฉพาะ TWD และห้ามเปลี่ยน Function/Logic ของหน้า TWD Performance
+
+### Source และ File Discovery
+
+- TWD ใช้โครงสร้าง `TWD\<date-folder>\<file>` และมีไม่เกิน 1 ไฟล์ต่อ Folder วันที่
+- รองรับทั้ง `.xls` และ `.xlsx`; Format อื่นให้ข้ามพร้อมบันทึกเหตุผล
+- วันที่ชื่อ Folder ไม่ใช่วันที่ข้อมูล ระบบต้องอ่าน Data Date จากเนื้อหาไฟล์เท่านั้น
+- Initial Scan ครั้งแรกตรวจทุก Folder เพื่อสร้างทะเบียนไฟล์และเทียบกับ Batch เดิม หลังจากนั้นตรวจเฉพาะไฟล์ใหม่หรือไฟล์ที่ Metadata เปลี่ยน
+- การ Scan หรือ Hash ไฟล์ย้อนหลังไม่ถือเป็นการ Import และห้ามสร้าง Fact ซ้ำ
+
+### Idempotency และ Conflict Rules
+
+- checksum เดิมของ MT เดิมให้ข้าม
+- Data Date ใหม่และไฟล์ผ่าน Validation ครบจึง Import อัตโนมัติ
+- Data Date เดิมแต่ checksum ต่างให้หยุดเฉพาะไฟล์นั้น สถานะ `รอตรวจสอบ`; งานยังประมวลผลไฟล์อื่นต่อและจบแบบมีคำเตือน
+- ไฟล์ใหม่ที่มี Reconciliation/Validation Warning ให้หยุดเฉพาะไฟล์และรอ System Admin ตรวจ ห้าม Import พร้อม Warning อัตโนมัติ
+- System Admin เลือก `เก็บข้อมูลเดิม` หรือ Preview/ยืนยัน `แทนที่ด้วยไฟล์ใหม่` ผ่าน Corrective Workflow พร้อมเหตุผลและ Audit Log
+- หากไฟล์ต้นฉบับถูกย้ายหรือลบ ให้แจ้ง `ไม่พบไฟล์ต้นฉบับ` แต่ห้ามลบข้อมูลที่ Import แล้วออกจาก DB
+
+### Schedule และ Concurrency
+
+- แต่ละ MT มี Schedule Enabled และ Schedule Time ของตนเอง; ปิด Schedule แล้วต้องเก็บเวลาเดิมไว้
+- `Run ทันที` ใช้งานได้แม้ Schedule ปิด และต้องมี Confirmation แสดง MT, Path และกฎว่า Import เฉพาะไฟล์ใหม่
+- MT เดียวกันห้าม Run ซ้อนกัน; หากกำลังทำงานให้ปฏิเสธ Trigger ซ้ำ แต่ MT อื่นทำงานได้อย่างอิสระ
+- หากพลาดเวลาเพราะระบบหยุดและกลับมาภายในวันเดียวกัน ให้ Catch-up 1 ครั้งโดยไม่สร้างงานซ้ำ
+
+### Authorization, Monitoring และ Notification
+
+- เฉพาะ System Admin ตั้งเวลา เปิด/ปิด Schedule, Run ทันที และยืนยัน Replace
+- ทุก Run และทุกการตัดสินใจต้องมี Audit Log พร้อม Trigger Type, Actor, เวลา และผลลัพธ์
+- Monitoring แสดง Running/Success/Success with warnings/Failed, Last Run, Next Run และจำนวน Found/Imported/Skipped/Pending Review
+- Telegram ส่งหนึ่งข้อความสรุปต่อ Run และแจ้ง Error หรือ Pending Review ทันที โดยรายละเอียดเต็มอยู่ใน Monitoring/Audit Log
+
+### Success Criteria
+
+- Initial Scan เทียบข้อมูล TWD เดิม 33 Batch ได้โดยไม่ Import ซ้ำหรือลบข้อมูลเดิม
+- Scheduled Run และ Run ทันทีใช้ Pipeline เดียวกันและให้ผล Idempotent
+- รองรับ `.xls`/`.xlsx` และใช้ Data Date ภายในไฟล์ ไม่ใช้ชื่อ Folder
+- Conflict หรือ Warning ไม่เปลี่ยน Fact เดิมจนกว่า System Admin ยืนยัน
+- Restart หรือ Refresh ไม่ทำให้ Schedule, File Registry หรือ Run History สูญหาย
+# TWD Sales Dashboard — 1 กันยายน 2026
+
+## เป้าหมาย
+
+- เพิ่มหน้า `แดชบอร์ด > ไทวัสดุ` สำหรับอ่านภาพรวมยอดขาย Ex.VAT และ Qty โดยไม่เปลี่ยนหน้า `รายงาน > ไทวัสดุ` เดิม
+- รองรับการเปรียบเทียบปีปัจจุบันกับปีก่อนในช่วง YTD, H1, H2 และปีเต็ม
+- แสดง Monthly trend, ตารางรายเดือน, Top 10 Branch และ Top 15 SKU พร้อมตัวเลขจริงและ YoY
+- ใช้ Monthly Sales Summary เป็นแหล่งข้อมูลหลักเพื่อรองรับฐานข้อมูลขนาดใหญ่
+
+## ข้อกำหนด UI/UX
+
+- ใช้ Operations Dashboard ที่อ่านง่าย สีหลัก `#02ABFF`, Navy/Slate และ Soft semantic colors
+- Desktop แสดง Chart และ Table เป็นคู่; Tablet/Mobile เรียงลงด้านล่างและ Table เลื่อนแนวนอนได้
+- มี Loading, Empty, Error/Retry, Hover, Focus และข้อความระบุวันที่ข้อมูลล่าสุด/ความครบถ้วน
+- มีปุ่มเปิดรายงานไทวัสดุเดิม โดยไม่เปลี่ยน Filter, Matrix, Function หรือ Logic ของรายงานเดิม
+
+## Non-goals
+
+- ไม่แก้ Component, Layout, Function, Logic หรือ API contract ของหน้า TWD Performance เดิม
+- ไม่รวม Inventory ใน Dashboard ยอดขายรอบแรก และไม่สร้าง Dashboard ของ MT อื่นในรอบนี้

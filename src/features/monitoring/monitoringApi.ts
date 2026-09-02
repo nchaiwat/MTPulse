@@ -18,3 +18,21 @@ export function fetchMonitoring(signal?: AbortSignal) {
 export function refreshMonitoring() {
   return requestMonitoring('POST')
 }
+
+export async function decideSkuInterest(
+  mtCode: string,
+  sku: string,
+  decision: 'accept' | 'ignore',
+) {
+  const response = await fetch(
+    apiBaseUrl + '/api/admin/modern-trades/' + encodeURIComponent(mtCode)
+      + '/sku-interests/' + encodeURIComponent(sku),
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ decision }),
+    },
+  )
+  if (!response.ok) throw new Error('บันทึกการตัดสินใจ SKU ไม่สำเร็จ')
+  return response.json() as Promise<{ status: string, message: string }>
+}

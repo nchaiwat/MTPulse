@@ -131,6 +131,13 @@ def effective_username(domain: str, username: str) -> str:
 def _safe_error(exc: Exception) -> str:
     text = str(exc).lower()
     name = type(exc).__name__.lower()
+    if (
+        "gaierror" in name
+        or "name or service not known" in text
+        or "temporary failure in name resolution" in text
+        or "nodename nor servname" in text
+    ):
+        return "ไม่พบชื่อ Server จาก DNS กรุณาใช้ชื่อเต็ม เช่น server.domain"
     if "logon" in text or "auth" in text or "credential" in text:
         return "User หรือ Password ไม่ถูกต้อง"
     if "access_denied" in text or "permission" in text or "denied" in text:
@@ -142,6 +149,10 @@ def _safe_error(exc: Exception) -> str:
     if "name" in name or "network" in text or "connection" in text:
         return "เชื่อมต่อ NAS ไม่สำเร็จ กรุณาตรวจสอบชื่อ Server และ Network"
     return "เข้าถึง FileShare ไม่สำเร็จ"
+
+
+def safe_fileshare_error(exc: Exception) -> str:
+    return _safe_error(exc)
 
 
 def _stat_path(path: str, username: str, password: str) -> None:

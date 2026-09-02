@@ -52,6 +52,8 @@ def test_data_coverage_workbook_lists_every_day_and_structural_counts() -> None:
     assert summary["B7"].value == '=COUNTIF(\'รายละเอียดรายวัน\'!D2:D366,"มีข้อมูล")'
     assert summary["B8"].value == '=COUNTIF(\'รายละเอียดรายวัน\'!D2:D366,"ขาดข้อมูล")'
     assert summary["A13"].value == datetime(2025, 1, 1)
+    assert detail.auto_filter.ref is None
+    assert detail.tables["TWDDataCoverage"].ref == "A1:K366"
     workbook.close()
 
 

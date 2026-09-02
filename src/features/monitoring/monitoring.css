@@ -60,6 +60,80 @@
 .monitoring-mt-list time { color: var(--text-600); }
 
 .monitoring-query-panel { margin-bottom: 12px; }
+.monitoring-automatic-panel { margin-bottom: 12px; }
+.monitoring-sku-panel { margin-bottom: 12px; }
+.monitoring-sku-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.monitoring-sku-list article {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.monitoring-sku-list article:nth-child(2n) { border-right: 0; }
+.monitoring-sku-list article span { min-width: 0; display: grid; gap: 3px; }
+.monitoring-sku-list article strong { font-family: "Cascadia Mono", Consolas, monospace; font-size: 11px; }
+.monitoring-sku-list article small,
+.monitoring-sku-list article time { overflow: hidden; color: var(--text-600); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.monitoring-sku-list article em { color: var(--amber-700); font-size: 9px; font-style: normal; font-weight: 700; }
+.monitoring-sku-actions { display: flex; gap: 6px; }
+.monitoring-sku-actions button {
+  min-height: 30px;
+  padding: 4px 10px;
+  color: var(--teal-700);
+  background: #fff;
+  border: 1px solid var(--teal-600);
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.monitoring-sku-actions button[data-action="ignore"] { color: var(--text-700); border-color: var(--line-strong); }
+.monitoring-sku-actions button:disabled { opacity: .55; cursor: wait; }
+.monitoring-automatic-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(300px, .75fr); }
+.monitoring-automatic-grid > div { min-width: 0; }
+.monitoring-automatic-grid > div:first-child { border-right: 1px solid var(--line); }
+.monitoring-subheading {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 11px;
+  background: #fbfdfe;
+  border-bottom: 1px solid var(--line);
+}
+.monitoring-subheading strong { font-size: 10px; }
+.monitoring-subheading span { color: var(--text-600); font-size: 8px; }
+.monitoring-run-table { min-width: 690px !important; }
+.monitoring-run-table th:first-child { width: 54px; }
+.monitoring-run-table td:first-child { font-family: "Cascadia Mono", Consolas, monospace; }
+.monitoring-pending-files { max-height: 292px; overflow-y: auto; }
+.monitoring-pending-files article {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  padding: 10px 11px;
+  border-bottom: 1px solid var(--line);
+}
+.monitoring-pending-files article:last-child { border-bottom: 0; }
+.monitoring-pending-files article > svg { color: var(--amber-700); }
+.monitoring-pending-files article[data-status="failed"] > svg { color: var(--red-700); }
+.monitoring-pending-files article span { min-width: 0; display: grid; gap: 3px; }
+.monitoring-pending-files article strong,
+.monitoring-pending-files article small,
+.monitoring-pending-files article time {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.monitoring-pending-files article strong { font-size: 10px; }
+.monitoring-pending-files article small { color: var(--text-700); font-size: 9px; }
+.monitoring-pending-files article time { color: var(--text-600); font-size: 8px; }
 .monitoring-table-scroll { overflow-x: auto; }
 .monitoring-panel table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 10px; }
 .monitoring-panel th, .monitoring-panel td { height: 36px; padding: 6px 8px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
@@ -81,6 +155,8 @@
   .monitoring-health-ledger { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .monitoring-health-ledger article { border-bottom: 1px solid var(--line); }
   .monitoring-grid { grid-template-columns: 1fr; }
+  .monitoring-automatic-grid { grid-template-columns: 1fr; }
+  .monitoring-automatic-grid > div:first-child { border-right: 0; border-bottom: 1px solid var(--line); }
 }
 @media (max-width: 760px) {
   .monitoring-intro { align-items: flex-start; flex-direction: column; }
@@ -92,6 +168,8 @@
   .monitoring-database dl > div:nth-last-child(-n+2) { border-bottom: 0; }
   .monitoring-error { grid-template-columns: 24px 1fr; }
   .monitoring-error button { grid-column: 2; justify-self: start; }
+  .monitoring-sku-list { grid-template-columns: 1fr; }
+  .monitoring-sku-list article { border-right: 0; }
 }
 @media (max-width: 480px) {
   .monitoring-health-ledger, .monitoring-database dl { grid-template-columns: 1fr; }

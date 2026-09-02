@@ -46,6 +46,22 @@ services:
       timeout: 5s
       retries: 12
 
+  worker:
+    build: ./backend
+    restart: unless-stopped
+    command:
+      - python
+      - -m
+      - app.worker
+    environment:
+      MTPULSE_DATABASE_URL: postgresql+psycopg://mtpulse:${POSTGRES_PASSWORD}@db:5432/mtpulse
+      MTPULSE_SETTINGS_ENCRYPTION_KEY: ${MTPULSE_SETTINGS_ENCRYPTION_KEY:?MTPULSE_SETTINGS_ENCRYPTION_KEY is required}
+      MTPULSE_AUTH_MODE: ${MTPULSE_AUTH_MODE:-development}
+      MTPULSE_WORKER_POLL_SECONDS: ${MTPULSE_WORKER_POLL_SECONDS:-30}
+    depends_on:
+      api:
+        condition: service_healthy
+
   web:
     build:
       context: .

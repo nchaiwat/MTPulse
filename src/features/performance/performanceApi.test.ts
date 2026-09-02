@@ -146,6 +146,35 @@ describe('fetchPerformance', () => {
     expect(url.searchParams.get('page')).toBe('1')
   })
 
+  it('requests only the latest inventory snapshot while keeping detail history raw', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      new Response(JSON.stringify({ items: [] }), { status: 200 }),
+    )
+    const query = {
+      dateFrom: '',
+      dateTo: '',
+      branchIds: [],
+      monthFrom: '',
+      monthTo: '',
+      search: '',
+      page: 1,
+      dimension: 'branch' as const,
+      mode: 'inventory' as const,
+      branchMonth: 'latest',
+      branchPeriod: 'month' as const,
+    }
+
+    await fetchPerformance(query)
+    await fetchPerformanceItemDetail(query, '60406627')
+
+    const matrixUrl = new URL(String(fetchMock.mock.calls[0][0]), 'http://localhost')
+    const detailUrl = new URL(String(fetchMock.mock.calls[1][0]), 'http://localhost')
+    expect(matrixUrl.searchParams.get('grain')).toBe('day')
+    expect(matrixUrl.searchParams.get('latest_only')).toBe('true')
+    expect(detailUrl.searchParams.get('grain')).toBe('day')
+    expect(detailUrl.searchParams.has('latest_only')).toBe(false)
+  })
+
   it('downloads every matching row without pagination parameters', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(new Blob(['xlsx']), {

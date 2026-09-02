@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { saveFileShareSettings, testFileShare } from './fileShareSettingsApi'
+import {
+  runModernTradeNow,
+  saveFileShareSettings,
+  testFileShare,
+} from './fileShareSettingsApi'
 
 const input = {
   baseUnc: '\\\\WA-NAS-IT03\\FileShare-2\\SaleOut_RPT',
@@ -12,6 +16,11 @@ const input = {
     subfolder: 'TWD',
     enabled: true,
     fullPath: '',
+    scheduleEnabled: true,
+    scheduleTime: '07:30',
+    initialScanCompleted: false,
+    lastRun: null,
+    nextRunAt: null,
   }],
 }
 
@@ -44,7 +53,13 @@ describe('fileShareSettingsApi', () => {
           domain: input.domain,
           username: input.username,
           password: input.password,
-          profiles: [{ code: 'TWD', subfolder: 'TWD', enabled: true }],
+          profiles: [{
+            code: 'TWD',
+            subfolder: 'TWD',
+            enabled: true,
+            schedule_enabled: true,
+            schedule_time: '07:30',
+          }],
         }),
       }),
     )
@@ -64,6 +79,22 @@ describe('fileShareSettingsApi', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/admin/fileshare-settings/test'),
       expect.objectContaining({ method: 'POST' }),
+    )
+  })
+
+  it('confirms a manual run explicitly', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ runId: 12 }), { status: 202 }),
+    )
+
+    await runModernTradeNow('TWD')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/admin/modern-trades/TWD/runs'),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ confirmed: true }),
+      }),
     )
   })
 })

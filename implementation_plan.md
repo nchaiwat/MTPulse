@@ -570,3 +570,140 @@ Backend ในระยะถัดไปจะแยกขอบเขตเช
 
 - AD Server/Domain, LDAPS/StartTLS และ Username format จะกำหนดเมื่อเริ่ม Authentication Phase
 - เลือกและ Pin SMB client dependency หลังพิสูจน์การเชื่อมต่อกับ NAS จริงบน Test Server
+
+# Existing Application Visual Refresh — Implementation Plan
+
+## สรุป
+
+ปรับ Visual ของ MT Pulse เดิมให้เป็น Modern/Clean/Premium โดยคง React + Vite เพิ่ม Tailwind CSS และ Shadcn/UI foundation แบบ Incremental และไม่สร้าง Dashboard หรือ Feature ใหม่ หน้า TWD Performance ใช้ CSS-only visual skin และห้ามเปลี่ยน Component/Function/Logic โดยเด็ดขาด
+
+## Goals และ Non-goals
+
+### Goals
+
+- Primary `#02abff`, Navy Navigation, Neutral Canvas/Surface และ Soft Semantic Colors
+- ปรับ Typography, Border, Radius, Soft Shadow, Hover, Focus และ Feedback States ให้สม่ำเสมอ
+- ปรับ App Shell, Import, Monitoring และ Settings เฉพาะ Presentation
+- รักษา Information Density ของ Operational Tool และตัวเลขแบบ Tabular
+
+### Non-goals
+
+- Dashboard ภาพรวม, Dashboard ราย MT, Top SKU, Top Branch หรือ Chart ใหม่
+- Business Logic, Backend, API Contract, Data Model หรือ Workflow ใหม่
+- Responsive Redesign
+- Refactor หรือเปลี่ยน Shadcn Component ในหน้า TWD Performance
+
+## Technical Direction
+
+- เพิ่ม Tailwind ผ่าน Vite โดยไม่ใช้ Preflight กับ DOM เดิม เพื่อลดความเสี่ยง CSS Regression
+- เพิ่ม Shadcn-compatible token/utilities foundation สำหรับการใช้งาน Incremental ในหน้าอื่นและงานอนาคต
+- คง stylesheet เดิมและเพิ่ม Visual Override Layer ที่โหลดท้ายสุด แทนการรื้อ CSS/Component เดิม
+- ใช้ CSS Variable เป็น Source of Truth และเก็บ Compatibility Alias สำหรับชื่อ Token เดิม
+- จำกัด Motion ที่ 150–200ms และเคารพ `prefers-reduced-motion`
+
+## File Allowlist
+
+- Documentation: `PRD.md`, `implementation_plan.md`, `design-system/mt-pulse/MASTER.md`
+- Tooling/Foundation: `package.json`, `package-lock.json`, `vite.config.ts`, `components.json`, `src/lib/utils.ts`
+- Presentation: `src/main.tsx`, `src/styles/tokens.css`, `src/styles/visual-refresh.css`
+- App Shell Navigation: `src/app/App.tsx`, `src/app/App.test.tsx`
+- ห้ามแก้ `src/features/performance/*.ts`, `src/features/performance/*.tsx`, Backend และ Database
+
+## Phased Implementation
+
+1. เก็บ Git/test baseline และตรวจ hash/diff ของ Performance source
+2. เพิ่ม Tailwind/Shadcn foundation โดยไม่เปิด Preflight
+3. เพิ่ม Token และ Visual Override สำหรับ App Shell/หน้าปัจจุบัน
+4. ตรวจ TWD Function/Logic ด้วย tests และยืนยัน diff ของ Performance sourceเป็นศูนย์
+5. รัน tests, lint, build และ visual QA แล้วสรุป Review โดยไม่แก้นอกขอบเขต
+
+## Sidebar Collapse Extension
+
+- คง Navigation เป็น Vertical Sidebar ด้านซ้ายทุก Breakpoint
+- เพิ่ม Expanded/Collapsed state เฉพาะ App Shell; ค่าเริ่มต้นเป็น Expanded
+- Collapsed state แสดง Icon Rail 72px, ซ่อน Label/Submenu เชิงภาพ แต่คง Accessible Name และ Navigation Target
+- เมื่อย่อ Group Icon จะเปิดหน้าหลักของกลุ่มโดยตรง
+- ไม่แก้ Component, State, Handler, API หรือ Data Logic ใต้ `src/features/performance`
+
+## Verification
+
+- Frontend tests และ build ผ่านเท่ากับหรือดีกว่า Baseline 37 tests
+- Backend tests ผ่านเท่ากับ Baseline 53 tests โดยใช้ workspace basetemp เมื่อ Windows Temp มี permission error
+- Ruff ผ่านสำหรับ `backend/app` และ `backend/tests`; Full Backend Ruff อาจยังพบไฟล์ Preview/Migration เดิมที่อยู่นอกขอบเขต
+- หน้า Performance ยังมี Filter, KPI, Matrix, SUM, Pagination, Drawer, Import/Export และทุก Control เดิม
+- `git diff -- src/features/performance` ไม่มีผลลัพธ์
+- ตรวจ Loading, Empty, Error, Hover, Focus และ `prefers-reduced-motion`
+
+## TWD Excel Error Remediation
+
+1. แก้ Numeric Parser ให้ตรวจ `XL_CELL_ERROR` ก่อนแปลง Decimal และไม่นำ Error Code มารวมยอด
+2. เพิ่ม Regression Test สำหรับ `#VALUE!` และ Real Sample Reconciliation
+3. จัดทำ Dry-run Tool ที่จับคู่ Batch กับไฟล์ต้นทางด้วย SHA-256 และตรวจ Data Date/Source Total
+4. แก้เฉพาะ Fact ที่พิสูจน์ได้ว่าเปลี่ยนจาก Error Code 15 เป็น 0 โดย Transaction เดียว
+5. สำรอง PostgreSQL ก่อน Apply, สร้าง Audit Event ต่อ Batch และตรวจยอด Batch/Fact หลัง Apply
+# TWD Sales Dashboard — Implementation Plan
+
+1. เพิ่ม read-only endpoint `/api/dashboards/twd` ที่อ่าน Monthly Sales Summary และคืน Summary, Monthly, Top Branch และ Top SKU
+2. เพิ่ม Backend regression tests สำหรับขอบเขต MT, ช่วงเวลา, YoY และอันดับ
+3. เพิ่มหน้า Dashboard TWD แยก module พร้อม Loading/Empty/Error และ accessible chart/table
+4. เพิ่มเมนู `แดชบอร์ด > ไทวัสดุ` ใน App Shell และลิงก์กลับรายงานเดิม
+5. รัน Backend/Frontend tests, Ruff, ESLint, production build, ตรวจ responsive และยืนยัน `git diff -- src/features/performance` ว่าง
+
+# Automatic FileShare Import — TWD Phase 1 Implementation Plan
+
+## Summary และ Non-goals
+
+- เพิ่ม File Registry, Run History, Schedule ต่อ MT, Run Now และ TWD Background Worker บน FileShare ที่ตั้งค่าไว้แล้ว
+- ใช้ Import/Corrective business rules เดิมและเพิ่ม `.xlsx` adapter โดยให้ `.xls`/`.xlsx` คืน normalized TWD extract แบบเดียวกัน
+- Non-goals: MT อื่น, `.zip`, การแทนที่อัตโนมัติ, การลบ Fact ตามไฟล์ต้นทาง และการแก้หน้า TWD Performance
+
+## Data Model Draft
+
+- `source_files`: MT, normalized path, filename, size, modified time, checksum, detected data date, discovery/status timestamps, status และ error category
+- `import_runs`: MT, trigger (`scheduled|manual|catch_up`), status, started/finished by, counts found/imported/skipped/pending/failed และ summary
+- Modern Trade เพิ่ม `schedule_enabled`, `schedule_time` และ scheduling metadata ที่จำเป็นต่อ catch-up
+- Constraints: unique normalized source path ต่อ MT, checksum lookup ต่อ MT และ active-run guard ต่อ MT
+
+## Backend และ Worker Plan
+
+1. เพิ่ม `.xlsx` parser dispatch พร้อม parity/regression tests เทียบ normalized extract กับ `.xls`
+2. เพิ่ม File Registry discovery แบบ recursive เฉพาะ `TWD\<date-folder>\<file>` และรองรับ `.xls`/`.xlsx`
+3. เพิ่ม Initial Scan ที่ Hash/อ่าน Data Date เพื่อจับคู่ Batch เดิม แต่ไม่เขียน Fact ซ้ำ
+4. เพิ่ม idempotent import decision service: unchanged skip, new import, same-period conflict pending review, warning pending review
+5. เพิ่ม worker loop และ persisted schedule evaluation ใน `Asia/Bangkok` พร้อม per-MT lock และ same-day catch-up
+6. ใช้ transaction ต่อไฟล์ เพื่อให้ไฟล์เสียไม่ Rollback ไฟล์อื่น และสร้าง Run/Audit result ทุกกรณี
+
+## API Plan
+
+- `GET/PATCH /api/admin/modern-trades/{code}/schedule` สำหรับเวลาและ Enabled
+- `POST /api/admin/modern-trades/{code}/runs` สำหรับ Run Now พร้อม idempotent trigger
+- `GET /api/admin/import-runs` และ `GET /api/admin/import-runs/{id}` สำหรับ Monitoring/รายละเอียดไฟล์
+- Conflict ใช้ Corrective Preview/Replace เดิม โดยเพิ่มการเชื่อมจาก Source File/Run ไปยัง Batch ที่ชนกัน
+- ทุก mutation ใช้ System Admin dependency; response และ audit ห้ามมี Password
+
+## UI Plan
+
+- ใน `การตั้งค่า > การตั้งค่าระบบ > FileShare` เพิ่มคอลัมน์ `Schedule`, `เวลา`, `Run ล่าสุด`, `Run ถัดไป`, `สถานะ` และ `Run ทันที` ต่อ MT
+- ปุ่ม Run Now เปิด Confirmation Modal แสดง MT, Full Path และข้อความว่า Import เฉพาะไฟล์ใหม่
+- ระหว่าง Run ปิด Trigger ซ้ำเฉพาะ MT นั้น พร้อมแสดง progress/status โดยไม่บล็อก MT อื่น
+- Monitoring เพิ่ม Run Summary และ Pending Review พร้อมทางไป Preview/Keep Existing/Replace
+- คงปุ่ม Save ระบบปุ่มเดียว และบันทึกเฉพาะ Settings section ที่เปลี่ยน
+
+## Phases
+
+1. Schema, migrations, `.xlsx` parser parity และ unit tests
+2. File discovery/registry และ Initial Scan dry-run tests กับ Batch เดิม
+3. Import decision service, run history, per-MT lock และ corrective integration
+4. Schedule worker, catch-up, Run Now APIs, Audit และ Telegram summary
+5. Settings/Monitoring UI states และ confirmation workflow
+6. Backup, migration rehearsal, local NAS verification, Ubuntu DNS/SMB verification และ staged enablement เริ่มจาก TWD
+
+## Verification และ Release Gate
+
+- Initial Scan บนข้อมูลปัจจุบันต้องไม่เพิ่ม `import_batches` หรือ Fact สำหรับไฟล์เดิม
+- Run ซ้ำด้วย source state เดิมให้ Imported = 0 และไม่มี duplicate rows
+- Same-period/different-checksum และ reconciliation warning ต้อง Pending Review โดย Fact เดิมไม่เปลี่ยน
+- Concurrent triggers ของ TWD ต้องมีงาน active เพียงหนึ่งงาน; MT อื่นไม่ถูกบล็อก
+- Server restart ภายในวันเดียวกันสร้าง catch-up ไม่เกินหนึ่งครั้ง
+- File ต้นทางหายไม่ลบ Batch/Fact และมี Monitoring event
+- Frontend/backend tests, lint/build ผ่าน และ `git diff -- src/features/performance` ว่าง

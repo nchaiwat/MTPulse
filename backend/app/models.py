@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 
 from sqlalchemy import (
@@ -14,6 +14,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -43,6 +44,10 @@ class ModernTrade(Base):
     source_enabled: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
+    schedule_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    schedule_time: Mapped[time | None] = mapped_column()
 
 
 class ImportBatch(Base):
@@ -82,6 +87,74 @@ class ImportBatch(Base):
     warning_resolved_by: Mapped[str | None] = mapped_column(String(200))
     facts: Mapped[list["SalesInventoryFact"]] = relationship(
         back_populates="batch", cascade="all, delete-orphan"
+    )
+
+
+class ImportRun(Base):
+    __tablename__ = "import_runs"
+    __table_args__ = (
+        Index("ix_import_run_mt_requested", "modern_trade_id", "requested_at"),
+        Index(
+            "uq_import_run_active_mt",
+            "modern_trade_id",
+            unique=True,
+            postgresql_where=text("status IN ('queued', 'running')"),
+            sqlite_where=text("status IN ('queued', 'running')"),
+        ),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    modern_trade_id: Mapped[int] = mapped_column(ForeignKey("modern_trades.id"))
+    trigger: Mapped[str] = mapped_column(String(16))
+    mode: Mapped[str] = mapped_column(String(16), default="import", server_default="import")
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    requested_by: Mapped[str] = mapped_column(String(200))
+    scheduled_local_date: Mapped[date | None] = mapped_column(Date)
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    found_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    imported_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    skipped_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    ready_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    pending_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    failed_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    summary_message: Mapped[str | None] = mapped_column(Text)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    results_json: Mapped[str | None] = mapped_column(Text)
+
+
+class SourceFile(Base):
+    __tablename__ = "source_files"
+    __table_args__ = (
+        UniqueConstraint(
+            "modern_trade_id", "source_path", name="uq_source_file_mt_path"
+        ),
+        Index("ix_source_file_mt_status", "modern_trade_id", "status"),
+        Index("ix_source_file_mt_data_date", "modern_trade_id", "detected_data_date"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    modern_trade_id: Mapped[int] = mapped_column(ForeignKey("modern_trades.id"))
+    source_path: Mapped[str] = mapped_column(Text)
+    source_filename: Mapped[str] = mapped_column(String(255))
+    size_bytes: Mapped[int] = mapped_column(BigInteger)
+    modified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    checksum_sha256: Mapped[str | None] = mapped_column(String(64))
+    detected_data_date: Mapped[date | None] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    imported_batch_id: Mapped[int | None] = mapped_column(
+        ForeignKey("import_batches.id", ondelete="SET NULL")
+    )
+    last_seen_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("import_runs.id", ondelete="SET NULL")
+    )
+    discovered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
     )
 
 
@@ -172,6 +245,33 @@ class ItemMapping(Base):
     effective_to: Mapped[date | None] = mapped_column(Date)
     changed_by: Mapped[str] = mapped_column(String(200))
     changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SkuInterest(Base):
+    __tablename__ = "sku_interests"
+    __table_args__ = (
+        UniqueConstraint(
+            "modern_trade_id",
+            "source_sku",
+            name="uq_sku_interest_mt_sku",
+        ),
+        Index("ix_sku_interest_mt_status", "modern_trade_id", "status"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    modern_trade_id: Mapped[int] = mapped_column(ForeignKey("modern_trades.id"))
+    source_sku: Mapped[str] = mapped_column(String(50))
+    source_description: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20))
+    first_seen_date: Mapped[date] = mapped_column(Date)
+    last_seen_date: Mapped[date] = mapped_column(Date)
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    decided_by: Mapped[str | None] = mapped_column(String(200))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class BranchMapping(Base):

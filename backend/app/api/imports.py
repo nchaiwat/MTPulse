@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_session
 from app.importers.twd import TwdExtract, TwdFormatError, extract_twd_file
-from app.models import AuditEvent, ImportBatch, ModernTrade
+from app.models import AuditEvent, ImportBatch, ModernTrade, SkuInterest
 from app.services.monitoring import capture_monitoring_snapshot
 from app.services.telegram import (
     TelegramDelivery,
@@ -34,8 +34,10 @@ logger = logging.getLogger(__name__)
 
 def _extract_upload(content: bytes, filename: str) -> TwdExtract:
     safe_name = Path(filename).name or "twd-upload.xls"
-    if not safe_name.lower().endswith(".xls"):
-        raise TwdFormatError("Phase นี้รองรับไฟล์ Raw Data TWD นามสกุล .xls เท่านั้น")
+    if Path(safe_name).suffix.lower() not in {".xls", ".xlsx"}:
+        raise TwdFormatError(
+            "รองรับไฟล์ Raw Data TWD นามสกุล .xls และ .xlsx เท่านั้น"
+        )
     with tempfile.TemporaryDirectory(prefix="mtpulse-manual-upload-") as temp_dir:
         path = Path(temp_dir) / safe_name
         path.write_bytes(content)
@@ -226,27 +228,45 @@ async def confirm_import(
         if batch.status == "imported_with_warnings"
         else "สำเร็จ"
     )
+    pending_skus = session.scalars(
+        select(SkuInterest.source_sku)
+        .where(
+            SkuInterest.modern_trade_id == batch.modern_trade_id,
+            SkuInterest.status == "pending",
+        )
+        .order_by(SkuInterest.source_sku)
+    ).all()
+    notification_lines = [
+        "🏪 Modern Trade: ไทวัสดุ (TWD)",
+        "📥 วิธีนำเข้า: Manual Upload",
+        f"📅 วันที่ข้อมูล: {format_thai_date(batch.data_date)}",
+        f"📄 ไฟล์: {batch.source_filename}",
+        f"🆔 Batch ID: {batch.id}",
+        f"✅ สถานะ: {status_label}",
+        f"📊 จำนวนรายการ: {batch.row_count:,}",
+        f"🏷️ จำนวน SKU: {batch.sku_count:,}",
+        f"🏬 จำนวนสาขา: {batch.store_count:,}",
+        f"💰 Amount: {batch.amount:,.2f}",
+        f"🔢 Qty: {batch.sales_qty:,.2f}",
+        f"📦 Stock On Hand: {batch.stock_on_hand:,.2f}",
+        f"🚚 Stock On Order: {batch.stock_on_order:,.2f}",
+        f"↩️ รายการติดลบ: {batch.negative_row_count:,}",
+    ]
+    if pending_skus:
+        notification_lines.append(
+            f"🆕 SKU ใหม่รอตัดสินใจ: {len(pending_skus):,} SKU"
+        )
     delivery = send_telegram(
         session,
         "✅ นำเข้าข้อมูลไทวัสดุสำเร็จ",
-        [
-            "🏪 Modern Trade: ไทวัสดุ (TWD)",
-            "📥 วิธีนำเข้า: Manual Upload",
-            f"📅 วันที่ข้อมูล: {format_thai_date(batch.data_date)}",
-            f"📄 ไฟล์: {batch.source_filename}",
-            f"🆔 Batch ID: {batch.id}",
-            f"✅ สถานะ: {status_label}",
-            f"📊 จำนวนรายการ: {batch.row_count:,}",
-            f"🏷️ จำนวน SKU: {batch.sku_count:,}",
-            f"🏬 จำนวนสาขา: {batch.store_count:,}",
-            f"💰 Amount: {batch.amount:,.2f}",
-            f"🔢 Qty: {batch.sales_qty:,.2f}",
-            f"📦 Stock On Hand: {batch.stock_on_hand:,.2f}",
-            f"🚚 Stock On Order: {batch.stock_on_order:,.2f}",
-            f"↩️ รายการติดลบ: {batch.negative_row_count:,}",
-        ],
+        notification_lines,
     )
     message = f"นำเข้าข้อมูล TWD วันที่ {format_thai_date(batch.data_date)} สำเร็จ"
+    if pending_skus:
+        message += (
+            f" · พบ SKU ใหม่ {len(pending_skus):,} SKU "
+            "กรุณา Accept หรือ Ignore ที่หน้า Monitoring"
+        )
     _record(
         session,
         checksum=batch.checksum_sha256,
@@ -275,6 +295,7 @@ async def confirm_import(
         "message": message,
         "dataDate": batch.data_date.isoformat(),
         "rowCount": batch.row_count,
+        "pendingSkus": pending_skus,
         "notification": {
             "status": delivery.status,
             "message": delivery.message,

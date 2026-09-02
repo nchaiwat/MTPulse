@@ -6,6 +6,50 @@ export interface FileShareProfile {
   subfolder: string
   enabled: boolean
   fullPath: string
+  scheduleEnabled: boolean
+  scheduleTime: string | null
+  initialScanCompleted: boolean
+  lastRun: ImportRun | null
+  nextRunAt: string | null
+}
+
+export type ImportRunStatus =
+  | 'queued'
+  | 'running'
+  | 'success'
+  | 'success_with_warnings'
+  | 'failed'
+
+export interface ImportRun {
+  runId: number
+  mtCode: string | null
+  mtName: string | null
+  trigger: 'manual' | 'scheduled' | 'catch_up'
+  mode: 'scan' | 'import'
+  status: ImportRunStatus
+  requestedBy: string
+  scheduledLocalDate: string | null
+  requestedAt: string | null
+  startedAt: string | null
+  finishedAt: string | null
+  counts: {
+    found: number
+    imported: number
+    skipped: number
+    ready: number
+    pending: number
+    failed: number
+  }
+  message: string | null
+  error: string | null
+  results: Array<{
+    path: string
+    filename: string
+    dataDate: string | null
+    status: string
+    message: string
+    batchId: number | null
+  }>
 }
 
 export interface FileShareTestResult {
@@ -55,8 +99,23 @@ function requestBody(input: FileShareSettingsInput) {
       code: profile.code,
       subfolder: profile.subfolder,
       enabled: profile.enabled,
+      schedule_enabled: profile.scheduleEnabled,
+      schedule_time: profile.scheduleTime || null,
     })),
   })
+}
+
+export async function runModernTradeNow(code: string): Promise<ImportRun> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/admin/modern-trades/${encodeURIComponent(code)}/runs`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmed: true }),
+    },
+  )
+  if (!response.ok) throw new Error(await detail(response))
+  return response.json() as Promise<ImportRun>
 }
 
 export async function fetchFileShareSettings(signal?: AbortSignal): Promise<FileShareSettings> {

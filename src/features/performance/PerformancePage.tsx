@@ -171,9 +171,14 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
     return () => controller.abort()
   }, [branchIds, branchMonth, branchPeriod, dateFrom, dateTo, dimension, initialData, mode, monthFrom, monthTo, page, skuIds])
 
-  const needsDailyDetail = Boolean(selected && !initialData && mode === 'sales' && dimension === 'branch' && branchPeriod === 'day')
+  const needsDailyDetail = Boolean(
+    selected
+    && !initialData
+    && dimension === 'branch'
+    && (mode === 'inventory' || (mode === 'sales' && branchPeriod === 'day')),
+  )
   const detailRequestKey = needsDailyDetail && selected
-    ? [selected.sku, dateFrom, dateTo, branchIds.join(','), monthFrom, monthTo].join('|')
+    ? [selected.sku, mode, dateFrom, dateTo, branchIds.join(','), monthFrom, monthTo].join('|')
     : ''
   useEffect(() => {
     if (!selected?.sku || !detailRequestKey) return

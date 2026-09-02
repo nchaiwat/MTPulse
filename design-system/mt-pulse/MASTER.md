@@ -16,10 +16,10 @@ MT Pulse ใช้แนวคิด **Operations Ledger** สำหรับท
 
 | หน้าที่ | สี | CSS Token |
 |---|---|---|
-| Navigation ink | `#10263D` | `--ink-900` |
-| Primary teal | `#087F75` | `--teal-600` |
-| Teal tint | `#DDF2EF` | `--teal-100` |
-| Canvas | `#F3F6F5` | `--canvas` |
+| Navigation ink | `#102A43` | `--ink-900` |
+| Primary sky | `#02ABFF` | `--primary-500` |
+| Sky tint | `#E5F6FF` | `--primary-50` |
+| Canvas | `#F4F8FB` | `--canvas` |
 | Surface | `#FFFFFF` | `--surface` |
 | Main text | `#172534` | `--text-900` |
 | Muted text | `#617181` | `--text-600` |
@@ -27,9 +27,9 @@ MT Pulse ใช้แนวคิด **Operations Ledger** สำหรับท
 | Warning | `#A66400` | `--amber-700` |
 | Negative/error | `#B73846` | `--red-700` |
 
-- สี Heatmap ใช้ Teal หลายระดับสำหรับค่าบวก และ Red tint สำหรับค่าติดลบ
+- สี Heatmap ใช้ Sky Blue หลายระดับสำหรับค่าบวก และ Red tint สำหรับค่าติดลบ
 - ตัวเลขจริงต้องแสดงเสมอ ห้ามใช้สีเพียงอย่างเดียวในการสื่อค่า
-- Focus Ring ใช้ `#087F75` และต้องเห็นชัดบนทุก Surface
+- Focus Ring ใช้ `#02ABFF` และต้องเห็นชัดบนทุก Surface
 
 ## ตัวอักษร
 
@@ -51,6 +51,7 @@ MT Pulse ใช้แนวคิด **Operations Ledger** สำหรับท
 ```
 
 - Desktop ใช้ Navigation Rail ทางซ้ายเพื่อเหลือพื้นที่แนวตั้งให้ Matrix
+- Navigation Rail คงอยู่ด้านซ้ายทุก Breakpoint และย่อเป็น Icon Rail 72px ได้ โดย Expanded เป็นค่าเริ่มต้น
 - Matrix เป็น Surface หลัก ไม่วางใน Card ที่มี Decoration หนา
 - Sticky Identity Columns และ Header ต้องแยกจาก Numeric Cells อย่างชัดเจน
 - Detail Drawer เปิดจากด้านขวาและไม่ทำให้ผู้ใช้เสีย Filter Context
@@ -83,3 +84,13 @@ MT Pulse ใช้แนวคิด **Operations Ledger** สำหรับท
 - [ ] Drawer ปิดได้ด้วยปุ่ม Close และ Escape
 - [ ] รองรับ 375, 768, 1024 และ 1440px โดย App Shell ไม่ล้น
 - [ ] เคารพ `prefers-reduced-motion`
+
+## Existing Application Visual Refresh — 1 กันยายน 2026
+
+- Visual Direction: Modern/Clean/Premium Internal SaaS Tool โดยคง Operations Ledger และ Density เดิม
+- ใช้ Soft Shadow และ Radius 12–16px เฉพาะ Surface/Control ที่เหมาะสม ไม่ทำทุกส่วนเป็น Card
+- หน้า TWD Performance ล็อก Layout, Component, Function และ Logic ทั้งหมด ใช้ CSS-only visual skin
+- ห้ามเปลี่ยนตำแหน่ง Control, Matrix, Column, Pagination, Drawer หรือ Data Workflow ของ TWD
+- รอบนี้ไม่สร้าง Dashboard, Chart, Top SKU หรือ Top Branch
+- ไม่เพิ่ม Responsive Behavior ใหม่; Matrix ยังคง Desktop-first และ Horizontal Scroll
+- Tailwind/Shadcn ใช้แบบ Incremental โดยห้าม Preflight หรือ Component replacement กระทบหน้า TWD

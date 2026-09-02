@@ -76,4 +76,29 @@ export interface MonitoringHistory {
 export interface MonitoringResponse {
   current: MonitoringCurrent
   history: MonitoringHistory[]
+  automaticImports?: {
+    runs: ImportRun[]
+    pendingFiles: Array<{
+      sourceFileId: number
+      mtCode: string
+      filename: string
+      dataDate: string | null
+      sourceFolderDate: string | null
+      status: 'pending_review' | 'failed' | 'missing'
+      message: string | null
+      lastSeenAt: string
+      batchId: number | null
+    }>
+    pendingSkus: Array<{
+      skuInterestId: number
+      mtCode: string
+      sku: string
+      description: string | null
+      status: 'pending' | 'accepted'
+      firstSeenDate: string
+      lastSeenDate: string
+      lastSeenAt: string
+    }>
+  }
 }
+import type { ImportRun } from '../settings/fileShareSettingsApi'

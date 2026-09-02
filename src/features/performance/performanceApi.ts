@@ -33,7 +33,10 @@ function monthEnd(month: string) {
 }
 
 
-function performanceQuery(queryInput: PerformanceQuery) {
+function performanceQuery(
+  queryInput: PerformanceQuery,
+  latestInventorySnapshot = true,
+) {
   const grain = queryInput.dimension === 'month'
     ? 'month'
     : queryInput.dimension === 'branch' && queryInput.mode === 'sales'
@@ -42,6 +45,9 @@ function performanceQuery(queryInput: PerformanceQuery) {
         ? 'day_total'
         : 'day'
   const query = new URLSearchParams({ grain })
+  if (latestInventorySnapshot && queryInput.mode === 'inventory' && queryInput.dimension === 'branch') {
+    query.set('latest_only', 'true')
+  }
   if (grain === 'branch_month') {
     query.set('period_month', queryInput.branchMonth)
   } else if (grain === 'month') {
@@ -80,7 +86,7 @@ export async function fetchPerformanceItemDetail(
   sku: string,
   signal?: AbortSignal,
 ): Promise<PerformanceItem | null> {
-  const { query } = performanceQuery({ ...queryInput, skuIds: [sku] })
+  const { query } = performanceQuery({ ...queryInput, skuIds: [sku] }, false)
   query.set('grain', 'day')
   query.set('page', '1')
   const response = await fetch(`${apiBaseUrl}/api/performance?${query}`, { signal })

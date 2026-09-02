@@ -5,12 +5,13 @@ import {
   CheckCircle2,
   Clock3,
   Database,
+  FolderSync,
   RefreshCw,
   Server,
   TableProperties,
   XCircle,
 } from 'lucide-react'
-import { fetchMonitoring, refreshMonitoring } from './monitoringApi'
+import { decideSkuInterest, fetchMonitoring, refreshMonitoring } from './monitoringApi'
 import { formatDisplayDate, formatDisplayDateTime } from '../../shared/dateFormat'
 import type { MonitoringResponse, MonitoringStatus } from './types'
 import './monitoring.css'
@@ -43,6 +44,20 @@ function importStatus(status: string) {
   return status
 }
 
+function automaticRunStatus(status: string) {
+  if (status === 'queued') return 'รอเริ่ม'
+  if (status === 'running') return 'กำลังทำงาน'
+  if (status === 'success') return 'สำเร็จ'
+  if (status === 'success_with_warnings') return 'สำเร็จ มีคำเตือน'
+  return 'ไม่สำเร็จ'
+}
+
+function automaticRunTone(status: string): MonitoringStatus {
+  if (status === 'success') return 'healthy'
+  if (status === 'queued' || status === 'running' || status === 'success_with_warnings') return 'warning'
+  return 'critical'
+}
+
 function triggerLabel(trigger: string) {
   if (trigger === 'import') return 'หลัง Import'
   if (trigger === 'manual_refresh') return 'Refresh'
@@ -64,6 +79,7 @@ export function MonitoringPage({ onOpenImports, onOpenCoverage }: MonitoringPage
   const [data, setData] = useState<MonitoringResponse | null>(null)
   const [busy, setBusy] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [decidingSku, setDecidingSku] = useState<string | null>(null)
 
   const load = async (manual = false) => {
     setBusy(true)
@@ -74,6 +90,23 @@ export function MonitoringPage({ onOpenImports, onOpenCoverage }: MonitoringPage
       setError(reason instanceof Error ? reason.message : 'ไม่สามารถอ่านสถานะระบบได้')
     } finally {
       setBusy(false)
+    }
+  }
+
+  const decideSku = async (
+    mtCode: string,
+    sku: string,
+    decision: 'accept' | 'ignore',
+  ) => {
+    setDecidingSku(mtCode + ':' + sku)
+    setError(null)
+    try {
+      await decideSkuInterest(mtCode, sku, decision)
+      setData(await fetchMonitoring())
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'บันทึกการตัดสินใจ SKU ไม่สำเร็จ')
+    } finally {
+      setDecidingSku(null)
     }
   }
 
@@ -107,6 +140,7 @@ export function MonitoringPage({ onOpenImports, onOpenCoverage }: MonitoringPage
 
   const current = data.current
   const latestImport = current.latestImport
+  const automaticImports = data.automaticImports ?? { runs: [], pendingFiles: [], pendingSkus: [] }
 
   return (
     <div className="monitoring-page page-content">
@@ -190,6 +224,89 @@ export function MonitoringPage({ onOpenImports, onOpenCoverage }: MonitoringPage
           </div>
         </section>
       </div>
+
+      <section className="monitoring-panel monitoring-automatic-panel" aria-labelledby="automatic-heading">
+        <header>
+          <FolderSync size={18} aria-hidden="true" />
+          <div><span className="eyebrow">FileShare automation</span><h3 id="automatic-heading">Automatic Import</h3></div>
+          <small>{integer.format(automaticImports.pendingFiles.length)} รายการรอตรวจสอบ</small>
+        </header>
+        <div className="monitoring-automatic-grid">
+          <div>
+            <div className="monitoring-subheading"><strong>Run ล่าสุด</strong><span>แสดง 10 Run ล่าสุด</span></div>
+            <div className="monitoring-table-scroll">
+              <table className="monitoring-run-table">
+                <thead><tr><th>MT</th><th>เริ่มเมื่อ</th><th>Trigger</th><th>Mode</th><th>สถานะ</th><th>Imported</th><th>Pending</th></tr></thead>
+                <tbody>
+                  {automaticImports.runs.length === 0 && <tr><td colSpan={7} className="monitoring-table-empty">ยังไม่มี Automatic Import Run</td></tr>}
+                  {automaticImports.runs.map((run) => (
+                    <tr key={run.runId}>
+                      <td><strong>{run.mtCode}</strong></td>
+                      <td>{formatDisplayDateTime(run.startedAt ?? run.requestedAt, '—')}</td>
+                      <td>{run.trigger === 'manual' ? 'Run ทันที' : run.trigger === 'catch_up' ? 'Catch-up' : 'Schedule'}</td>
+                      <td>{run.mode === 'scan' ? 'Initial Scan' : 'Import'}</td>
+                      <td><span className="monitoring-status-text" data-status={automaticRunTone(run.status)}>{automaticRunStatus(run.status)}</span></td>
+                      <td>{integer.format(run.counts.imported)}</td>
+                      <td>{integer.format(run.counts.pending + run.counts.failed)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div className="monitoring-pending-files">
+            <div className="monitoring-subheading"><strong>ไฟล์ที่ต้องตรวจสอบ</strong><span>ข้อมูลเดิมในระบบไม่ถูกลบ</span></div>
+            {automaticImports.pendingFiles.length === 0
+              ? <p className="monitoring-clear"><CheckCircle2 size={17} aria-hidden="true" />ไม่มีไฟล์ค้างตรวจสอบ</p>
+              : automaticImports.pendingFiles.map((file) => (
+                <article key={file.sourceFileId} data-status={file.status}>
+                  {file.status === 'failed' ? <XCircle size={16} /> : <AlertTriangle size={16} />}
+                  <span>
+                    <strong>{file.mtCode} · {file.filename}</strong>
+                    <small>{file.message ?? 'กรุณาตรวจสอบไฟล์ต้นฉบับ'}</small>
+                    <time>
+                      {file.dataDate
+                        ? `วันที่ข้อมูล ${formatDisplayDate(file.dataDate)}`
+                        : `Folder อ้างอิง ${formatDisplayDate(file.sourceFolderDate, 'ไม่พบวันที่')}`}
+                      {' · '}พบล่าสุด {formatDisplayDateTime(file.lastSeenAt)}
+                    </time>
+                  </span>
+                </article>
+              ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="monitoring-panel monitoring-sku-panel" aria-labelledby="sku-interest-heading">
+        <header>
+          <TableProperties size={18} aria-hidden="true" />
+          <div><span className="eyebrow">SKU interest</span><h3 id="sku-interest-heading">SKU ใหม่รอตัดสินใจ</h3></div>
+          <small>{integer.format(automaticImports.pendingSkus.length)} SKU</small>
+        </header>
+        {automaticImports.pendingSkus.length === 0
+          ? <p className="monitoring-clear"><CheckCircle2 size={17} aria-hidden="true" />ไม่มี SKU ใหม่รอตัดสินใจ</p>
+          : <div className="monitoring-sku-list">
+              {automaticImports.pendingSkus.map((item) => {
+                const decisionKey = item.mtCode + ':' + item.sku
+                const isDeciding = decidingSku === decisionKey
+                return (
+                  <article key={item.skuInterestId}>
+                    <span>
+                      <strong>{item.sku}</strong>
+                      <small>{item.description ?? 'ไม่มีรายละเอียดสินค้า'}</small>
+                      <time>พบครั้งแรก {formatDisplayDate(item.firstSeenDate)} · ล่าสุด {formatDisplayDate(item.lastSeenDate)}</time>
+                    </span>
+                    {item.status === 'pending'
+                      ? <div className="monitoring-sku-actions">
+                          <button type="button" disabled={isDeciding} onClick={() => void decideSku(item.mtCode, item.sku, 'accept')}>Accept</button>
+                          <button type="button" disabled={isDeciding} data-action="ignore" onClick={() => void decideSku(item.mtCode, item.sku, 'ignore')}>Ignore</button>
+                        </div>
+                      : <em>Accept แล้ว · รอ Mapping</em>}
+                  </article>
+                )
+              })}
+            </div>}
+      </section>
 
       <section className="monitoring-panel monitoring-query-panel" aria-labelledby="query-heading">
         <header>

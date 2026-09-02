@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     settings_encryption_key: str | None = None
     allow_secret_reveal: bool = False
     auth_mode: Literal["development", "ad"] = "development"
+    worker_poll_seconds: int = 30
 
 
 @lru_cache

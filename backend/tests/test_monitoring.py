@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+from app.api.monitoring import _source_folder_date
 from app.services.monitoring import _overall_status, _warning_count, _warning_details
 
 
@@ -28,3 +29,13 @@ def test_warning_details_returns_actionable_reconciliation_text() -> None:
     assert _warning_details(batch) == (
         "Stock On Hand: calculated=77904.0, source=77379 · second warning"
     )
+
+
+def test_source_folder_date_is_only_a_hint_for_unreadable_file() -> None:
+    assert (
+        _source_folder_date(
+            r"\\server\share\TWD\2025-01-13\empty.xls"
+        )
+        == "2025-01-13"
+    )
+    assert _source_folder_date(r"\\server\share\TWD\unknown\file.xls") is None

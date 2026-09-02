@@ -74,6 +74,7 @@ def performance(
         Query(),
     ] = "day",
     period_month: Annotated[str | None, Query(max_length=7)] = None,
+    latest_only: Annotated[bool, Query()] = False,
 ) -> dict:
     modern_trade = session.scalar(select(ModernTrade).where(ModernTrade.code == "TWD"))
     if modern_trade is None:
@@ -92,6 +93,18 @@ def performance(
     max_date = all_dates[-1] if all_dates else None
     range_from = date_from or min_date or bangkok_today()
     range_to = date_to or max_date or range_from
+    selected_snapshot_date = None
+    if latest_only:
+        eligible_dates = [
+            value
+            for value in all_dates
+            if (date_from is None or value >= date_from)
+            and (date_to is None or value <= date_to)
+        ]
+        selected_snapshot_date = eligible_dates[-1] if eligible_dates else None
+        if selected_snapshot_date is not None:
+            range_from = selected_snapshot_date
+            range_to = selected_snapshot_date
     selected_month = None
     if grain == "branch_month":
         selected_month = (
@@ -110,10 +123,17 @@ def performance(
     report_model = MonthlySalesSummary if use_monthly_summary else SalesInventoryFact
     report_date = report_model.month_start if use_monthly_summary else report_model.data_date
     filters = [report_model.modern_trade_id == twd_id]
-    if date_from or grain == "branch_month":
-        filters.append(report_date >= range_from)
-    if date_to or grain == "branch_month":
-        filters.append(report_date <= range_to)
+    if latest_only:
+        filters.append(
+            report_date == selected_snapshot_date
+            if selected_snapshot_date is not None
+            else report_date.is_(None)
+        )
+    else:
+        if date_from or grain == "branch_month":
+            filters.append(report_date >= range_from)
+        if date_to or grain == "branch_month":
+            filters.append(report_date <= range_to)
     requested_page_size = page_size if page_size is not None else modern_trade.report_page_size
     mapping_reference_date = max_date or range_to
     active_mapping_filters = (
@@ -199,6 +219,13 @@ def performance(
         )
     if mapping_status == "unmatched":
         candidate_skus = fact_skus.distinct().subquery()
+    elif not modern_trade.show_unmatched_items or hide_unmapped:
+        candidate_skus = (
+            select(ItemMapping.source_sku)
+            .where(*mapping_candidate_filters)
+            .distinct()
+            .subquery()
+        )
     else:
         mapping_skus = select(ItemMapping.source_sku).where(*mapping_candidate_filters)
         candidate_skus = fact_skus.union(mapping_skus).subquery()
@@ -662,6 +689,7 @@ def export_performance(
         Literal["amount", "qty", "stockOh", "stockOnOrder"], Query()
     ] = "amount",
     show_descriptions: Annotated[bool, Query()] = True,
+    latest_only: Annotated[bool, Query()] = False,
 ) -> StreamingResponse:
     report = performance(
         session=session,
@@ -677,6 +705,7 @@ def export_performance(
         search=search,
         grain=grain,
         period_month=period_month,
+        latest_only=latest_only,
     )
     content = build_performance_workbook(
         report,

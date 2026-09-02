@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, CheckCircle2, FileSpreadsheet, History, UploadCloud } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, FileSpreadsheet, History, LoaderCircle } from 'lucide-react'
 import { confirmImport, fetchImportActivity, previewImport, type ImportActivity, type ImportPreview } from './importApi'
 import { ImportCorrectivePanel } from './ImportCorrectivePanel'
 import { formatDisplayDate, formatDisplayDateTime } from '../../shared/dateFormat'
@@ -24,15 +24,16 @@ export function ImportPage({ correctiveBatchId = null }: { correctiveBatchId?: n
   const loadActivity = () => fetchImportActivity().then(setActivities).catch(() => undefined)
   useEffect(() => { void loadActivity() }, [])
 
-  const inspect = async () => {
-    if (!file) return
+  const inspect = async (selectedFile: File) => {
     setBusy('preview')
     setMessage(null)
     setPreview(null)
     try {
-      setPreview(await previewImport(file))
+      setPreview(await previewImport(selectedFile))
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'ตรวจสอบไฟล์ไม่สำเร็จ')
+      setFile(null)
+      if (inputRef.current) inputRef.current.value = ''
       void loadActivity()
     } finally {
       setBusy(null)
@@ -81,18 +82,18 @@ export function ImportPage({ correctiveBatchId = null }: { correctiveBatchId?: n
               id="raw-data-file"
               type="file"
               accept=".xls"
+              disabled={busy !== null}
               onChange={(event) => {
-                setFile(event.target.files?.[0] ?? null)
+                const selectedFile = event.target.files?.[0] ?? null
+                setFile(selectedFile)
                 setPreview(null)
                 setMessage(null)
+                if (selectedFile) void inspect(selectedFile)
               }}
             />
             <small>{file ? `${file.name} · ${number.format(file.size / 1024)} KB` : 'รองรับไฟล์ TWD .xls ขนาดไม่เกิน 25 MB'}</small>
           </div>
-          <button className="secondary-action" type="button" disabled={!file || busy !== null} onClick={() => void inspect()}>
-            <UploadCloud size={16} aria-hidden="true" />
-            {busy === 'preview' ? 'กำลังตรวจสอบ…' : 'ตรวจสอบไฟล์'}
-          </button>
+          {busy === 'preview' && <span className="upload-auto-status" role="status"><LoaderCircle className="is-spinning" size={16} aria-hidden="true" />กำลังตรวจสอบไฟล์…</span>}
         </div>
 
         {message && <div className="import-message" role="status">{message}</div>}

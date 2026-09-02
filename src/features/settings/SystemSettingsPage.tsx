@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Bell, Eye, EyeOff, Send } from 'lucide-react'
-import { FileShareSettingsCard } from './FileShareSettingsCard'
+import { FileShareSettingsCard, type FileShareSettingsHandle } from './FileShareSettingsCard'
 import { fetchTelegramSettings, fetchTelegramToken, saveTelegramSettings, testTelegram } from './systemSettingsApi'
 
 type SettingsMessage = { text: string; tone: 'success' | 'error' }
@@ -13,6 +13,10 @@ export function SystemSettingsPage({ embedded = false }: { embedded?: boolean })
   const [notifyManualImport, setNotifyManualImport] = useState(true)
   const [busy, setBusy] = useState<'save' | 'test' | 'reveal' | null>(null)
   const [message, setMessage] = useState<SettingsMessage | null>(null)
+  const [savedTelegram, setSavedTelegram] = useState({ groupId: '', notifyManualImport: true })
+  const [revealedToken, setRevealedToken] = useState('')
+  const [fileShareBusy, setFileShareBusy] = useState(false)
+  const fileShareRef = useRef<FileShareSettingsHandle>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -21,6 +25,10 @@ export function SystemSettingsPage({ embedded = false }: { embedded?: boolean })
         setGroupId(settings.groupId)
         setConfigured(settings.telegramConfigured)
         setNotifyManualImport(settings.notifyManualImport)
+        setSavedTelegram({
+          groupId: settings.groupId,
+          notifyManualImport: settings.notifyManualImport,
+        })
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setMessage({ text: error instanceof Error ? error.message : 'โหลดการตั้งค่าไม่สำเร็จ', tone: 'error' })
@@ -32,11 +40,32 @@ export function SystemSettingsPage({ embedded = false }: { embedded?: boolean })
     setBusy('save')
     setMessage(null)
     try {
-      const settings = await saveTelegramSettings({ botToken: token, groupId, notifyManualImport })
-      setConfigured(settings.telegramConfigured)
-      setToken('')
-      setShowToken(false)
-      setMessage({ text: 'บันทึกการตั้งค่าแล้ว', tone: 'success' })
+      let changed = await fileShareRef.current?.saveIfChanged() ?? false
+      const telegramChanged = groupId !== savedTelegram.groupId
+        || notifyManualImport !== savedTelegram.notifyManualImport
+        || Boolean(token.trim() && token !== revealedToken)
+      if (telegramChanged) {
+        const settings = await saveTelegramSettings({
+          botToken: token !== revealedToken ? token : '',
+          groupId,
+          notifyManualImport,
+        })
+        setConfigured(settings.telegramConfigured)
+        setGroupId(settings.groupId)
+        setNotifyManualImport(settings.notifyManualImport)
+        setSavedTelegram({
+          groupId: settings.groupId,
+          notifyManualImport: settings.notifyManualImport,
+        })
+        setToken('')
+        setRevealedToken('')
+        setShowToken(false)
+        changed = true
+      }
+      setMessage({
+        text: changed ? 'บันทึกการตั้งค่าระบบแล้ว' : 'ไม่มีการตั้งค่าที่เปลี่ยนแปลง',
+        tone: 'success',
+      })
     } catch (error) {
       setMessage({ text: error instanceof Error ? error.message : 'บันทึกการตั้งค่าไม่สำเร็จ', tone: 'error' })
     } finally {
@@ -68,7 +97,9 @@ export function SystemSettingsPage({ embedded = false }: { embedded?: boolean })
     setBusy('reveal')
     setMessage(null)
     try {
-      setToken(await fetchTelegramToken())
+      const currentToken = await fetchTelegramToken()
+      setToken(currentToken)
+      setRevealedToken(currentToken)
       setShowToken(true)
     } catch (error) {
       setMessage({ text: error instanceof Error ? error.message : 'เปิดดู Token ไม่สำเร็จ', tone: 'error' })
@@ -79,7 +110,7 @@ export function SystemSettingsPage({ embedded = false }: { embedded?: boolean })
 
   return (
     <div className={`system-settings-page ${embedded ? 'system-settings-page-embedded' : 'page-content'}`}>
-      <FileShareSettingsCard />
+      <FileShareSettingsCard ref={fileShareRef} disabled={busy !== null} onBusyChange={setFileShareBusy} />
       <section className="telegram-settings" aria-labelledby="telegram-heading">
         <header>
           <div><span className="setting-icon"><Bell size={19} aria-hidden="true" /></span><div><span className="eyebrow">System notification</span><h3 id="telegram-heading">Telegram</h3><p>ส่งเหตุการณ์สำคัญของ MT Pulse ไปยัง Group กลาง</p></div></div>
@@ -97,9 +128,11 @@ export function SystemSettingsPage({ embedded = false }: { embedded?: boolean })
           <label>Group ID<input type="text" value={groupId} onChange={(event) => setGroupId(event.target.value)} placeholder="เช่น -1001234567890" /></label>
           <label className="notification-option"><input type="checkbox" checked={notifyManualImport} onChange={(event) => setNotifyManualImport(event.target.checked)} /><span><strong>Manual Import</strong><small>แจ้งเมื่อการนำเข้าด้วยผู้ใช้สำเร็จหรือไม่สำเร็จ</small></span></label>
         </div>
-        {message && <div className="settings-message" data-tone={message.tone} role={message.tone === 'error' ? 'alert' : 'status'}>{message.text}</div>}
-        <footer><button className="primary-action" type="button" disabled={busy !== null} onClick={() => void save()}>{busy === 'save' ? 'กำลังบันทึก…' : 'บันทึกการตั้งค่า'}</button></footer>
       </section>
+      <div className="system-settings-savebar">
+        {message && <div className="settings-message" data-tone={message.tone} role={message.tone === 'error' ? 'alert' : 'status'}>{message.text}</div>}
+        <button className="primary-action" type="button" disabled={busy !== null || fileShareBusy} onClick={() => void save()}>{busy === 'save' ? 'กำลังบันทึก…' : 'บันทึกการตั้งค่าระบบ'}</button>
+      </div>
     </div>
   )
 }

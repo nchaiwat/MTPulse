@@ -250,8 +250,8 @@ def test_branch_month_uses_current_mapping_for_historical_facts() -> None:
                     source_amount=100,
                     amount=100,
                     sales_qty=2,
-                    stock_on_hand=0,
-                    stock_on_order=0,
+                    stock_on_hand=10,
+                    stock_on_order=3,
                 ),
                 SalesInventoryFact(
                     modern_trade_id=1,
@@ -265,8 +265,8 @@ def test_branch_month_uses_current_mapping_for_historical_facts() -> None:
                     source_amount=0,
                     amount=0,
                     sales_qty=0,
-                    stock_on_hand=0,
-                    stock_on_order=0,
+                    stock_on_hand=20,
+                    stock_on_order=7,
                 ),
             ]
         )
@@ -314,6 +314,20 @@ def test_branch_month_uses_current_mapping_for_historical_facts() -> None:
             grain="branch_range",
             period_month=None,
         )
+        inventory_snapshot_result = performance(
+            session,
+            date_from=None,
+            date_to=None,
+            page=1,
+            page_size=25,
+            branch_id=None,
+            mapping_status=None,
+            hide_unmapped=False,
+            search=None,
+            grain="day",
+            period_month=None,
+            latest_only=True,
+        )
 
     assert result["meta"]["totalSkus"] == 1
     assert result["meta"]["totalBranches"] == 1
@@ -333,6 +347,17 @@ def test_branch_month_uses_current_mapping_for_historical_facts() -> None:
             "qty": 2.0,
             "stockOh": 0,
             "stockOnOrder": 0,
+        }
+    ]
+    assert inventory_snapshot_result["dates"] == ["2026-08-16"]
+    assert inventory_snapshot_result["items"][0]["points"] == [
+        {
+            "date": "2026-08-16",
+            "branchId": "HISTORICAL-BRANCH",
+            "amount": 0.0,
+            "qty": 0.0,
+            "stockOh": 20.0,
+            "stockOnOrder": 7.0,
         }
     ]
 

@@ -84,4 +84,48 @@ describe('MonitoringPage', () => {
       expect.objectContaining({ method: 'POST' }),
     ))
   })
+
+  it('lets the user accept or ignore a newly detected SKU', async () => {
+    const pendingResponse = {
+      ...response,
+      automaticImports: {
+        runs: [],
+        pendingFiles: [],
+        pendingSkus: [{
+          skuInterestId: 1,
+          mtCode: 'TWD',
+          sku: 'NEW-001',
+          description: 'สินค้าใหม่',
+          status: 'pending',
+          firstSeenDate: '2026-09-01',
+          lastSeenDate: '2026-09-02',
+          lastSeenAt: '2026-09-02T10:00:00+07:00',
+        }],
+      },
+    }
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify(pendingResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'active' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        ...pendingResponse,
+        automaticImports: {
+          ...pendingResponse.automaticImports,
+          pendingSkus: [],
+        },
+      }), { status: 200 }))
+
+    render(<MonitoringPage />)
+
+    expect(await screen.findByText('NEW-001')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Accept' }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('/api/admin/modern-trades/TWD/sku-interests/NEW-001'),
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ decision: 'accept' }),
+      }),
+    ))
+  })
 })

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.importers.twd import TwdExtract, extract_twd_file
 from app.models import ImportBatch, ModernTrade, SalesInventoryFact
 from app.services.monthly_sales_summary import refresh_monthly_sales_summary
+from app.services.sku_interest import sync_sku_interests
 
 
 class DuplicateImportError(ValueError):
@@ -49,7 +50,20 @@ def import_twd_extract(session: Session, extract: TwdExtract) -> ImportBatch:
     batch = _build_batch(mt.id, extract)
     session.add(batch)
     session.flush()
-    session.add_all(_build_facts(mt.id, batch.id, extract))
+    interest_sync = sync_sku_interests(
+        session,
+        mt.id,
+        extract,
+        baseline=False,
+    )
+    session.add_all(
+        _build_facts(
+            mt.id,
+            batch.id,
+            extract,
+            stored_skus=interest_sync.stored_skus,
+        )
+    )
     session.flush()
     refresh_monthly_sales_summary(session, mt.id, extract.data_date)
     batch.status = "imported_with_warnings" if extract.reconciliation_errors else "imported"
@@ -83,7 +97,20 @@ def replace_twd_batch(
 
     replacement = _build_batch(batch.modern_trade_id, extract)
     session.execute(delete(SalesInventoryFact).where(SalesInventoryFact.batch_id == batch.id))
-    session.add_all(_build_facts(batch.modern_trade_id, batch.id, extract))
+    interest_sync = sync_sku_interests(
+        session,
+        batch.modern_trade_id,
+        extract,
+        baseline=False,
+    )
+    session.add_all(
+        _build_facts(
+            batch.modern_trade_id,
+            batch.id,
+            extract,
+            stored_skus=interest_sync.stored_skus,
+        )
+    )
     session.flush()
     refresh_monthly_sales_summary(session, batch.modern_trade_id, extract.data_date)
 
@@ -141,7 +168,11 @@ def _build_batch(modern_trade_id: int, extract: TwdExtract) -> ImportBatch:
 
 
 def _build_facts(
-    modern_trade_id: int, batch_id: int, extract: TwdExtract
+    modern_trade_id: int,
+    batch_id: int,
+    extract: TwdExtract,
+    *,
+    stored_skus: frozenset[str],
 ) -> list[SalesInventoryFact]:
     return [
         SalesInventoryFact(
@@ -166,4 +197,5 @@ def _build_facts(
             last_receive_date=row.last_receive_date,
         )
         for row in extract.rows
+        if row.sku in stored_skus
     ]
