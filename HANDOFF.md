@@ -363,7 +363,7 @@ git -c safe.directory=D:/Python/MTPulse status --short --branch
 
 ## 14. Ubuntu Test Server และข้อมูลทดสอบ (29/08/2026)
 
-- Test Server: `wa-mtpluse-test` (`192.168.68.129`), Ubuntu 24.04.4 LTS, i7-1255U, RAM 15 GiB
+- Test Server: `wa-mtpulse-test` (`192.168.68.129`), Ubuntu 24.04.4 LTS, i7-1255U, RAM 15 GiB
 - URL: `http://192.168.68.129`; Source: `/opt/mtpulse`; ใช้ `compose.server.yaml`
 - Docker Engine 29.7.2 / Compose 5.5.0; PostgreSQL 17, API และ Web healthy
 - Deployment commit เริ่มต้น: `271beb2 Add Ubuntu server Docker deployment`

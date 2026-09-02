@@ -195,7 +195,7 @@ Backup เป็นแผน Production ยังไม่ได้ Implement �
 
 ## 7. Test Server ปัจจุบัน
 
-- Hostname: `wa-mtpluse-test`
+- Hostname: `wa-mtpulse-test`
 - IP: `192.168.68.129`
 - Ubuntu 24.04.4 LTS
 - CPU: Intel Core i7-1255U
