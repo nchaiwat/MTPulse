@@ -61,7 +61,7 @@ def _automatic_imports(session: Session) -> dict:
         .limit(100)
     ).all()
     return {
-        "runs": [run_payload(run, mt) for run, mt in run_rows],
+        "runs": [run_payload(run, mt, session=session) for run, mt in run_rows],
         "pendingFiles": [
             {
                 "sourceFileId": source.id,

@@ -23,6 +23,7 @@ import {
   type FileShareTestResult,
   type ImportRun,
 } from './fileShareSettingsApi'
+import { runProgressView } from './runProgress'
 
 type SettingsMessage = { text: string; tone: 'success' | 'error' }
 
@@ -58,6 +59,19 @@ function formatRunTime(value: string | null) {
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    hour12: false,
+  }).format(parsed)
+}
+
+function formatRunClock(value: string | null) {
+  if (!value) return '—'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return '—'
+  return new Intl.DateTimeFormat('th-TH', {
+    timeZone: 'Asia/Bangkok',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
     hour12: false,
   }).format(parsed)
 }
@@ -328,6 +342,13 @@ export const FileShareSettingsCard = forwardRef<FileShareSettingsHandle, {
           const isRunActive = Boolean(
             profile.lastRun && activeRunStatuses.has(profile.lastRun.status),
           )
+          const progress = isRunActive ? profile.lastRun?.progress : null
+          const progressView = isRunActive && profile.lastRun
+            ? runProgressView(profile.lastRun)
+            : null
+          const displayedRunTone = progressView?.isStale
+            ? 'warning'
+            : currentRunStatus.tone
           const hasUnsavedSettings = Boolean(
             password.trim()
             || settingsSnapshot({ baseUnc, domain, username, profiles }) !== savedSnapshot
@@ -372,7 +393,7 @@ export const FileShareSettingsCard = forwardRef<FileShareSettingsHandle, {
                     />
                   </label>
                 </div>
-                <div className="run-status" data-tone={currentRunStatus.tone}>
+                <div className="run-status" data-tone={displayedRunTone}>
                   <span className="run-status-icon">
                     {isRunActive
                       ? <LoaderCircle size={16} className="spin" />
@@ -384,7 +405,7 @@ export const FileShareSettingsCard = forwardRef<FileShareSettingsHandle, {
                             ? <XCircle size={16} />
                             : <ScanSearch size={16} />}
                   </span>
-                  <span>
+                  <span className="run-status-copy">
                     <strong>{currentRunStatus.label}</strong>
                     <small>
                       {profile.lastRun
@@ -394,6 +415,79 @@ export const FileShareSettingsCard = forwardRef<FileShareSettingsHandle, {
                     {profile.lastRun?.message && <small>{profile.lastRun.message}</small>}
                     {profile.lastRun?.error && <small>{profile.lastRun.error}</small>}
                   </span>
+                  {isRunActive && progressView && (
+                    <div
+                      className="run-progress"
+                      data-stale={progressView.isStale || undefined}
+                    >
+                      <div className="run-progress-heading">
+                        <span>{progressView.phaseLabel}</span>
+                        <strong>
+                          {progress?.total
+                            ? `${progress.processed.toLocaleString()} / ${progress.total.toLocaleString()} ไฟล์`
+                            : 'กำลังนับไฟล์…'}
+                        </strong>
+                      </div>
+                      <div
+                        className="run-progress-track"
+                        data-indeterminate={!progress?.total || undefined}
+                        role="progressbar"
+                        aria-label="ความคืบหน้า Import Run"
+                        aria-valuemin={0}
+                        aria-valuemax={progress?.total || undefined}
+                        aria-valuenow={progress?.total ? progress.processed : undefined}
+                        aria-valuetext={progress?.total
+                          ? `${progress.percent}% · ${progress.processed} จาก ${progress.total} ไฟล์`
+                          : 'กำลังสำรวจรายการไฟล์'}
+                      >
+                        <span
+                          style={progress?.total
+                            ? { transform: `scaleX(${Math.min(100, progress.percent) / 100})` }
+                            : undefined}
+                        />
+                      </div>
+                      <div className="run-progress-meta">
+                        <span>ทำงานมาแล้ว <strong>{progressView.elapsedLabel}</strong></span>
+                        {progressView.etaLabel && (
+                          <span>คาดว่าเหลือ <strong>{progressView.etaLabel}</strong></span>
+                        )}
+                        <span>
+                          อัปเดตล่าสุด{' '}
+                          <strong>{formatRunClock(progress?.lastActivityAt ?? null)}</strong>
+                        </span>
+                      </div>
+                      {progress && (
+                        <>
+                          <div className="run-progress-counts">
+                            <span data-tone="ready">พร้อม {progress.counts.ready.toLocaleString()}</span>
+                            <span>ข้าม {progress.counts.skipped.toLocaleString()}</span>
+                            <span data-tone={progress.counts.pending ? 'warning' : undefined}>
+                              รอตรวจ {progress.counts.pending.toLocaleString()}
+                            </span>
+                            <span data-tone={progress.counts.failed ? 'error' : undefined}>
+                              ผิดพลาด {progress.counts.failed.toLocaleString()}
+                            </span>
+                          </div>
+                          {progress.lastProcessedFile && (
+                            <p className="run-progress-file" title={progress.lastProcessedPath ?? undefined}>
+                              <span>ไฟล์ล่าสุด</span>
+                              <strong>{progress.lastProcessedFile}</strong>
+                            </p>
+                          )}
+                          {progress.recentIssues[0] && (
+                            <p className="run-progress-issue">
+                              <AlertTriangle size={13} aria-hidden="true" />
+                              <span>
+                                <strong>{progress.recentIssues[0].filename}</strong>
+                                {' · '}
+                                {progress.recentIssues[0].message ?? 'รอตรวจสอบ'}
+                              </span>
+                            </p>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="run-actions">
                   <span>

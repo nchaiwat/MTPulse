@@ -116,7 +116,9 @@ def _response(session: Session) -> dict:
                     mt.schedule_time.strftime("%H:%M") if mt.schedule_time else None
                 ),
                 "initialScanCompleted": initial_scan_completed(session, mt.id),
-                "lastRun": run_payload(last_run, mt) if last_run else None,
+                "lastRun": (
+                    run_payload(last_run, mt, session=session) if last_run else None
+                ),
                 "nextRunAt": next_run_at,
             }
         )

@@ -55,7 +55,7 @@ def run_now(
         run = create_run(session, mt, trigger="manual", actor=actor)
     except ActiveRunError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return run_payload(run, mt)
+    return run_payload(run, mt, session=session)
 
 
 @router.get("/import-runs")
@@ -73,7 +73,9 @@ def import_runs(
     if mt_code:
         statement = statement.where(ModernTrade.code == mt_code.strip().upper())
     rows = session.execute(statement).all()
-    return {"runs": [run_payload(run, mt) for run, mt in rows]}
+    return {
+        "runs": [run_payload(run, mt, session=session) for run, mt in rows]
+    }
 
 
 @router.get("/import-runs/{run_id}")
@@ -88,4 +90,4 @@ def import_run_detail(
     ).first()
     if row is None:
         raise HTTPException(status_code=404, detail=f"ไม่พบ Import Run {run_id}")
-    return run_payload(row[0], row[1])
+    return run_payload(row[0], row[1], session=session)

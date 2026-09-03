@@ -87,11 +87,90 @@ def initial_scan_completed(session: Session, modern_trade_id: int) -> bool:
     )
 
 
-def run_payload(run: ImportRun, mt: ModernTrade | None = None) -> dict[str, object]:
+def _live_run_progress(session: Session, run: ImportRun) -> dict[str, object] | None:
+    if run.status not in ACTIVE_RUN_STATUSES:
+        return None
+
+    status_rows = session.execute(
+        select(SourceFile.status, func.count(SourceFile.id))
+        .where(SourceFile.last_seen_run_id == run.id)
+        .group_by(SourceFile.status)
+    ).all()
+    statuses = {status: int(count) for status, count in status_rows}
+    processed = sum(statuses.values())
+    total = run.found_count
+    latest = session.scalar(
+        select(SourceFile)
+        .where(SourceFile.last_seen_run_id == run.id)
+        .order_by(SourceFile.last_seen_at.desc(), SourceFile.id.desc())
+        .limit(1)
+    )
+    issues = list(
+        session.scalars(
+            select(SourceFile)
+            .where(
+                SourceFile.last_seen_run_id == run.id,
+                SourceFile.status.in_({"failed", "pending_review", "missing"}),
+            )
+            .order_by(SourceFile.last_seen_at.desc(), SourceFile.id.desc())
+            .limit(3)
+        )
+    )
+    counts = {
+        "found": total,
+        "imported": statuses.get("imported", 0),
+        "ready": statuses.get("ready", 0),
+        "pending": statuses.get("pending_review", 0) + statuses.get("missing", 0),
+        "failed": statuses.get("failed", 0),
+    }
+    counts["skipped"] = processed - sum(
+        counts[key] for key in ("imported", "ready", "pending", "failed")
+    )
+    return {
+        "phase": (
+            "queued"
+            if run.status == "queued"
+            else "discovering"
+            if total == 0
+            else "processing"
+        ),
+        "processed": processed,
+        "total": total,
+        "percent": round(processed * 100 / total, 1) if total else 0,
+        "lastProcessedFile": latest.source_filename if latest else None,
+        "lastProcessedPath": latest.source_path if latest else None,
+        "lastActivityAt": latest.last_seen_at.isoformat() if latest else None,
+        "counts": counts,
+        "recentIssues": [
+            {
+                "filename": issue.source_filename,
+                "status": issue.status,
+                "message": issue.error_message,
+            }
+            for issue in issues
+        ],
+    }
+
+
+def run_payload(
+    run: ImportRun,
+    mt: ModernTrade | None = None,
+    *,
+    session: Session | None = None,
+) -> dict[str, object]:
     try:
         results = json.loads(run.results_json or "[]")
     except json.JSONDecodeError:
         results = []
+    progress = _live_run_progress(session, run) if session else None
+    counts = progress["counts"] if progress else {
+        "found": run.found_count,
+        "imported": run.imported_count,
+        "skipped": run.skipped_count,
+        "ready": run.ready_count,
+        "pending": run.pending_count,
+        "failed": run.failed_count,
+    }
     return {
         "runId": run.id,
         "mtCode": mt.code if mt else None,
@@ -106,14 +185,8 @@ def run_payload(run: ImportRun, mt: ModernTrade | None = None) -> dict[str, obje
         "requestedAt": run.requested_at.isoformat() if run.requested_at else None,
         "startedAt": run.started_at.isoformat() if run.started_at else None,
         "finishedAt": run.finished_at.isoformat() if run.finished_at else None,
-        "counts": {
-            "found": run.found_count,
-            "imported": run.imported_count,
-            "skipped": run.skipped_count,
-            "ready": run.ready_count,
-            "pending": run.pending_count,
-            "failed": run.failed_count,
-        },
+        "counts": counts,
+        "progress": progress,
         "message": run.summary_message,
         "error": run.error_message,
         "results": results if isinstance(results, list) else [],
@@ -600,17 +673,23 @@ def process_run(session: Session, run_id: int) -> None:
     try:
         root, username, password = _credentials(session, mt)
         candidates = list_twd_source_files(root, username=username, password=password)
-        results = [
-            _process_candidate(
+        run.found_count = len(candidates)
+        run.summary_message = f"พบ {len(candidates)} ไฟล์ · กำลังเริ่มตรวจสอบ"
+        session.commit()
+        results = []
+        for index, candidate in enumerate(candidates, start=1):
+            run.summary_message = (
+                f"กำลังตรวจไฟล์ {index}/{len(candidates)} · {candidate.filename}"
+            )
+            session.commit()
+            results.append(_process_candidate(
                 session,
                 run,
                 mt,
                 candidate,
                 username=username,
                 password=password,
-            )
-            for candidate in candidates
-        ]
+            ))
         results.extend(
             _mark_missing(
                 session,

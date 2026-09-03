@@ -20,6 +20,22 @@ export type ImportRunStatus =
   | 'success_with_warnings'
   | 'failed'
 
+export interface ImportRunProgress {
+  phase: 'queued' | 'discovering' | 'processing'
+  processed: number
+  total: number
+  percent: number
+  lastProcessedFile: string | null
+  lastProcessedPath: string | null
+  lastActivityAt: string | null
+  counts: ImportRun['counts']
+  recentIssues: Array<{
+    filename: string
+    status: string
+    message: string | null
+  }>
+}
+
 export interface ImportRun {
   runId: number
   mtCode: string | null
@@ -40,6 +56,7 @@ export interface ImportRun {
     pending: number
     failed: number
   }
+  progress: ImportRunProgress | null
   message: string | null
   error: string | null
   results: Array<{

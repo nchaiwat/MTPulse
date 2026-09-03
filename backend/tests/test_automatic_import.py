@@ -17,6 +17,7 @@ from app.services.automatic_import import (
     create_run,
     decide_twd_extract,
     process_run,
+    run_payload,
 )
 
 
@@ -165,6 +166,75 @@ def test_first_run_is_scan_and_active_run_is_rejected(engine, monkeypatch) -> No
         session.commit()
         second = create_run(session, mt, trigger="manual", actor="admin")
         assert second.mode == "import"
+
+
+def test_running_payload_reports_live_file_progress(engine) -> None:
+    started_at = datetime(2026, 9, 3, 1, 21, tzinfo=UTC)
+    with Session(engine) as session:
+        mt = ModernTrade(id=1, code="TWD", name="Thai Watsadu")
+        run = ImportRun(
+            id=1,
+            modern_trade_id=mt.id,
+            trigger="manual",
+            mode="scan",
+            status="running",
+            requested_by="admin",
+            started_at=started_at,
+            found_count=4,
+        )
+        session.add_all([mt, run])
+        session.add_all(
+            [
+                SourceFile(
+                    modern_trade_id=mt.id,
+                    source_path=rf"\\server\share\TWD\2026-09-0{index}\{filename}",
+                    source_filename=filename,
+                    size_bytes=100,
+                    modified_at=started_at,
+                    status=status,
+                    error_message=error,
+                    last_seen_run_id=run.id,
+                    last_seen_at=started_at.replace(minute=21 + index),
+                )
+                for index, (filename, status, error) in enumerate(
+                    (
+                        ("ready.xls", "ready", None),
+                        ("empty.xls", "failed", "File size is 0 bytes"),
+                        ("Thumbs.db", "unsupported", "รองรับเฉพาะ .xls และ .xlsx"),
+                    ),
+                    start=1,
+                )
+            ]
+        )
+        session.commit()
+
+        payload = run_payload(run, mt, session=session)
+
+        assert payload["counts"] == {
+            "found": 4,
+            "imported": 0,
+            "ready": 1,
+            "pending": 0,
+            "failed": 1,
+            "skipped": 1,
+        }
+        assert payload["progress"] == {
+            "phase": "processing",
+            "processed": 3,
+            "total": 4,
+            "percent": 75.0,
+            "lastProcessedFile": "Thumbs.db",
+            "lastProcessedPath": r"\\server\share\TWD\2026-09-03\Thumbs.db",
+            "lastActivityAt": "2026-09-03T01:24:00",
+            "counts": payload["counts"],
+            "recentIssues": [
+                {
+                    "filename": "empty.xls",
+                    "status": "failed",
+                    "message": "File size is 0 bytes",
+                }
+            ],
+        }
 
 
 def test_initial_scan_registers_new_file_without_importing_fact(

@@ -572,7 +572,7 @@
 }
 .fileshare-profile-automation {
   display: grid;
-  grid-template-columns: minmax(250px, .9fr) minmax(310px, 1.4fr) minmax(220px, .8fr);
+  grid-template-columns: minmax(250px, .9fr) minmax(310px, 1.55fr) minmax(220px, .8fr);
   align-items: center;
   gap: 16px;
   padding: 12px 18px;
@@ -604,7 +604,7 @@
 .run-status {
   display: grid;
   grid-template-columns: 30px minmax(0, 1fr);
-  align-items: center;
+  align-items: start;
   gap: 9px;
   min-width: 0;
 }
@@ -617,7 +617,8 @@
   background: #edf3f5;
   border-radius: 9px;
 }
-.run-status > span:last-child { min-width: 0; }
+.run-status > .run-status-icon { margin-top: 1px; }
+.run-status-copy { min-width: 0; }
 .run-status strong, .run-status small { display: block; }
 .run-status strong { color: var(--text-900); font-size: 11px; }
 .run-status small {
@@ -632,11 +633,131 @@
 .run-status[data-tone="success"] .run-status-icon { color: var(--teal-700); background: var(--teal-100); }
 .run-status[data-tone="warning"] .run-status-icon { color: #9a6700; background: #fff4d6; }
 .run-status[data-tone="error"] .run-status-icon { color: var(--red-700); background: #fff0f0; }
+.run-progress {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 11px 12px;
+  background: #f5fbff;
+  border: 1px solid #c8eafb;
+  border-radius: 12px;
+  box-shadow: 0 8px 20px rgb(16 42 67 / .06);
+}
+.run-progress[data-stale] {
+  background: #fffbef;
+  border-color: #edd99f;
+}
+.run-progress-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.run-progress-heading > span { color: #026b9f; font-size: 10px; font-weight: 700; }
+.run-progress[data-stale] .run-progress-heading > span { color: #8b5c00; }
+.run-progress-heading > strong {
+  color: var(--text-900);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.run-progress-track {
+  position: relative;
+  height: 7px;
+  overflow: hidden;
+  background: #dceff8;
+  border-radius: 999px;
+}
+.run-progress-track > span {
+  position: absolute;
+  inset: 0;
+  background: #02abff;
+  border-radius: inherit;
+  box-shadow: 0 0 12px rgb(2 171 255 / .42);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 220ms ease;
+}
+.run-progress-track[data-indeterminate] > span {
+  width: 28%;
+  animation: fileshare-progress-search 1.35s ease-in-out infinite;
+}
+.run-progress-meta, .run-progress-counts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 12px;
+}
+.run-progress-meta > span { color: var(--text-600); font-size: 9px; }
+.run-progress-meta strong {
+  color: var(--text-900);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.run-progress-counts > span {
+  padding: 3px 7px;
+  color: var(--text-600);
+  background: white;
+  border: 1px solid #dbe7ec;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.run-progress-counts > span[data-tone="ready"] { color: #026b9f; border-color: #b9e2f6; }
+.run-progress-counts > span[data-tone="warning"] { color: #8b5c00; border-color: #edd99f; }
+.run-progress-counts > span[data-tone="error"] { color: var(--red-700); border-color: #f2c5cb; }
+.run-progress-file {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 7px;
+  margin: 0;
+  color: var(--text-600);
+  font-size: 9px;
+}
+.run-progress-file > span { white-space: nowrap; }
+.run-progress-file > strong {
+  overflow: hidden;
+  color: var(--text-900);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 9px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.run-progress-issue {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  padding-top: 7px;
+  color: #8b5c00;
+  border-top: 1px solid #ecdcae;
+  font-size: 9px;
+  line-height: 1.45;
+}
+.run-progress-issue svg { flex: 0 0 auto; margin-top: 1px; }
+.run-progress-issue span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .run-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
 .run-actions > span { color: var(--text-600); font-size: 9px; text-align: right; }
 .run-now-action { flex: 0 0 auto; min-width: 104px; }
 .spin { animation: fileshare-spin 900ms linear infinite; }
 @keyframes fileshare-spin { to { transform: rotate(360deg); } }
+@keyframes fileshare-progress-search {
+  0% { transform: translateX(-120%); }
+  50% { transform: translateX(180%); }
+  100% { transform: translateX(360%); }
+}
 .run-confirm-backdrop {
   position: fixed;
   z-index: 1200;
@@ -729,6 +850,7 @@
   .fileshare-base { grid-column: 1 / -1; }
   .fileshare-profile-source, .fileshare-profile-automation { grid-template-columns: 1fr 1fr; }
   .run-actions { grid-column: 1 / -1; }
+  .run-status { min-width: 0; }
 }
 @media (max-width: 760px) {
   .fileshare-settings > header { align-items: flex-start; flex-direction: column; }
@@ -736,7 +858,14 @@
   .fileshare-base { grid-column: auto; }
   .fileshare-profile-heading { align-items: flex-start; flex-direction: column; }
   .run-actions { grid-column: auto; justify-content: space-between; }
+  .run-progress-meta, .run-progress-counts { gap: 5px 8px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .spin { animation: none; }
+  .run-progress-track > span { transition: none; }
+  .run-progress-track[data-indeterminate] > span {
+    width: 100%;
+    animation: none;
+    opacity: .45;
+  }
 }
