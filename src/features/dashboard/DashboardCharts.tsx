@@ -107,13 +107,17 @@ export function MonthlyBars({
 export function RankingBars<T extends { currentAmount: number; previousAmount: number; currentQty: number; previousQty: number }>({
   rows,
   metric,
+  code,
   label,
+  change,
   currentYear,
   previousYear,
 }: {
   rows: T[]
   metric: DashboardMetric
+  code: (row: T) => string
   label: (row: T) => string
+  change: (row: T) => number | null
   currentYear: number
   previousYear: number
 }) {
@@ -122,16 +126,53 @@ export function RankingBars<T extends { currentAmount: number; previousAmount: n
   const maxValue = Math.max(...rows.flatMap((row) => [current(row), previous(row)]), 1)
   return (
     <div className="ranking-bars" role="group" aria-label="กราฟอันดับเปรียบเทียบปีปัจจุบันกับปีก่อน">
-      {rows.map((row, index) => (
-        <button className="ranking-bar-row" type="button" key={index} aria-label={`${label(row)}, ${currentYear}: ${exact.format(current(row))}, ${previousYear}: ${exact.format(previous(row))}`}>
-          <span title={label(row)}>{label(row)}</span>
-          <div className="ranking-track">
-            <i className="previous-ranking-bar" style={{ width: `${(previous(row) / maxValue) * 100}%` }} />
-            <i className="current-ranking-bar" style={{ width: `${(current(row) / maxValue) * 100}%` }} />
-          </div>
-          <div className="chart-tooltip ranking-tooltip"><strong>{label(row)}</strong><span><i className="current-swatch" />{currentYear}<b>{exact.format(current(row))}</b></span><span><i className="previous-swatch" />{previousYear}<b>{exact.format(previous(row))}</b></span></div>
-        </button>
-      ))}
+      {rows.map((row, index) => {
+        const changeValue = change(row)
+        const changeLabel = changeValue === null
+          ? '—'
+          : `${changeValue > 0 ? '+' : changeValue < 0 ? '−' : ''}${Math.abs(changeValue).toFixed(1)}%`
+        return (
+          <button
+            className="ranking-bar-row"
+            type="button"
+            key={`${code(row)}-${index}`}
+            aria-label={`อันดับ ${index + 1}, ${code(row)}, ${label(row)}, ${currentYear}: ${exact.format(current(row))}, ${previousYear}: ${exact.format(previous(row))}, YoY: ${changeLabel}`}
+          >
+            <span className="ranking-position">{String(index + 1).padStart(2, '0')}</span>
+            <span className="ranking-identity">
+              <strong>{code(row)}</strong>
+              <small title={label(row)}>{label(row)}</small>
+            </span>
+            <span className="ranking-series">
+              <span className="ranking-series-row">
+                <small>{currentYear}</small>
+                <span className="ranking-track">
+                  <i className="current-ranking-bar" style={{ width: `${(current(row) / maxValue) * 100}%` }} />
+                </span>
+                <b>{compact.format(current(row))}</b>
+              </span>
+              <span className="ranking-series-row">
+                <small>{previousYear}</small>
+                <span className="ranking-track">
+                  <i className="previous-ranking-bar" style={{ width: `${(previous(row) / maxValue) * 100}%` }} />
+                </span>
+                <b>{compact.format(previous(row))}</b>
+              </span>
+            </span>
+            <span
+              className={`ranking-delta ${changeValue === null || changeValue === 0 ? 'is-neutral' : changeValue > 0 ? 'is-positive' : 'is-negative'}`}
+            >
+              {changeLabel}
+            </span>
+            <span className="chart-tooltip ranking-tooltip">
+              <strong>{code(row)} · {label(row)}</strong>
+              <span><i className="current-swatch" />{currentYear}<b>{exact.format(current(row))}</b></span>
+              <span><i className="previous-swatch" />{previousYear}<b>{exact.format(previous(row))}</b></span>
+              <span className="ranking-tooltip-delta">YoY<b>{changeLabel}</b></span>
+            </span>
+          </button>
+        )
+      })}
     </div>
   )
 }

@@ -72,6 +72,10 @@ describe('TwdDashboardPage', () => {
     const branchSection = branchHeading.closest('section')
     expect(branchSection).not.toBeNull()
     expect(within(branchSection!).getAllByText('60016 - ภูเก็ต เฟสติวัล (CTW-0048)').length).toBeGreaterThan(0)
+    expect(within(branchSection!).getByText('01')).toBeInTheDocument()
+    expect(within(branchSection!).getAllByText('60016').length).toBeGreaterThan(0)
+    expect(within(branchSection!).getByText('ภูเก็ต เฟสติวัล (CTW-0048)')).toBeInTheDocument()
+    expect(within(branchSection!).getAllByText('+20.0%').length).toBeGreaterThanOrEqual(2)
 
     const skuHeading = screen.getByRole('heading', { name: 'Top 15 SKU' })
     const skuSection = skuHeading.closest('section')
@@ -81,6 +85,7 @@ describe('TwdDashboardPage', () => {
     expect(within(skuTable).getByRole('columnheader', { name: 'สินค้า' })).toBeInTheDocument()
     expect(within(skuTable).getByRole('cell', { name: '60365148' })).toBeInTheDocument()
     expect(within(skuTable).getByRole('cell', { name: 'ประตูบานเลื่อน UPVC FRAMEX 2 บาน' })).toBeInTheDocument()
+    expect(within(skuSection!).getAllByText('60365148').length).toBeGreaterThan(1)
 
     const chartTargets = screen.getAllByRole('button', { name: /ม\.ค\. 2026: 1,200, 2025: 1,000/ })
     expect(chartTargets.length).toBeGreaterThanOrEqual(2)

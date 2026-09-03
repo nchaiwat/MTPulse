@@ -171,8 +171,8 @@ export function TwdDashboardPage({ onOpenReport }: TwdDashboardPageProps) {
             <div className="dashboard-table-scroll"><table><thead><tr><th>เดือน</th><th>ยอดขาย {previousYear}</th><th>ยอดขาย {currentYear}</th><th>YoY</th><th>MoM</th><th>Qty {previousYear}</th><th>Qty {currentYear}</th><th>Qty YoY</th></tr></thead><tbody>{monthly.map((row) => <tr key={row.monthKey}><td>{monthNames[row.month - 1]} {currentYear}</td><td>{amount.format(row.previousAmount)}</td><td>{amount.format(row.currentAmount)}</td><td><Change value={row.amountYoY} /></td><td><Change value={row.amountMoM} /></td><td>{quantity.format(row.previousQty)}</td><td>{quantity.format(row.currentQty)}</td><td><Change value={row.qtyYoY} /></td></tr>)}</tbody></table></div>
           </section>
 
-          <RankingSection title="Top 10 สาขา" eyebrow="Branch performance" icon={<Store size={18} aria-hidden="true" />} currentYear={currentYear} previousYear={previousYear} metric={metric} rows={topBranches} kind="branch" code={(row) => row.branchCode} name={(row) => row.displayName} formatMetric={formatMetric} />
-          <RankingSection title="Top 15 SKU" eyebrow="Product performance" icon={<PackageSearch size={18} aria-hidden="true" />} currentYear={currentYear} previousYear={previousYear} metric={metric} rows={topSkus} kind="sku" code={(row) => row.sku} name={(row) => row.description} formatMetric={formatMetric} />
+          <RankingSection title="Top 10 สาขา" eyebrow="Branch performance" icon={<Store size={18} aria-hidden="true" />} currentYear={currentYear} previousYear={previousYear} metric={metric} rows={topBranches} kind="branch" code={(row) => row.branchCode} name={(row) => row.displayName} chartName={(row) => row.mappedBranchCode ? `${row.branchName} (${row.mappedBranchCode})` : row.branchName} formatMetric={formatMetric} />
+          <RankingSection title="Top 15 SKU" eyebrow="Product performance" icon={<PackageSearch size={18} aria-hidden="true" />} currentYear={currentYear} previousYear={previousYear} metric={metric} rows={topSkus} kind="sku" code={(row) => row.sku} name={(row) => row.description} chartName={(row) => row.description} formatMetric={formatMetric} />
         </>
       )}
     </div>
@@ -184,7 +184,7 @@ function ChartLegend({ currentYear, previousYear }: { currentYear: number; previ
 }
 
 function RankingSection<T extends { currentAmount: number; previousAmount: number; currentQty: number; previousQty: number; amountYoY: number | null; qtyYoY: number | null }>({
-  title, eyebrow, icon, currentYear, previousYear, metric, rows, kind, code, name, formatMetric,
+  title, eyebrow, icon, currentYear, previousYear, metric, rows, kind, code, name, chartName, formatMetric,
 }: {
   title: string
   eyebrow: string
@@ -196,6 +196,7 @@ function RankingSection<T extends { currentAmount: number; previousAmount: numbe
   kind: 'branch' | 'sku'
   code: (row: T) => string
   name: (row: T) => string
+  chartName: (row: T) => string
   formatMetric: Intl.NumberFormat
 }) {
   const current = (row: T) => metric === 'amount' ? row.currentAmount : row.currentQty
@@ -204,7 +205,7 @@ function RankingSection<T extends { currentAmount: number; previousAmount: numbe
     <section className="dashboard-panel ranking-panel">
       <header><div className="ranking-heading">{icon}<div><span className="eyebrow">{eyebrow}</span><h3>{title}</h3></div></div><ChartLegend currentYear={currentYear} previousYear={previousYear} /></header>
       <div className="ranking-content">
-        <RankingBars rows={rows} metric={metric} label={name} currentYear={currentYear} previousYear={previousYear} />
+        <RankingBars rows={rows} metric={metric} code={code} label={chartName} change={(row) => metric === 'amount' ? row.amountYoY : row.qtyYoY} currentYear={currentYear} previousYear={previousYear} />
         <div className="dashboard-table-scroll"><table><thead><tr><th>#</th><th>{kind === 'sku' ? 'SKU' : 'รายการ'}</th>{kind === 'sku' && <th>สินค้า</th>}<th>{previousYear}</th><th>{currentYear}</th><th>YoY</th></tr></thead><tbody>{rows.map((row, index) => <tr key={index}><td>{index + 1}</td>{kind === 'sku' ? <><td className="ranking-code">{code(row)}</td><td className="ranking-product-name">{name(row)}</td></> : <td className="ranking-branch-name">{name(row)}</td>}<td>{formatMetric.format(previous(row))}</td><td>{formatMetric.format(current(row))}</td><td><Change value={metric === 'amount' ? row.amountYoY : row.qtyYoY} /></td></tr>)}</tbody></table></div>
       </div>
     </section>

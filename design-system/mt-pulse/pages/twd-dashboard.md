@@ -19,3 +19,11 @@
 ## Protected boundary
 
 หน้า Dashboard เป็น module ใหม่ ห้ามแก้ DOM, State, Handler, Query หรือ Layout ของ `src/features/performance`.
+
+## Ranking chart treatment
+
+- Top Branch และ Top SKU ใช้ Ranked comparison row: อันดับ, รหัส, ชื่อ, แท่งปีปัจจุบัน/ปีก่อน, ค่าที่ปลายแท่ง และ YoY chip
+- ปีปัจจุบันใช้ Primary Sky `#02ABFF`; ปีก่อนใช้ Slate `#8EA3B5` เพื่อลดการแย่งน้ำหนักสายตา
+- แสดงค่าแบบย่อบนกราฟเสมอ และแสดงค่าจริงพร้อมชื่อเต็มใน Tooltip เมื่อ Hover หรือ Keyboard focus
+- YoY ใช้ Soft green/red พร้อมเครื่องหมายบวก/ลบ ไม่สื่อความหมายด้วยสีเพียงอย่างเดียว
+- กราฟ 10–15 แถวต้องเริ่มจากด้านบนและใช้พื้นที่ตามข้อมูล ไม่จัดกึ่งกลางจนเกิดพื้นที่ว่างขนาดใหญ่
