@@ -540,3 +540,64 @@ Discovery สำหรับ Frontend UX Milestone ได้รับอนุ�
 
 - ไม่แก้ Component, Layout, Function, Logic หรือ API contract ของหน้า TWD Performance เดิม
 - ไม่รวม Inventory ใน Dashboard ยอดขายรอบแรก และไม่สร้าง Dashboard ของ MT อื่นในรอบนี้
+
+
+## Requirement เพิ่มเติม: TWD Import Progress และนำเข้าจาก FileShare โดยตรง — 3 กันยายน 2026
+
+### Objective และปัญหา
+
+- ลดเวลารอและความไม่แน่ใจหลังผู้ใช้เลือกไฟล์ โดยแสดงว่าเวลาถูกใช้กับการ Upload, อ่าน Excel หรือการตรวจฐานข้อมูล
+- ให้ผู้ใช้เลือกไฟล์ TWD ที่ Initial Scan ระบุว่า `พร้อมนำเข้า` แล้วนำเข้าจาก FileShare โดยตรง โดยไม่ต้อง Download ผ่านเครื่องผู้ใช้แล้ว Upload กลับเข้า Server
+- ใช้ Importer, Reconciliation, Duplicate Protection, SKU Interest และ Audit/Notification rules ชุดเดิมทุกประการ
+
+### Users และสิทธิ์
+
+- `System Admin` และ `Data Operator` ใช้ Manual Upload และ FileShare Import ได้
+- `Viewer` ดูรายงานและ Download ได้เท่านั้น
+- Browser ห้ามได้รับ FileShare Username, Password หรือ Full UNC Path
+- ระหว่างที่ `MTPULSE_AUTH_MODE=development` ยังไม่มี Role Enforcement จริง แต่ API ต้องวางขอบเขตไว้ให้บังคับ Role เดิมได้เมื่อเปิด AD Authentication
+
+### Workflow: Manual Upload
+
+1. ผู้ใช้เลือกไฟล์ TWD `.xls` หรือ `.xlsx` จากเครื่อง
+2. ระบบเริ่ม Preview อัตโนมัติและแสดง Upload Percentage ตามจำนวน Byte จริง
+3. เมื่อ Upload ครบ เปลี่ยนสถานะเป็น `กำลังอ่านและตรวจสอบไฟล์`
+4. Backend อ่าน Excel, Reconcile และตรวจข้อมูลซ้ำ แล้วคืน Preview พร้อมเวลาที่ใช้แต่ละช่วง
+5. ผู้ใช้ตรวจ Summary/Warning แล้วกด `ยืนยันนำเข้าข้อมูล`
+6. ขั้น Confirm ต้อง Upload และตรวจ Checksum ซ้ำตามกฎเดิม พร้อมแสดง Progress เช่นเดียวกัน
+
+### Workflow: FileShare Import
+
+1. ผู้ใช้สลับแหล่งข้อมูลเป็น `จาก FileShare`
+2. ระบบอ่านเฉพาะทะเบียน `source_files` ของ TWD ที่มีสถานะ `ready` โดยไม่ Scan NAS ซ้ำ และเรียง Data Date ล่าสุดก่อน
+3. รายการแสดง Data Date, Filename, Size และเวลาที่พบ โดยไม่เปิดเผย Full UNC Path
+4. ผู้ใช้เลือกหนึ่งไฟล์ ระบบ Download จาก NAS บน Server, Parse และแสดง Preview ชุดเดียวกับ Manual Upload
+5. ผู้ใช้กดยืนยัน ระบบ Download ไฟล์ซ้ำ ตรวจ Expected Checksum และนำเข้าด้วย Transaction/Business Rules ชุดเดิม
+6. เมื่อสำเร็จ `source_files.status` เปลี่ยนเป็น `imported` และเชื่อม `imported_batch_id`; รายการพร้อมนำเข้าถูก Refresh
+
+### Business Rules และข้อจำกัด
+
+- ใช้ Data Date ภายในไฟล์เสมอ ไม่ใช้วันที่ Folder หรือเวลาพบไฟล์
+- Original File บน NAS เป็น Read-only ห้ามแก้ชื่อ ย้าย เขียน หรือลบ
+- FileShare Import เลือกได้เฉพาะ Source File ของ TWD ที่สถานะ `ready`; ไฟล์ Warning/Conflict ต้องใช้ Corrective Workflow เดิม
+- Preview เป็น Read-only และห้ามสร้าง Fact
+- Confirm ต้องอ่านไฟล์ใหม่และตรวจ Checksum เทียบ Preview; หากไฟล์เปลี่ยนหรือหาย ให้หยุดโดยไม่แก้ข้อมูลเดิมและบอกให้ Run Scan ใหม่
+- Manual Upload และ FileShare Import ต้องป้องกัน Checksum/Data Date ซ้ำเหมือนกัน
+- UI แสดง Upload Percentage จริงเฉพาะการส่งไฟล์จาก Browser; ระหว่าง Server Parse แสดงสถานะกำลังประมวลผลและแสดง Timing Breakdown เมื่อ Backend ตอบกลับ
+- ห้ามเปลี่ยน Component, Layout, Function, Query หรือ Business Logic ของหน้า TWD Performance
+
+### UI Direction
+
+- ภายในหน้า `นำเข้าข้อมูล` ใช้ Source Switch สองค่า: `จากเครื่อง` และ `จาก FileShare`
+- ใช้ Compact Pipeline Strip เป็นจุดจดจำ: `ส่ง/อ่านไฟล์ → ตรวจสอบ → ยืนยัน` สีหลัก `#02ABFF` และ Soft semantic states
+- FileShare Ready List เป็น Operations Ledger ขนาดกะทัดรัด ไม่เพิ่ม Card Grid และรองรับ Loading, Empty, Error/Retry, Hover, Focus และ Keyboard
+- Preview Summary เดิมใช้ร่วมกันทั้งสองแหล่งข้อมูล เพื่อให้ผู้ใช้ตรวจตัวเลขแบบเดียวกัน
+
+### Success Criteria
+
+- ไฟล์จำลองขนาด 5–6 MB จาก Local Disk แสดง Upload Percentage และเปลี่ยน Phase ถูกต้อง
+- Preview response แสดงเวลาที่ใช้ Upload read, FileShare download, Excel parse และ Duplicate check ตามแหล่งข้อมูล
+- Ready List ไม่ทำ SMB Scan และไม่คืน Credential/Full UNC
+- Preview จาก FileShare ไม่สร้าง Batch/Fact; Confirm สำเร็จสร้างเพียงหนึ่ง Batch และอัปเดต Source File เดิม
+- ไฟล์เปลี่ยน, หาย, ซ้ำ, Warning หรือ Conflict ไม่ทำให้ข้อมูลเดิมเปลี่ยน
+- Manual Upload เดิม, Automatic Import, Corrective, Telegram และ TWD Performance regression tests ผ่าน

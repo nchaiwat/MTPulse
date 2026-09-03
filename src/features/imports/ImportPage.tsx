@@ -1,10 +1,89 @@
-import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, CheckCircle2, FileSpreadsheet, History, LoaderCircle } from 'lucide-react'
-import { confirmImport, fetchImportActivity, previewImport, type ImportActivity, type ImportPreview } from './importApi'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Database,
+  FileSpreadsheet,
+  History,
+  LoaderCircle,
+  RefreshCw,
+} from 'lucide-react'
+import {
+  confirmFileShareImport,
+  confirmImport,
+  fetchFileShareReady,
+  fetchImportActivity,
+  previewFileShareImport,
+  previewImport,
+  type FileShareReadyFile,
+  type ImportActivity,
+  type ImportPreview,
+  type UploadProgress,
+} from './importApi'
 import { ImportCorrectivePanel } from './ImportCorrectivePanel'
 import { formatDisplayDate, formatDisplayDateTime } from '../../shared/dateFormat'
 
 const number = new Intl.NumberFormat('th-TH', { maximumFractionDigits: 2 })
+type SourceMode = 'upload' | 'fileshare'
+type WorkProgress = UploadProgress | {
+  phase: 'fileshare' | 'importing'
+  loaded: number
+  total: number
+  percent: number
+}
+
+function formatDuration(milliseconds: number) {
+  if (milliseconds < 1000) return `${Math.round(milliseconds)} ms`
+  return `${(milliseconds / 1000).toFixed(1)} วินาที`
+}
+
+function TimingBreakdown({ preview }: { preview: ImportPreview }) {
+  const timings = preview.timings ?? {}
+  const items = [
+    ['อ่านจาก FileShare', timings.downloadMs],
+    ['รับไฟล์บน Server', timings.serverReadMs],
+    ['อ่านและตรวจ Excel', timings.parseMs],
+    ['ตรวจข้อมูลซ้ำ', timings.duplicateCheckMs],
+  ].filter((item): item is [string, number] => typeof item[1] === 'number')
+  if (items.length === 0) return null
+  return (
+    <div className="import-timings" aria-label="เวลาประมวลผล">
+      {items.map(([label, value]) => (
+        <span key={label}>{label}<strong>{formatDuration(value)}</strong></span>
+      ))}
+    </div>
+  )
+}
+
+function ImportProgress({ progress }: { progress: WorkProgress }) {
+  const uploading = progress.phase === 'uploading'
+  const label = progress.phase === 'fileshare'
+    ? 'กำลังอ่านไฟล์จาก FileShare'
+    : progress.phase === 'importing'
+      ? 'กำลังตรวจสอบและนำเข้าข้อมูล'
+      : uploading
+        ? 'กำลังส่งไฟล์เข้า Server'
+        : 'กำลังอ่าน Excel และตรวจข้อมูล'
+  return (
+    <div className="import-transfer" role="status">
+      <div><span>{label}</span><strong>{uploading ? `${progress.percent}%` : 'โปรดรอสักครู่'}</strong></div>
+      <div
+        className="import-transfer-track"
+        data-indeterminate={!uploading || undefined}
+        role="progressbar"
+        aria-label={label}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={uploading ? progress.percent : undefined}
+      >
+        <span style={{ width: uploading ? `${progress.percent}%` : '38%' }} />
+      </div>
+      {uploading && progress.total > 0 && (
+        <small>{number.format(progress.loaded / 1024)} / {number.format(progress.total / 1024)} KB</small>
+      )}
+    </div>
+  )
+}
 
 function statusLabel(status: string) {
   if (status === 'imported' || status === 'imported_with_warnings') return 'สำเร็จ'
@@ -14,47 +93,106 @@ function statusLabel(status: string) {
 }
 
 export function ImportPage({ correctiveBatchId = null }: { correctiveBatchId?: number | null }) {
+  const [sourceMode, setSourceMode] = useState<SourceMode>('upload')
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<ImportPreview | null>(null)
   const [activities, setActivities] = useState<ImportActivity[]>([])
+  const [readyFiles, setReadyFiles] = useState<FileShareReadyFile[]>([])
+  const [readyState, setReadyState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [selectedSourceFileId, setSelectedSourceFileId] = useState<number | null>(null)
   const [busy, setBusy] = useState<'preview' | 'confirm' | null>(null)
+  const [progress, setProgress] = useState<WorkProgress | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const loadActivity = () => fetchImportActivity().then(setActivities).catch(() => undefined)
   useEffect(() => { void loadActivity() }, [])
 
+  const loadReadyFiles = useCallback(async () => {
+    setReadyState('loading')
+    try {
+      setReadyFiles(await fetchFileShareReady())
+      setReadyState('ready')
+    } catch {
+      setReadyState('error')
+    }
+  }, [])
+  const changeSourceMode = (nextMode: SourceMode) => {
+    if (busy !== null || nextMode === sourceMode) return
+    setSourceMode(nextMode)
+    setFile(null)
+    setSelectedSourceFileId(null)
+    setPreview(null)
+    setProgress(null)
+    setMessage(null)
+    if (inputRef.current) inputRef.current.value = ''
+    if (nextMode === 'fileshare') void loadReadyFiles()
+  }
+
   const inspect = async (selectedFile: File) => {
     setBusy('preview')
     setMessage(null)
     setPreview(null)
     try {
-      setPreview(await previewImport(selectedFile))
+      setPreview(await previewImport(selectedFile, setProgress))
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'ตรวจสอบไฟล์ไม่สำเร็จ')
       setFile(null)
       if (inputRef.current) inputRef.current.value = ''
       void loadActivity()
     } finally {
+      setProgress(null)
+      setBusy(null)
+    }
+  }
+
+  const inspectFileShare = async (sourceFileId: number) => {
+    setBusy('preview')
+    setMessage(null)
+    setPreview(null)
+    setSelectedSourceFileId(sourceFileId)
+    setProgress({ phase: 'fileshare', loaded: 0, total: 0, percent: 0 })
+    try {
+      setPreview(await previewFileShareImport(sourceFileId))
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'ตรวจสอบไฟล์จาก FileShare ไม่สำเร็จ')
+      setSelectedSourceFileId(null)
+      void loadReadyFiles()
+      void loadActivity()
+    } finally {
+      setProgress(null)
       setBusy(null)
     }
   }
 
   const confirm = async () => {
-    if (!file || !preview?.canImport) return
+    if (!preview?.canImport) return
+    if (sourceMode === 'upload' && !file) return
+    if (sourceMode === 'fileshare' && selectedSourceFileId === null) return
     setBusy('confirm')
     setMessage(null)
     try {
-      const result = await confirmImport(file, preview.checksum)
+      let result
+      if (sourceMode === 'fileshare' && selectedSourceFileId !== null) {
+        setProgress({ phase: 'importing', loaded: 0, total: 0, percent: 0 })
+        result = await confirmFileShareImport(selectedSourceFileId, preview.checksum)
+      } else if (file) {
+        result = await confirmImport(file, preview.checksum, setProgress)
+      } else {
+        return
+      }
       setMessage(`${result.message} · ${result.notification.message}`)
       setFile(null)
+      setSelectedSourceFileId(null)
       setPreview(null)
       if (inputRef.current) inputRef.current.value = ''
+      if (sourceMode === 'fileshare') void loadReadyFiles()
       void loadActivity()
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'นำเข้าข้อมูลไม่สำเร็จ')
       void loadActivity()
     } finally {
+      setProgress(null)
       setBusy(null)
     }
   }
@@ -65,37 +203,88 @@ export function ImportPage({ correctiveBatchId = null }: { correctiveBatchId?: n
       <section className="import-workflow" aria-labelledby="import-heading">
         <header className="import-intro">
           <div>
-            <span className="eyebrow">Manual data import</span>
+            <span className="eyebrow">Data import</span>
             <h2 id="import-heading">นำเข้าข้อมูล</h2>
-            <p>เลือก Raw Data ครั้งละหนึ่งไฟล์ ระบบจะตรวจสอบและแสดงข้อมูลก่อนนำเข้าจริง</p>
+            <p>เลือกไฟล์จากเครื่องหรือ FileShare ระบบจะแสดงผลตรวจสอบก่อนนำเข้าจริง</p>
           </div>
-          <span className="import-scope"><strong>Phase 1</strong>TWD · .xls</span>
+          <span className="import-scope"><strong>Phase 1</strong>TWD · .xls / .xlsx</span>
         </header>
 
-        <div className="upload-stage">
-          <span className="stage-number">1</span>
-          <FileSpreadsheet size={28} aria-hidden="true" />
-          <div className="file-control">
-            <label htmlFor="raw-data-file">เลือกไฟล์ Raw Data</label>
-            <input
-              ref={inputRef}
-              id="raw-data-file"
-              type="file"
-              accept=".xls"
-              disabled={busy !== null}
-              onChange={(event) => {
-                const selectedFile = event.target.files?.[0] ?? null
-                setFile(selectedFile)
-                setPreview(null)
-                setMessage(null)
-                if (selectedFile) void inspect(selectedFile)
-              }}
-            />
-            <small>{file ? `${file.name} · ${number.format(file.size / 1024)} KB` : 'รองรับไฟล์ TWD .xls ขนาดไม่เกิน 25 MB'}</small>
+        <div className="import-source-bar">
+          <div className="import-source-switch" role="group" aria-label="แหล่งข้อมูล">
+            <button type="button" aria-pressed={sourceMode === 'upload'} disabled={busy !== null} onClick={() => changeSourceMode('upload')}>
+              <FileSpreadsheet size={16} aria-hidden="true" />จากเครื่อง
+            </button>
+            <button type="button" aria-pressed={sourceMode === 'fileshare'} disabled={busy !== null} onClick={() => changeSourceMode('fileshare')}>
+              <Database size={16} aria-hidden="true" />จาก FileShare
+            </button>
           </div>
-          {busy === 'preview' && <span className="upload-auto-status" role="status"><LoaderCircle className="is-spinning" size={16} aria-hidden="true" />กำลังตรวจสอบไฟล์…</span>}
+          <ol className="import-pipeline" aria-label="ขั้นตอนนำเข้าข้อมูล">
+            <li data-active={!preview || undefined}><span>1</span>{sourceMode === 'upload' ? 'ส่งไฟล์' : 'อ่านไฟล์'}</li>
+            <li data-active={preview ? true : undefined}><span>2</span>ตรวจสอบ</li>
+            <li><span>3</span>ยืนยัน</li>
+          </ol>
         </div>
 
+        {sourceMode === 'upload' ? (
+          <div className="upload-stage">
+            <span className="stage-number">1</span>
+            <FileSpreadsheet size={28} aria-hidden="true" />
+            <div className="file-control">
+              <label htmlFor="raw-data-file">เลือกไฟล์ Raw Data จากเครื่อง</label>
+              <input
+                ref={inputRef}
+                id="raw-data-file"
+                type="file"
+                accept=".xls,.xlsx"
+                disabled={busy !== null}
+                onChange={(event) => {
+                  const selectedFile = event.target.files?.[0] ?? null
+                  setFile(selectedFile)
+                  setPreview(null)
+                  setMessage(null)
+                  if (selectedFile) void inspect(selectedFile)
+                }}
+              />
+              <small>{file ? `${file.name} · ${number.format(file.size / 1024)} KB` : 'รองรับไฟล์ TWD .xls / .xlsx ขนาดไม่เกิน 25 MB'}</small>
+            </div>
+          </div>
+        ) : (
+          <section className="fileshare-ready-stage" aria-labelledby="fileshare-ready-heading">
+            <header>
+              <div>
+                <span className="stage-number">1</span>
+                <div><span className="eyebrow">File registry</span><h3 id="fileshare-ready-heading">ไฟล์พร้อมนำเข้า</h3></div>
+              </div>
+              <button type="button" className="secondary-action" disabled={readyState === 'loading' || busy !== null} onClick={() => void loadReadyFiles()}>
+                <RefreshCw size={14} className={readyState === 'loading' ? 'is-spinning' : undefined} aria-hidden="true" />Refresh
+              </button>
+            </header>
+            {readyState === 'loading' && <div className="fileshare-ready-state" role="status"><LoaderCircle className="is-spinning" size={18} />กำลังอ่านทะเบียนไฟล์…</div>}
+            {readyState === 'error' && <div className="fileshare-ready-state error" role="alert"><AlertTriangle size={18} />โหลดรายการไม่สำเร็จ <button type="button" onClick={() => void loadReadyFiles()}>ลองใหม่</button></div>}
+            {readyState === 'ready' && readyFiles.length === 0 && <div className="fileshare-ready-state">ยังไม่มีไฟล์พร้อมนำเข้า กรุณาใช้ Initial Scan หรือ Run ทันทีที่หน้าการตั้งค่า</div>}
+            {readyState === 'ready' && readyFiles.length > 0 && (
+              <div className="fileshare-ready-table-wrap">
+                <table className="fileshare-ready-table">
+                  <thead><tr><th>วันที่ข้อมูล</th><th>ไฟล์</th><th>ขนาด</th><th>พบล่าสุด</th><th><span className="sr-only">การทำงาน</span></th></tr></thead>
+                  <tbody>
+                    {readyFiles.map((readyFile) => (
+                      <tr key={readyFile.id} data-selected={selectedSourceFileId === readyFile.id || undefined}>
+                        <td>{readyFile.dataDate ? formatDisplayDate(readyFile.dataDate) : '—'}</td>
+                        <td><strong>{readyFile.filename}</strong></td>
+                        <td>{number.format(readyFile.sizeBytes / 1024)} KB</td>
+                        <td>{formatDisplayDateTime(readyFile.discoveredAt)}</td>
+                        <td><button type="button" disabled={busy !== null} onClick={() => void inspectFileShare(readyFile.id)}>ตรวจสอบ</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        )}
+
+        {progress && <ImportProgress progress={progress} />}
         {message && <div className="import-message" role="status">{message}</div>}
 
         {preview && (
@@ -117,6 +306,7 @@ export function ImportPage({ correctiveBatchId = null }: { correctiveBatchId?: n
               <div><dt>Sales Qty</dt><dd>{number.format(preview.salesQty)}</dd></div>
               <div><dt>Return rows</dt><dd>{number.format(preview.negativeRowCount)}</dd></div>
             </dl>
+            <TimingBreakdown preview={preview} />
             {preview.warnings.length > 0 && <div className="preview-warning"><AlertTriangle size={16} />{preview.warnings.join(' · ')}</div>}
             {preview.duplicateReason && <div className="preview-warning blocked"><AlertTriangle size={16} />{preview.duplicateReason}</div>}
             <footer>
@@ -132,7 +322,7 @@ export function ImportPage({ correctiveBatchId = null }: { correctiveBatchId?: n
       <section className="activity-panel" aria-labelledby="activity-heading">
         <header><div><History size={18} aria-hidden="true" /><div><span className="eyebrow">Activity log</span><h3 id="activity-heading">ประวัติการทำงานล่าสุด</h3></div></div><button type="button" onClick={() => void loadActivity()}>Refresh</button></header>
         <div className="activity-list">
-          {activities.length === 0 && <p className="empty-activity">ยังไม่มีประวัติ Manual Import</p>}
+          {activities.length === 0 && <p className="empty-activity">ยังไม่มีประวัติการนำเข้าข้อมูล</p>}
           {activities.map((item) => (
             <article key={item.id}>
               <span className={`activity-status ${item.status}`} aria-hidden="true" />

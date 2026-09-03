@@ -7,6 +7,7 @@ import tempfile
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from pathlib import Path
+from time import perf_counter
 
 import smbclient
 from smbprotocol.exceptions import SMBException
@@ -295,8 +296,23 @@ def download_twd_extract(
     username: str,
     password: str,
 ) -> TwdExtract:
+    extract, _, _ = download_twd_extract_with_timings(
+        candidate,
+        username=username,
+        password=password,
+    )
+    return extract
+
+
+def download_twd_extract_with_timings(
+    candidate: SourceCandidate,
+    *,
+    username: str,
+    password: str,
+) -> tuple[TwdExtract, float, float]:
     with tempfile.TemporaryDirectory(prefix="mtpulse-fileshare-") as temp_dir:
         local_path = Path(temp_dir) / candidate.filename
+        download_started = perf_counter()
         with (
             smbclient.open_file(
                 candidate.path,
@@ -309,12 +325,15 @@ def download_twd_extract(
             local_path.open("wb") as target,
         ):
             shutil.copyfileobj(source, target, length=1024 * 1024)
+        downloaded = perf_counter()
         extract = extract_twd_file(local_path)
-    return replace(
+        parsed = perf_counter()
+    normalized = replace(
         extract,
         source_path=candidate.path,
         source_filename=candidate.filename,
     )
+    return normalized, downloaded - download_started, parsed - downloaded
 
 
 def decide_twd_extract(

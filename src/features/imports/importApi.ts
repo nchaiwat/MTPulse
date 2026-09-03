@@ -18,6 +18,32 @@ export interface ImportPreview {
   warnings: string[]
   canImport: boolean
   duplicateReason: string | null
+  sourceMode?: 'upload' | 'fileshare'
+  sourceFileId?: number | null
+  timings?: ImportTimings
+}
+
+export interface ImportTimings {
+  serverReadMs?: number
+  downloadMs?: number
+  parseMs?: number
+  duplicateCheckMs?: number
+  importMs?: number
+}
+
+export interface UploadProgress {
+  phase: 'uploading' | 'processing'
+  loaded: number
+  total: number
+  percent: number
+}
+
+export interface FileShareReadyFile {
+  id: number
+  filename: string
+  dataDate: string | null
+  sizeBytes: number
+  discoveredAt: string
 }
 
 export interface ImportActivity {
@@ -81,23 +107,114 @@ async function errorMessage(response: Response): Promise<string> {
   }
 }
 
-export async function previewImport(file: File): Promise<ImportPreview> {
+function xhrErrorMessage(xhr: XMLHttpRequest): string {
+  try {
+    const payload = JSON.parse(xhr.responseText) as { detail?: string }
+    return payload.detail ?? `Import API ตอบกลับ ${xhr.status}`
+  } catch {
+    return xhr.status
+      ? `Import API ตอบกลับ ${xhr.status}`
+      : 'ไม่สามารถเชื่อมต่อ Import API'
+  }
+}
+
+function uploadForm<T>(
+  path: string,
+  form: FormData,
+  onProgress?: (progress: UploadProgress) => void,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `${apiBaseUrl}${path}`)
+    xhr.upload.addEventListener('progress', (event) => {
+      if (!event.lengthComputable) return
+      onProgress?.({
+        phase: 'uploading',
+        loaded: event.loaded,
+        total: event.total,
+        percent: Math.min(100, Math.round((event.loaded / event.total) * 100)),
+      })
+    })
+    xhr.upload.addEventListener('load', () => {
+      onProgress?.({ phase: 'processing', loaded: 0, total: 0, percent: 100 })
+    })
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as T)
+        } catch {
+          reject(new Error('Import API ส่งข้อมูลตอบกลับไม่ถูกต้อง'))
+        }
+        return
+      }
+      reject(new Error(xhrErrorMessage(xhr)))
+    })
+    xhr.addEventListener('error', () => reject(new Error('ไม่สามารถเชื่อมต่อ Import API')))
+    xhr.addEventListener('abort', () => reject(new Error('ยกเลิกการส่งไฟล์แล้ว')))
+    xhr.send(form)
+  })
+}
+
+export async function previewImport(
+  file: File,
+  onProgress?: (progress: UploadProgress) => void,
+): Promise<ImportPreview> {
   const form = new FormData()
   form.append('file', file)
-  const response = await fetch(`${apiBaseUrl}/api/imports/preview`, { method: 'POST', body: form })
+  return uploadForm<ImportPreview>('/api/imports/preview', form, onProgress)
+}
+
+export async function confirmImport(
+  file: File,
+  checksum: string,
+  onProgress?: (progress: UploadProgress) => void,
+) {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('expected_checksum', checksum)
+  return uploadForm<{
+    message: string
+    pendingSkus: string[]
+    timings?: ImportTimings
+    notification: { status: string; message: string }
+  }>('/api/imports/confirm', form, onProgress)
+}
+
+export async function fetchFileShareReady(
+  signal?: AbortSignal,
+): Promise<FileShareReadyFile[]> {
+  const response = await fetch(`${apiBaseUrl}/api/imports/fileshare-ready`, { signal })
+  if (!response.ok) throw new Error(await errorMessage(response))
+  const payload = await response.json() as { items: FileShareReadyFile[] }
+  return payload.items
+}
+
+export async function previewFileShareImport(
+  sourceFileId: number,
+): Promise<ImportPreview> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/imports/fileshare/${sourceFileId}/preview`,
+    { method: 'POST' },
+  )
   if (!response.ok) throw new Error(await errorMessage(response))
   return response.json() as Promise<ImportPreview>
 }
 
-export async function confirmImport(file: File, checksum: string) {
+export async function confirmFileShareImport(
+  sourceFileId: number,
+  checksum: string,
+) {
   const form = new FormData()
-  form.append('file', file)
   form.append('expected_checksum', checksum)
-  const response = await fetch(`${apiBaseUrl}/api/imports/confirm`, { method: 'POST', body: form })
+  const response = await fetch(
+    `${apiBaseUrl}/api/imports/fileshare/${sourceFileId}/confirm`,
+    { method: 'POST', body: form },
+  )
   if (!response.ok) throw new Error(await errorMessage(response))
   return response.json() as Promise<{
     message: string
     pendingSkus: string[]
+    timings?: ImportTimings
     notification: { status: string; message: string }
   }>
 }

@@ -707,3 +707,108 @@ Backend ในระยะถัดไปจะแยกขอบเขตเช
 - Server restart ภายในวันเดียวกันสร้าง catch-up ไม่เกินหนึ่งครั้ง
 - File ต้นทางหายไม่ลบ Batch/Fact และมี Monitoring event
 - Frontend/backend tests, lint/build ผ่าน และ `git diff -- src/features/performance` ว่าง
+
+
+# TWD Import Progress และ Direct FileShare Import — Implementation Plan
+
+## Project Summary
+
+ปรับหน้า `นำเข้าข้อมูล` ให้บอกความคืบหน้าของ Manual Upload ตาม Byte จริง และเพิ่มเส้นทางเลือกไฟล์ TWD สถานะ `ready` จาก File Registry เพื่อให้ Server อ่าน NAS โดยตรง ทั้งสองเส้นทางใช้ Preview/Confirm และกฎ Import ชุดเดียวกัน โดยไม่แก้หน้า TWD Performance
+
+## Goals และ Non-goals
+
+### Goals
+
+- Manual Upload แสดง Upload Percentage, Processing Phase และ Timing Breakdown
+- FileShare Ready List อ่านจาก PostgreSQL โดยไม่ Rescan NAS
+- FileShare Preview/Confirm อ่าน NAS แบบ Read-only และตรวจ Checksum ซ้ำก่อน Import
+- ใช้ Summary, Warning, Duplicate Protection, SKU Interest, Notification และ Audit behavior เดิม
+- UI เป็น Operations Ledger แบบ Modern/Clean/Premium และเข้าถึงได้ด้วย Keyboard
+
+### Non-goals
+
+- ไม่ปรับ SMB protocol, Wi-Fi/LAN, NAS หรือ Nginx infrastructure ในรอบนี้
+- ไม่สร้าง Streaming Parser, SSE, WebSocket หรือ Background Job ใหม่สำหรับ Manual Preview
+- ไม่เปลี่ยน Schedule, Run Now, Initial Scan หรือ Corrective rules
+- ไม่รองรับ MT อื่นหรือ `.zip`
+- ไม่แก้ไฟล์ใต้ `src/features/performance`
+
+## Technical Architecture
+
+- ใช้ `XMLHttpRequest.upload.onprogress` เฉพาะ Manual Upload เพราะ Fetch API ปัจจุบันไม่เปิด Upload Progress
+- หลัง Browser ส่งครบ UI เปลี่ยนจาก `uploading` เป็น `processing`; Backend ใช้ `perf_counter` วัด read/download, parse และ duplicate check แล้วคืน Timing metadata
+- ใช้ `source_files` เดิมเป็น Registry; ไม่มี Migration ใหม่
+- Direct FileShare endpoint โหลด Credential ฝั่ง Backend, ใช้ `download_twd_extract` เดิม และไม่คืน Secret/Full Path
+- Preview และ Confirm รับ `source_file_id` พร้อม `expected_checksum`; Confirm อ่าน Source ใหม่เพื่อป้องกันไฟล์เปลี่ยนหลัง Preview
+- แยก helper เฉพาะส่วน Import completion ที่จำเป็นให้ Manual/FileShare ใช้ผลลัพธ์และ Notification แบบเดียวกัน โดยไม่เปลี่ยน Parser หรือ `import_twd_extract`
+
+## API Plan
+
+- `GET /api/imports/fileshare-ready?limit=1000`
+  - คืน TWD Source File เฉพาะ `status=ready`
+  - เรียง `detected_data_date DESC, id DESC`
+  - Response: id, filename, dataDate, sizeBytes, discoveredAt; ไม่คืน sourcePath
+- `POST /api/imports/fileshare/{source_file_id}/preview`
+  - ตรวจ Source ownership/status, Download/Parse และคืน Import Preview เดิมพร้อม source mode/timings
+- `POST /api/imports/fileshare/{source_file_id}/confirm`
+  - รับ expected checksum, Download/Parse ซ้ำ, ตรวจ checksum และ Import transaction เดิม
+  - อัปเดต Source File เป็น imported เฉพาะหลัง Import สำเร็จ
+- `POST /api/imports/preview` และ `POST /api/imports/confirm`
+  - Contract เดิมยังใช้ได้ เพิ่ม optional `timings` โดยไม่ทำให้ Client เดิมเสีย
+- Error ต้องบอกทางแก้: ไฟล์หาย/เปลี่ยนให้ Run Scan ใหม่, Duplicate ให้ดู Batch เดิม, FileShare ใช้ไม่ได้ให้ตรวจ Settings/Network
+
+## Frontend/UI Plan
+
+- เพิ่ม Segmented Source Switch ด้านบน Workflow: `จากเครื่อง` / `จาก FileShare`
+- Manual mode คง File Input เดิมและเพิ่ม Compact Pipeline Strip:
+  - Uploading: Progressbar พร้อม Percentage และขนาดที่ส่ง
+  - Processing: `กำลังอ่าน Excel และตรวจข้อมูล`
+  - Ready/Error: Timing Breakdown และคำแนะนำ
+- FileShare mode แสดง Ready List แบบตารางกะทัดรัด มีวันที่ข้อมูล, ชื่อไฟล์, ขนาด, เวลาที่พบ และปุ่ม Preview
+- เมื่อ Preview สำเร็จ ใช้ Preview Summary/Footer เดิม; ปุ่ม Confirm เลือก API ตาม Source Mode
+- Empty state บอกให้ใช้ Initial Scan/Run Now; Error state มี Retry
+- สี Primary `#02ABFF`, Navy/Slate, Soft Shadow และ Radius ตาม Design System; Motion 150–200ms และเคารพ reduced motion
+
+## File และ Module Plan
+
+- `backend/app/api/imports.py`: timing helpers, FileShare list/preview/confirm endpoints และ shared completion path
+- `backend/app/services/automatic_import.py`: reuse download/credential behaviorเท่าที่จำเป็น โดยไม่เปลี่ยน decision logic
+- `backend/tests/test_manual_import.py` และ endpoint tests: filtering, preview read-only, checksum change, success/source update และ errors
+- `src/features/imports/importApi.ts`: upload-progress transport, FileShare list/preview/confirm contracts
+- `src/features/imports/ImportPage.tsx`: source mode, progress phases, ready list และ shared preview
+- `src/features/imports/ImportPage.test.tsx`: progress, source switch, ready/empty/error, preview และ confirm
+- `src/styles/app.css`: scoped Import workflow stylesเท่านั้น
+- Documentation: `PRD.md`, `implementation_plan.md`
+
+## Phased Implementation
+
+1. เพิ่ม Backend tests สำหรับ Ready List และ FileShare Preview/Confirm
+2. เพิ่ม Backend endpoints/timings โดย reuse Import rules เดิม
+3. เพิ่ม XHR upload progress client พร้อม unit tests
+4. เพิ่ม Source Switch, Pipeline Strip และ Ready List โดย reuse Preview UI เดิม
+5. รัน frontend/backend regression, Ruff, ESLint, build และตรวจ diff ของ Performance
+6. ทดสอบ Local ด้วยไฟล์ 5–6 MB และทดสอบ WA-MTPULSE-TEST หลัง Backup/Deploy approval
+
+## Verification Plan
+
+- Backend: Preview ไม่เพิ่ม ImportBatch/Fact; Confirm เพิ่มครั้งเดียว; duplicate/changed/missing/status-not-ready ถูกปฏิเสธ
+- Security: response ทุก endpoint ไม่มี Base UNC, Domain, Username หรือ Password
+- Frontend: Progressbar มี accessible name/value, keyboard source switch, loading/empty/error/retry และ reduced motion
+- Regression: Manual Upload auto-preview, Corrective, Activity Log, Automatic Run และ Telegram ยังทำงาน
+- Quality gates: full pytest, Ruff, frontend tests, ESLint, production build และ `git diff -- src/features/performance` ต้องว่าง
+- Server validation: เปรียบเทียบเวลาจริงของ Local upload กับ Direct FileShare และตรวจ Source File/Batch/Audit หลัง Confirm
+
+## Risks และ Mitigations
+
+- NAS ยังช้าจาก Wi-Fi: UI แสดงช่วง `กำลังอ่านจาก FileShare` และเวลาจริง; Direct path ตัด Browser hop แต่ไม่ทำให้ NAS เร็วขึ้น
+- Source เปลี่ยนหลัง Preview: Confirm re-download และ checksum guard
+- Shared flow ทำให้ Manual behavior ถดถอย: รักษา endpoint contract เดิมและเพิ่ม regression tests ก่อนแก้
+- FileShare list ใหญ่: จำกัด 1,000 รายการล่าสุดและใช้ Registry query/index เดิม โดยยังไม่อ่านเนื้อหา NAS จนกดตรวจสอบ
+
+## Release Checklist
+
+- ไม่มี Migration และไม่มีการแก้ TWD fact schema
+- Backup PostgreSQL ก่อน deploy ตามขั้นตอน Test Server เดิม
+- Deploy API/Web เท่านั้นหลังไม่มี Automatic Run active
+- Smoke test Manual Upload progress, Ready List, FileShare Preview และ Error state
+- ไม่ Trigger Confirm กับข้อมูลจริงโดยอัตโนมัติ; ให้ผู้ใช้เป็นผู้ยืนยัน Import
