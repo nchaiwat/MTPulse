@@ -172,18 +172,9 @@ def performance(
         and mapping_status is None
         and not hide_unmapped
         and not normalized_search
+        and not modern_trade.show_unmatched_branches
         and _daily_summary_covers_dates(session, twd_id, all_dates)
     )
-    if use_daily_summary and not modern_trade.show_unmatched_branches:
-        unmapped_branch = session.scalar(
-            select(MonthlySalesSummary.source_branch_code)
-            .where(
-                MonthlySalesSummary.modern_trade_id == twd_id,
-                ~MonthlySalesSummary.source_branch_code.in_(mapped_branches),
-            )
-            .limit(1)
-        )
-        use_daily_summary = unmapped_branch is None
     use_monthly_summary = grain in ("month", "branch_month")
     report_model = (
         MonthlySalesSummary

@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.local_time import as_bangkok, bangkok_now
 from app.models import AuditEvent, BranchMapping, ItemMapping, ModernTrade, SalesInventoryFact
+from app.services.daily_sku_summary import rebuild_daily_sku_summaries
 
 
 def export_filename(
@@ -658,6 +659,9 @@ def import_item_mapping_workbook(
         )
         branch_inserted += 1
 
+    if branch_inserted or branch_updated:
+        session.flush()
+        rebuild_daily_sku_summaries(session, modern_trade.id)
     session.commit()
     return ItemImportReport(
         total_rows=parsed.row_count,

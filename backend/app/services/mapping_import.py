@@ -17,6 +17,7 @@ from app.models import (
     ModernTrade,
     SalesInventoryFact,
 )
+from app.services.daily_sku_summary import rebuild_daily_sku_summaries
 
 
 @dataclass(frozen=True)
@@ -229,6 +230,9 @@ def import_mapping_workbook(
             )
 
     if apply:
+        if inserted_branches:
+            session.flush()
+            rebuild_daily_sku_summaries(session, modern_trade.id)
         session.commit()
 
     return MappingImportReport(

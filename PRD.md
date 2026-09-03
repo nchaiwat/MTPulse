@@ -613,10 +613,11 @@ Discovery สำหรับ Frontend UX Milestone ได้รับอนุ�
 
 ### Business Rules
 
-- เพิ่ม Daily Summary ระดับ `Modern Trade × Data Date × SKU` สำหรับ Amount, Sales Qty, Stock On Hand และ Stock On Order
+- เพิ่ม Daily Summary ระดับ `Modern Trade × Data Date × SKU` สำหรับ Amount, Sales Qty, Stock On Hand และ Stock On Order โดยรวมเฉพาะสาขาที่อยู่ใน Active Branch Mapping ณ วันที่ข้อมูลล่าสุด
 - ใช้ Daily Summary เฉพาะ `grain=day_total` ใน safe fast path ที่ไม่มี Date/Branch/SKU/Search/Mapping filter; กรณีอื่นใช้ Fact query เดิม
-- ก่อนใช้ fast path ต้องยืนยันว่า Branch ที่มี Fact ทั้งหมดอยู่ใน Active Branch Mapping เมื่อ `show_unmatched_branches=false`; หากไม่ครบให้ fallback
+- ใช้ fast path เมื่อ `show_unmatched_branches=false`; หากผู้ใช้เปิดแสดงสาขาที่ยังไม่ Mapping ให้ fallback ไป Fact query เดิม
 - Import และ Corrective Replace ต้อง refresh Daily Summary ของวันที่นั้นใน transaction เดียวกับ Fact และ Monthly Summary
+- เมื่อ Branch Mapping ถูกเพิ่มหรือแก้ ระบบต้อง rebuild Daily Summary ใน transaction เดียวกันเพื่อไม่ให้ข้อมูล stale
 - Migration ต้อง backfill จาก Fact เดิมและมี downgrade ที่ลบเฉพาะ Daily Summary table
 - เปิด Gzip สำหรับ JSON เป็น optimization เสริม แต่ห้ามใช้แทนการแก้ Query
 

@@ -830,7 +830,7 @@ Backend ในระยะถัดไปจะแยกขอบเขตเช
 2. Backfill Amount, Qty, Stock On Hand และ Stock On Order จาก `sales_inventory_facts`
 3. เพิ่ม `refresh_daily_sku_summary()` และเรียกหลัง Import/Corrective Replace ก่อน commit
 4. เพิ่ม safe fast path ใน Performance API เฉพาะ unfiltered `grain=day_total`
-5. ใช้ Monthly Summary ตรวจ Branch coverage และอ่าน Branch list; หากเงื่อนไขไม่ปลอดภัย fallback ไป Fact path เดิม
+5. Daily Summary รวมเฉพาะ Active Branch Mapping; rebuild เมื่อ Branch Mapping เปลี่ยน และ fallback ไป Fact path เมื่อเปิดแสดงสาขาที่ยังไม่ Mapping
 6. เพิ่ม Gzip สำหรับ JSON ใน Nginx พร้อมคง API contract เดิม
 
 ## Verification

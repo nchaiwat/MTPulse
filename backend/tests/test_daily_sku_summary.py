@@ -4,8 +4,17 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.database import Base
-from app.models import DailySkuSummary, ImportBatch, ModernTrade, SalesInventoryFact
-from app.services.daily_sku_summary import refresh_daily_sku_summary
+from app.models import (
+    BranchMapping,
+    DailySkuSummary,
+    ImportBatch,
+    ModernTrade,
+    SalesInventoryFact,
+)
+from app.services.daily_sku_summary import (
+    rebuild_daily_sku_summaries,
+    refresh_daily_sku_summary,
+)
 
 
 def _batch(batch_id: int, modern_trade_id: int, data_date: date) -> ImportBatch:
@@ -65,6 +74,24 @@ def test_refresh_daily_sku_summary_replaces_only_selected_mt_and_date() -> None:
             [
                 ModernTrade(id=1, code="TWD", name="Thai Watsadu"),
                 ModernTrade(id=2, code="OTHER", name="Other"),
+                BranchMapping(
+                    id=1,
+                    modern_trade_id=1,
+                    source_branch_code="B1",
+                    wa_branch_code="WA-B1",
+                    status="confirmed",
+                    effective_from=first_date,
+                    changed_by="test",
+                ),
+                BranchMapping(
+                    id=2,
+                    modern_trade_id=2,
+                    source_branch_code="B1",
+                    wa_branch_code="OTHER-B1",
+                    status="confirmed",
+                    effective_from=first_date,
+                    changed_by="test",
+                ),
                 _batch(1, 1, first_date),
                 _batch(2, 1, second_date),
                 _batch(3, 2, first_date),
@@ -91,12 +118,47 @@ def test_refresh_daily_sku_summary_replaces_only_selected_mt_and_date() -> None:
                 DailySkuSummary.data_date,
             )
         ).all()
+        summary_values = [
+            (row.modern_trade_id, row.data_date, float(row.amount))
+            for row in summaries
+        ]
+        first_measures = (
+            float(summaries[0].sales_qty),
+            float(summaries[0].stock_on_hand),
+            float(summaries[0].stock_on_order),
+        )
+        session.add(
+            BranchMapping(
+                id=3,
+                modern_trade_id=1,
+                source_branch_code="B2",
+                wa_branch_code="WA-B2",
+                status="confirmed",
+                effective_from=first_date,
+                changed_by="test",
+            )
+        )
+        session.flush()
+        rebuild_daily_sku_summaries(session, 1)
+        session.commit()
+        rebuilt_values = [
+            (row.modern_trade_id, row.data_date, float(row.amount))
+            for row in session.scalars(
+                select(DailySkuSummary).order_by(
+                    DailySkuSummary.modern_trade_id,
+                    DailySkuSummary.data_date,
+                )
+            ).all()
+        ]
 
-    assert [(row.modern_trade_id, row.data_date, float(row.amount)) for row in summaries] == [
+    assert summary_values == [
+        (1, first_date, 150.0),
+        (1, second_date, 300.0),
+        (2, first_date, 900.0),
+    ]
+    assert first_measures == (1.0, 10.0, 2.0)
+    assert rebuilt_values == [
         (1, first_date, 350.0),
         (1, second_date, 300.0),
         (2, first_date, 900.0),
     ]
-    assert float(summaries[0].sales_qty) == 2
-    assert float(summaries[0].stock_on_hand) == 20
-    assert float(summaries[0].stock_on_order) == 4

@@ -203,6 +203,9 @@ def test_unfiltered_day_total_daily_summary_matches_fact_fallback() -> None:
         session.query(DailySkuSummary).update({DailySkuSummary.amount: 999999})
         session.commit()
         selected_branch_after_summary_change = report("B1")
+        for data_date in dates:
+            refresh_daily_sku_summary(session, 1, data_date)
+        session.commit()
         session.add(
             SalesInventoryFact(
                 id=fact_id,
@@ -224,13 +227,20 @@ def test_unfiltered_day_total_daily_summary_matches_fact_fallback() -> None:
         refresh_monthly_sales_summary(session, 1, dates[0])
         refresh_daily_sku_summary(session, 1, dates[0])
         session.commit()
+        unmapped_branch_optimized = report()
+        modern_trade = session.get(ModernTrade, 1)
+        assert modern_trade is not None
+        modern_trade.show_unmatched_branches = True
+        session.commit()
+        unmatched_visible = report()
         session.query(DailySkuSummary).update({DailySkuSummary.amount: 999999})
         session.commit()
-        unmapped_branch_fallback = report()
+        unmatched_visible_after_summary_change = report()
 
     assert optimized == legacy
     assert selected_branch_after_summary_change == selected_branch
-    assert unmapped_branch_fallback == legacy
+    assert unmapped_branch_optimized == legacy
+    assert unmatched_visible_after_summary_change == unmatched_visible
 
 
 def test_performance_search_includes_mapping_without_facts() -> None:

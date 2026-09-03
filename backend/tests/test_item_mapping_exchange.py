@@ -113,7 +113,9 @@ class _ImportSession:
 
     def scalar(self, _statement):
         self.scalar_calls += 1
-        return ModernTrade(id=1, code="TWD", name="Thai Watsadu")
+        if self.scalar_calls == 1:
+            return ModernTrade(id=1, code="TWD", name="Thai Watsadu")
+        return None
 
     def scalars(self, _statement) -> _ScalarRows:
         self.scalars_calls += 1
@@ -121,6 +123,12 @@ class _ImportSession:
 
     def add(self, value: object) -> None:
         self.added.append(value)
+
+    def execute(self, _statement) -> None:
+        return None
+
+    def flush(self) -> None:
+        return None
 
     def commit(self) -> None:
         self.committed = True
