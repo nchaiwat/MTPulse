@@ -14,6 +14,7 @@ from app.database import get_session
 from app.local_time import bangkok_today
 from app.models import (
     BranchMapping,
+    DailySkuSummary,
     ImportBatch,
     ItemMapping,
     ModernTrade,
@@ -54,6 +55,21 @@ def _selected_sku_ids(sku_ids: str | None) -> list[str]:
         if normalized and normalized not in selected:
             selected.append(normalized)
     return selected
+
+
+def _daily_summary_covers_dates(
+    session: Session,
+    modern_trade_id: int,
+    all_dates: list[date],
+) -> bool:
+    summary_dates = set(
+        session.scalars(
+            select(distinct(DailySkuSummary.data_date)).where(
+                DailySkuSummary.modern_trade_id == modern_trade_id
+            )
+        ).all()
+    )
+    return summary_dates == set(all_dates)
 
 
 @router.get("/performance")
@@ -119,21 +135,6 @@ def performance(
                 raise HTTPException(
                     status_code=422, detail="period_month must use YYYY-MM"
                 ) from error
-    use_monthly_summary = grain in ("month", "branch_month")
-    report_model = MonthlySalesSummary if use_monthly_summary else SalesInventoryFact
-    report_date = report_model.month_start if use_monthly_summary else report_model.data_date
-    filters = [report_model.modern_trade_id == twd_id]
-    if latest_only:
-        filters.append(
-            report_date == selected_snapshot_date
-            if selected_snapshot_date is not None
-            else report_date.is_(None)
-        )
-    else:
-        if date_from or grain == "branch_month":
-            filters.append(report_date >= range_from)
-        if date_to or grain == "branch_month":
-            filters.append(report_date <= range_to)
     requested_page_size = page_size if page_size is not None else modern_trade.report_page_size
     mapping_reference_date = max_date or range_to
     active_mapping_filters = (
@@ -155,18 +156,62 @@ def performance(
     mapped_skus = select(ItemMapping.source_sku).where(*active_mapping_filters)
     reportable_mapped_skus = mapped_skus.where(ItemMapping.report_status == "active")
     inactive_mapped_skus = mapped_skus.where(ItemMapping.report_status == "inactive")
-    filters.append(~report_model.source_sku.in_(inactive_mapped_skus))
     mapped_branches = select(BranchMapping.source_branch_code).where(
         *active_branch_mapping_filters
     )
+    selected_branch_ids = _selected_branch_ids(branch_id, branch_ids)
+    selected_sku_ids = _selected_sku_ids(sku_ids)
+    normalized_search = search.strip() if search else ""
+    use_daily_summary = (
+        grain == "day_total"
+        and not latest_only
+        and date_from is None
+        and date_to is None
+        and not selected_branch_ids
+        and not selected_sku_ids
+        and mapping_status is None
+        and not hide_unmapped
+        and not normalized_search
+        and _daily_summary_covers_dates(session, twd_id, all_dates)
+    )
+    if use_daily_summary and not modern_trade.show_unmatched_branches:
+        unmapped_branch = session.scalar(
+            select(MonthlySalesSummary.source_branch_code)
+            .where(
+                MonthlySalesSummary.modern_trade_id == twd_id,
+                ~MonthlySalesSummary.source_branch_code.in_(mapped_branches),
+            )
+            .limit(1)
+        )
+        use_daily_summary = unmapped_branch is None
+    use_monthly_summary = grain in ("month", "branch_month")
+    report_model = (
+        MonthlySalesSummary
+        if use_monthly_summary
+        else DailySkuSummary
+        if use_daily_summary
+        else SalesInventoryFact
+    )
+    report_date = report_model.month_start if use_monthly_summary else report_model.data_date
+    filters = [report_model.modern_trade_id == twd_id]
+    filters.append(~report_model.source_sku.in_(inactive_mapped_skus))
+    if latest_only:
+        filters.append(
+            report_date == selected_snapshot_date
+            if selected_snapshot_date is not None
+            else report_date.is_(None)
+        )
+    else:
+        if date_from or grain == "branch_month":
+            filters.append(report_date >= range_from)
+        if date_to or grain == "branch_month":
+            filters.append(report_date <= range_to)
     if not modern_trade.show_unmatched_items or hide_unmapped:
         filters.append(report_model.source_sku.in_(reportable_mapped_skus))
-    if not modern_trade.show_unmatched_branches:
+    if not modern_trade.show_unmatched_branches and not use_daily_summary:
         filters.append(report_model.source_branch_code.in_(mapped_branches))
-    selected_branch_ids = _selected_branch_ids(branch_id, branch_ids)
     if selected_branch_ids:
         filters.append(report_model.source_branch_code.in_(selected_branch_ids))
-    selected_sku_ids = _selected_sku_ids(sku_ids)
     if selected_sku_ids:
         filters.append(report_model.source_sku.in_(selected_sku_ids))
     if mapping_status:
@@ -179,7 +224,6 @@ def performance(
                 )
             )
 
-    normalized_search = search.strip() if search else ""
     if normalized_search:
         wa_matches = select(ItemMapping.source_sku).where(
             *active_mapping_filters,
@@ -237,12 +281,37 @@ def performance(
             func.coalesce(func.sum(report_model.sales_qty), 0),
         ).where(*filters)
     ).one()
-    active_branch_count = (
-        session.scalar(
-            select(func.count(distinct(report_model.source_branch_code))).where(*filters)
+    active_branch_count = 0
+    if use_daily_summary:
+        active_branch_filters = [
+            MonthlySalesSummary.modern_trade_id == twd_id,
+            ~MonthlySalesSummary.source_sku.in_(inactive_mapped_skus),
+        ]
+        if not modern_trade.show_unmatched_items:
+            active_branch_filters.append(
+                MonthlySalesSummary.source_sku.in_(reportable_mapped_skus)
+            )
+        if not modern_trade.show_unmatched_branches:
+            active_branch_filters.append(
+                MonthlySalesSummary.source_branch_code.in_(mapped_branches)
+            )
+        active_branch_count = (
+            session.scalar(
+                select(
+                    func.count(distinct(MonthlySalesSummary.source_branch_code))
+                ).where(*active_branch_filters)
+            )
+            or 0
         )
-        or 0
-    )
+    else:
+        active_branch_count = (
+            session.scalar(
+                select(func.count(distinct(report_model.source_branch_code))).where(
+                    *filters
+                )
+            )
+            or 0
+        )
     confirmed_skus = select(ItemMapping.source_sku).where(
         *active_mapping_filters,
         ItemMapping.report_status == "active",
@@ -318,17 +387,17 @@ def performance(
     if grain == "day_total":
         daily_rows = session.execute(
             select(
-                SalesInventoryFact.source_sku,
-                func.min(SalesInventoryFact.source_description),
-                SalesInventoryFact.data_date,
-                func.sum(SalesInventoryFact.amount),
-                func.sum(SalesInventoryFact.sales_qty),
-                func.sum(SalesInventoryFact.stock_on_hand),
-                func.sum(SalesInventoryFact.stock_on_order),
+                report_model.source_sku,
+                func.min(report_model.source_description),
+                report_date,
+                func.sum(report_model.amount),
+                func.sum(report_model.sales_qty),
+                func.sum(report_model.stock_on_hand),
+                func.sum(report_model.stock_on_order),
             )
-            .where(*filters, SalesInventoryFact.source_sku.in_(skus))
-            .group_by(SalesInventoryFact.source_sku, SalesInventoryFact.data_date)
-            .order_by(SalesInventoryFact.source_sku, SalesInventoryFact.data_date)
+            .where(*filters, report_model.source_sku.in_(skus))
+            .group_by(report_model.source_sku, report_date)
+            .order_by(report_model.source_sku, report_date)
         ).all()
     elif grain == "month":
         year_part = cast(func.extract("year", report_date), Integer)
@@ -382,17 +451,18 @@ def performance(
                 SalesInventoryFact.source_branch_code,
             )
         ).all()
+    branch_report_model = MonthlySalesSummary if use_daily_summary else SalesInventoryFact
     branch_query = select(
-        SalesInventoryFact.source_branch_code,
-        func.min(SalesInventoryFact.source_branch_name),
-    ).where(SalesInventoryFact.modern_trade_id == twd_id)
+        branch_report_model.source_branch_code,
+        func.min(branch_report_model.source_branch_name),
+    ).where(branch_report_model.modern_trade_id == twd_id)
     if not modern_trade.show_unmatched_branches:
         branch_query = branch_query.where(
-            SalesInventoryFact.source_branch_code.in_(mapped_branches)
+            branch_report_model.source_branch_code.in_(mapped_branches)
         )
     branch_rows = session.execute(
-        branch_query.group_by(SalesInventoryFact.source_branch_code).order_by(
-            SalesInventoryFact.source_branch_code
+        branch_query.group_by(branch_report_model.source_branch_code).order_by(
+            branch_report_model.source_branch_code
         )
     ).all()
     branch_mappings = session.scalars(
@@ -407,9 +477,9 @@ def performance(
         [date.fromisoformat(f"{value}-01") for value in available_months]
         if use_monthly_summary
         else session.scalars(
-            select(distinct(SalesInventoryFact.data_date))
+            select(distinct(report_date))
             .where(*filters)
-            .order_by(SalesInventoryFact.data_date)
+            .order_by(report_date)
         ).all()
     )
     mappings = session.scalars(

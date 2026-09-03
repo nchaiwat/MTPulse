@@ -223,6 +223,28 @@ class MonthlySalesSummary(Base):
     sales_qty: Mapped[Decimal] = mapped_column(QUANTITY)
 
 
+class DailySkuSummary(Base):
+    __tablename__ = "daily_sku_summaries"
+    __table_args__ = (
+        Index(
+            "ix_daily_sku_mt_sku_date",
+            "modern_trade_id",
+            "source_sku",
+            "data_date",
+        ),
+    )
+    modern_trade_id: Mapped[int] = mapped_column(
+        ForeignKey("modern_trades.id"), primary_key=True
+    )
+    data_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    source_sku: Mapped[str] = mapped_column(String(50), primary_key=True)
+    source_description: Mapped[str | None] = mapped_column(Text)
+    amount: Mapped[Decimal] = mapped_column(MONEY)
+    sales_qty: Mapped[Decimal] = mapped_column(QUANTITY)
+    stock_on_hand: Mapped[Decimal] = mapped_column(QUANTITY)
+    stock_on_order: Mapped[Decimal] = mapped_column(QUANTITY)
+
+
 class ItemMapping(Base):
     __tablename__ = "item_mappings"
     __table_args__ = (

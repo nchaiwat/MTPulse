@@ -601,3 +601,29 @@ Discovery สำหรับ Frontend UX Milestone ได้รับอนุ�
 - Preview จาก FileShare ไม่สร้าง Batch/Fact; Confirm สำเร็จสร้างเพียงหนึ่ง Batch และอัปเดต Source File เดิม
 - ไฟล์เปลี่ยน, หาย, ซ้ำ, Warning หรือ Conflict ไม่ทำให้ข้อมูลเดิมเปลี่ยน
 - Manual Upload เดิม, Automatic Import, Corrective, Telegram และ TWD Performance regression tests ผ่าน
+
+
+## Requirement เพิ่มเติม: TWD View Date Performance — 3 กันยายน 2026
+
+### Objective
+
+- ลดเวลาโหลด `รายงาน > TWD` สำหรับ `Mode Sales / Metric Amount / View Date` ช่วงข้อมูลทั้งหมด จาก baseline 8.09–8.71 วินาที ให้เหลือไม่เกิน 2 วินาทีบน Test Server เมื่อไม่มี Branch/SKU/Search filter
+- คง Layout, Interaction, API response contract, ตัวเลข Summary/Column Total/Point และกฎ Mapping เดิมทุกประการ
+- ไม่แก้หรือลบ `sales_inventory_facts`; ตาราง Fact ยังคงเป็น Source of Truth
+
+### Business Rules
+
+- เพิ่ม Daily Summary ระดับ `Modern Trade × Data Date × SKU` สำหรับ Amount, Sales Qty, Stock On Hand และ Stock On Order
+- ใช้ Daily Summary เฉพาะ `grain=day_total` ใน safe fast path ที่ไม่มี Date/Branch/SKU/Search/Mapping filter; กรณีอื่นใช้ Fact query เดิม
+- ก่อนใช้ fast path ต้องยืนยันว่า Branch ที่มี Fact ทั้งหมดอยู่ใน Active Branch Mapping เมื่อ `show_unmatched_branches=false`; หากไม่ครบให้ fallback
+- Import และ Corrective Replace ต้อง refresh Daily Summary ของวันที่นั้นใน transaction เดียวกับ Fact และ Monthly Summary
+- Migration ต้อง backfill จาก Fact เดิมและมี downgrade ที่ลบเฉพาะ Daily Summary table
+- เปิด Gzip สำหรับ JSON เป็น optimization เสริม แต่ห้ามใช้แทนการแก้ Query
+
+### Measured Baseline และ Acceptance Criteria
+
+- Baseline Test Server: 4,512,804 facts, API response 5,584,255 bytes, TTFB 7.96–8.71 วินาที
+- Temporary benchmark: Daily aggregate 109,496 rows; main query 62.8 ms และ daily totals 20.4 ms
+- Response ใหม่ต้องเท่ากับ legacy path สำหรับ `items`, `points`, `dates`, `columnTotals`, `summary`, `branches` และ `meta`
+- Branch/SKU/Date/Search/Mapping filter และ Inventory/Month/Branch views ต้องยังใช้ผลลัพธ์เดิม
+- Full backend/frontend regression, Ruff, ESLint และ production build ต้องผ่านก่อน deploy

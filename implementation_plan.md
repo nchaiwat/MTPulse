@@ -812,3 +812,39 @@ Backend ในระยะถัดไปจะแยกขอบเขตเช
 - Deploy API/Web เท่านั้นหลังไม่มี Automatic Run active
 - Smoke test Manual Upload progress, Ready List, FileShare Preview และ Error state
 - ไม่ Trigger Confirm กับข้อมูลจริงโดยอัตโนมัติ; ให้ผู้ใช้เป็นผู้ยืนยัน Import
+
+
+# TWD View Date Performance — Implementation Plan
+
+## Baseline และ Root Cause
+
+- `/api/performance?grain=day_total&page=1` ใช้ 8.09–8.71 วินาทีและคืน JSON 5.58 MB
+- PostgreSQL aggregate จาก 4.51 ล้าน facts ซ้ำทุก request; query หลักใช้ 1.90–2.55 วินาที และหลาย summary/distinct queries รวมเวลาเพิ่มเติม
+- `work_mem` 4 → 64/256 MB ลด spill ได้แต่ไม่แก้ full scan; 256 MB ยังใช้ 2.12 วินาทีเฉพาะ query หลัก
+- Gzip ลด payload เหลือ 0.62 MB แต่ TTFB ไม่เปลี่ยน จึงไม่ใช่ root-cause fix
+- Temporary Daily SKU Summary ลด main query เหลือ 62.8 ms และ daily total เหลือ 20.4 ms
+
+## Implementation
+
+1. เพิ่ม model/migration `daily_sku_summaries` คีย์ `modern_trade_id + data_date + source_sku`
+2. Backfill Amount, Qty, Stock On Hand และ Stock On Order จาก `sales_inventory_facts`
+3. เพิ่ม `refresh_daily_sku_summary()` และเรียกหลัง Import/Corrective Replace ก่อน commit
+4. เพิ่ม safe fast path ใน Performance API เฉพาะ unfiltered `grain=day_total`
+5. ใช้ Monthly Summary ตรวจ Branch coverage และอ่าน Branch list; หากเงื่อนไขไม่ปลอดภัย fallback ไป Fact path เดิม
+6. เพิ่ม Gzip สำหรับ JSON ใน Nginx พร้อมคง API contract เดิม
+
+## Verification
+
+- Unit test refresh/delete-reinsert ของวันที่เดียวโดยไม่กระทบวันอื่น/MT อื่น
+- Equivalence test รัน fast path และบังคับ fallback จากข้อมูลเดียวกัน แล้วเทียบ response ทุก field
+- Test ว่า Date/Branch/SKU/Search/Mapping filter ไม่เข้า fast path
+- Test Import และ Replace refresh Daily/Monthly summary ใน transaction เดิม
+- Migration upgrade/backfill/downgrade rehearsal บนฐานข้อมูลจำลอง
+- Full pytest, Ruff, frontend tests, ESLint และ build
+- ก่อน deploy backup PostgreSQL, ยืนยันไม่มี active import run และ benchmark endpoint 5 รอบหลัง migration
+
+## Expected Result และ Rollback
+
+- เป้าหมาย API unfiltered View Date ไม่เกิน 2 วินาทีบน WA-MTPULSE-TEST
+- หาก response ไม่เท่ากันหรือ latency ไม่ถึงเป้า ให้ Performance API fallback Fact query ได้ทันทีโดย Fact data ไม่เปลี่ยน
+- Rollback schema ลบเฉพาะ `daily_sku_summaries`; ไม่มีการเปลี่ยนหรือลบ Fact/Batch/Mapping

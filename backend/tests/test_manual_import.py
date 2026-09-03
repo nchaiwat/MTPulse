@@ -14,7 +14,7 @@ from app.api.imports import _preview
 from app.database import Base
 from app.importers.twd import TwdExtract, TwdSummary
 from app.models import ImportBatch, ModernTrade, SourceFile
-from app.services import telegram
+from app.services import telegram, twd_import
 from app.services.twd_import import (
     DuplicateImportError,
     PeriodDuplicateError,
@@ -74,6 +74,35 @@ def test_import_rejects_checksum_and_period_duplicates() -> None:
         session.rollback()
         with pytest.raises(PeriodDuplicateError):
             import_twd_extract(session, extract("b" * 64))
+
+
+def test_import_refreshes_daily_sku_summary_in_the_same_flow(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    twd_extract = extract("c" * 64, date(2026, 8, 19))
+    original_build_batch = twd_import._build_batch
+    refreshed: list[tuple[int, date]] = []
+
+    def build_batch_with_sqlite_id(modern_trade_id: int, payload: TwdExtract):
+        batch = original_build_batch(modern_trade_id, payload)
+        batch.id = 1
+        return batch
+
+    monkeypatch.setattr(twd_import, "_build_batch", build_batch_with_sqlite_id)
+    monkeypatch.setattr(
+        twd_import,
+        "refresh_daily_sku_summary",
+        lambda _session, modern_trade_id, data_date: refreshed.append(
+            (modern_trade_id, data_date)
+        ),
+    )
+    with Session(engine) as session:
+        session.add(ModernTrade(id=1, code="TWD", name="Thai Watsadu"))
+        session.commit()
+
+        import_twd_extract(session, twd_extract)
+
+    assert refreshed == [(1, date(2026, 8, 19))]
 
 
 def test_telegram_message_uses_standard_header_and_no_bullets() -> None:

@@ -8,11 +8,13 @@ from app.api.performance import _month_bounds, _selected_branch_ids, performance
 from app.database import Base
 from app.models import (
     BranchMapping,
+    DailySkuSummary,
     ImportBatch,
     ItemMapping,
     ModernTrade,
     SalesInventoryFact,
 )
+from app.services.daily_sku_summary import refresh_daily_sku_summary
 from app.services.monthly_sales_summary import refresh_monthly_sales_summary
 
 
@@ -30,6 +32,205 @@ def test_selected_branch_ids_supports_multi_select_and_legacy_parameter() -> Non
     assert _selected_branch_ids("60020", None) == ["60020"]
     assert _selected_branch_ids("60020", "60016,60923") == ["60016", "60923"]
     assert _selected_branch_ids(None, None) == []
+
+
+def test_unfiltered_day_total_daily_summary_matches_fact_fallback() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    dates = [date(2026, 8, 30), date(2026, 8, 31)]
+    with Session(engine) as session:
+        session.add(ModernTrade(id=1, code="TWD", name="Thai Watsadu", report_page_size=0))
+        for index, data_date in enumerate(dates, start=1):
+            session.add(
+                ImportBatch(
+                    id=index,
+                    modern_trade_id=1,
+                    status="imported",
+                    data_date=data_date,
+                    source_path=f"{index}.xls",
+                    source_filename=f"{index}.xls",
+                    checksum_sha256=str(index) * 64,
+                    row_count=4,
+                    store_count=2,
+                    sku_count=2,
+                    negative_row_count=0,
+                    source_amount=0,
+                    amount=0,
+                    sales_qty=0,
+                    stock_on_hand=0,
+                    reported_stock_on_hand=0,
+                    stock_on_order=0,
+                )
+            )
+        session.add_all(
+            [
+                ItemMapping(
+                    id=1,
+                    modern_trade_id=1,
+                    source_sku="SKU-A",
+                    source_description="Item A",
+                    wa_item_code="WA-A",
+                    status="confirmed",
+                    effective_from=date(2026, 8, 1),
+                    changed_by="test",
+                ),
+                ItemMapping(
+                    id=2,
+                    modern_trade_id=1,
+                    source_sku="SKU-B",
+                    source_description="Item B",
+                    wa_item_code="WA-B",
+                    status="confirmed",
+                    effective_from=date(2026, 8, 1),
+                    changed_by="test",
+                ),
+                ItemMapping(
+                    id=3,
+                    modern_trade_id=1,
+                    source_sku="SKU-HIDDEN",
+                    source_description="Hidden item",
+                    wa_item_code="WA-HIDDEN",
+                    status="confirmed",
+                    report_status="inactive",
+                    effective_from=date(2026, 8, 1),
+                    changed_by="test",
+                ),
+                BranchMapping(
+                    id=1,
+                    modern_trade_id=1,
+                    source_branch_code="B1",
+                    source_branch_description="Branch 1",
+                    wa_branch_code="WA-B1",
+                    wa_branch_description="Branch One",
+                    status="confirmed",
+                    effective_from=date(2026, 8, 1),
+                    changed_by="test",
+                ),
+                BranchMapping(
+                    id=2,
+                    modern_trade_id=1,
+                    source_branch_code="B2",
+                    source_branch_description="Branch 2",
+                    wa_branch_code="WA-B2",
+                    wa_branch_description="Branch Two",
+                    status="confirmed",
+                    effective_from=date(2026, 8, 1),
+                    changed_by="test",
+                ),
+                BranchMapping(
+                    id=3,
+                    modern_trade_id=1,
+                    source_branch_code="B3",
+                    source_branch_description="Branch 3",
+                    wa_branch_code="WA-B3",
+                    wa_branch_description="Branch Three",
+                    status="confirmed",
+                    effective_from=date(2026, 8, 1),
+                    changed_by="test",
+                ),
+            ]
+        )
+        fact_id = 1
+        for batch_id, data_date in enumerate(dates, start=1):
+            for sku_index, sku in enumerate(("SKU-A", "SKU-B"), start=1):
+                for branch_index, branch in enumerate(("B1", "B2"), start=1):
+                    value = batch_id * 100 + sku_index * 10 + branch_index
+                    session.add(
+                        SalesInventoryFact(
+                            id=fact_id,
+                            modern_trade_id=1,
+                            batch_id=batch_id,
+                            data_date=data_date,
+                            source_branch_code=branch,
+                            source_branch_name=branch,
+                            source_sku=sku,
+                            source_description=f"Item {sku}",
+                            source_amount=value,
+                            amount=value,
+                            sales_qty=value / 10,
+                            stock_on_hand=value + 1,
+                            stock_on_order=value + 2,
+                        )
+                    )
+                    fact_id += 1
+        session.add(
+            SalesInventoryFact(
+                id=fact_id,
+                modern_trade_id=1,
+                batch_id=1,
+                data_date=dates[0],
+                source_branch_code="B3",
+                source_branch_name="B3",
+                source_sku="SKU-HIDDEN",
+                source_description="Hidden item",
+                source_amount=500,
+                amount=500,
+                sales_qty=50,
+                stock_on_hand=500,
+                stock_on_order=500,
+            )
+        )
+        fact_id += 1
+        session.commit()
+        for data_date in dates:
+            refresh_monthly_sales_summary(session, 1, data_date)
+        session.commit()
+
+        def report(branch_ids: str | None = None) -> dict:
+            return performance(
+                session=session,
+                date_from=None,
+                date_to=None,
+                page=1,
+                page_size=None,
+                branch_id=None,
+                branch_ids=branch_ids,
+                sku_ids=None,
+                mapping_status=None,
+                hide_unmapped=False,
+                search=None,
+                grain="day_total",
+                period_month=None,
+                latest_only=False,
+            )
+
+        legacy = report()
+        for data_date in dates:
+            refresh_daily_sku_summary(session, 1, data_date)
+        session.commit()
+        optimized = report()
+        selected_branch = report("B1")
+        session.query(DailySkuSummary).update({DailySkuSummary.amount: 999999})
+        session.commit()
+        selected_branch_after_summary_change = report("B1")
+        session.add(
+            SalesInventoryFact(
+                id=fact_id,
+                modern_trade_id=1,
+                batch_id=1,
+                data_date=dates[0],
+                source_branch_code="UNMAPPED",
+                source_branch_name="Unmapped branch",
+                source_sku="SKU-A",
+                source_description="Item SKU-A",
+                source_amount=500,
+                amount=500,
+                sales_qty=50,
+                stock_on_hand=500,
+                stock_on_order=500,
+            )
+        )
+        session.commit()
+        refresh_monthly_sales_summary(session, 1, dates[0])
+        refresh_daily_sku_summary(session, 1, dates[0])
+        session.commit()
+        session.query(DailySkuSummary).update({DailySkuSummary.amount: 999999})
+        session.commit()
+        unmapped_branch_fallback = report()
+
+    assert optimized == legacy
+    assert selected_branch_after_summary_change == selected_branch
+    assert unmapped_branch_fallback == legacy
 
 
 def test_performance_search_includes_mapping_without_facts() -> None:

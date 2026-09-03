@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.importers.twd import TwdExtract, extract_twd_file
 from app.models import ImportBatch, ModernTrade, SalesInventoryFact
+from app.services.daily_sku_summary import refresh_daily_sku_summary
 from app.services.monthly_sales_summary import refresh_monthly_sales_summary
 from app.services.sku_interest import sync_sku_interests
 
@@ -65,6 +66,7 @@ def import_twd_extract(session: Session, extract: TwdExtract) -> ImportBatch:
         )
     )
     session.flush()
+    refresh_daily_sku_summary(session, mt.id, extract.data_date)
     refresh_monthly_sales_summary(session, mt.id, extract.data_date)
     batch.status = "imported_with_warnings" if extract.reconciliation_errors else "imported"
     batch.finished_at = datetime.now(UTC)
@@ -112,6 +114,7 @@ def replace_twd_batch(
         )
     )
     session.flush()
+    refresh_daily_sku_summary(session, batch.modern_trade_id, extract.data_date)
     refresh_monthly_sales_summary(session, batch.modern_trade_id, extract.data_date)
 
     for field in (
