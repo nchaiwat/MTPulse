@@ -11,6 +11,7 @@ from app.database import SessionLocal
 from app.local_time import bangkok_now
 from app.models import ImportRun, ModernTrade
 from app.services.automatic_import import ActiveRunError, create_run, process_run
+from app.services.technical_health import process_technical_notifications
 
 logger = logging.getLogger("mtpulse.worker")
 logging.basicConfig(level=logging.INFO)
@@ -104,6 +105,11 @@ def recover_interrupted_runs() -> int:
         return len(runs)
 
 
+def process_due_technical_notifications() -> int:
+    with SessionLocal() as session:
+        return process_technical_notifications(session)
+
+
 def run_forever() -> None:
     poll_seconds = max(5, get_settings().worker_poll_seconds)
     recovered = recover_interrupted_runs()
@@ -112,6 +118,10 @@ def run_forever() -> None:
     logger.info("MT Pulse import worker started; poll=%ss", poll_seconds)
     while True:
         try:
+            try:
+                process_due_technical_notifications()
+            except Exception:
+                logger.exception("technical health evaluation failed")
             enqueue_due_runs()
             run_id = claim_next_run()
             if run_id is None:

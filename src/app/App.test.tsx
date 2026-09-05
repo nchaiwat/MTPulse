@@ -36,6 +36,22 @@ describe('App navigation', () => {
           notifyManualImport: true,
         }), { status: 200 })
       }
+      if (url.includes('/api/settings/system/technical-notifications')) {
+        return new Response(JSON.stringify({
+          dailyEnabled: true,
+          dailyTime: '07:00',
+          criticalEnabled: true,
+          recoveryEnabled: true,
+          cooldownMinutes: 60,
+          thresholds: {
+            cpu: { warning: 80, critical: 95 },
+            memory: { warning: 80, critical: 90 },
+            disk: { warning: 80, critical: 90 },
+            connections: { warning: 80, critical: 95 },
+            deadTuples: { warning: 10, critical: 20 },
+          },
+        }), { status: 200 })
+      }
       return new Response(JSON.stringify(performanceResponse), { status: 200 })
     })
 
@@ -72,6 +88,8 @@ describe('App navigation', () => {
     expect(screen.queryByText('มี Token บันทึกอยู่')).not.toBeInTheDocument()
     expect(screen.getByDisplayValue('https://api.telegram.org')).toBeInTheDocument()
     expect(screen.getByPlaceholderText('********')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Technical Health' })).toBeInTheDocument()
+    expect(screen.getByLabelText('เวลารายงาน Technical Health')).toHaveValue('07:00')
 
     const tokenInput = screen.getByLabelText('Bot Token ID')
     await userEvent.click(screen.getByRole('button', { name: 'แสดง Bot Token' }))

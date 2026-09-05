@@ -15,6 +15,15 @@ const response = {
       detail: 'Stock On Hand: calculated=77904.0, source=77379',
     }],
     api: { status: 'healthy' },
+    host: {
+      status: 'healthy',
+      cpuPercent: 14.2,
+      memoryUsedPercent: 62.5,
+      memoryTotalBytes: 17179869184,
+      diskUsedPercent: 71.4,
+      diskTotalBytes: 536870912000,
+      uptimeSeconds: 183600,
+    },
     database: {
       status: 'healthy',
       factCount: 175717,
@@ -29,6 +38,12 @@ const response = {
       lastAnalyzeAt: '2026-08-25T02:05:00+00:00',
     },
     latestDataDate: '2026-08-23',
+    workerHeartbeatAt: '2026-08-25T09:59:30+07:00',
+    technicalMetrics: [
+      { code: 'cpu', label: 'CPU load', value: 14.2, unit: '%', warningThreshold: 80, criticalThreshold: 95, status: 'healthy', recommendation: 'ตรวจ Process' },
+      { code: 'memory', label: 'RAM', value: 62.5, unit: '%', warningThreshold: 80, criticalThreshold: 90, status: 'healthy', recommendation: 'ตรวจ RAM' },
+      { code: 'disk', label: 'Disk', value: 71.4, unit: '%', warningThreshold: 80, criticalThreshold: 90, status: 'healthy', recommendation: 'ตรวจ Disk' },
+    ],
     latestImport: {
       batchId: 7,
       dataDate: '2026-08-22',
@@ -52,6 +67,9 @@ const response = {
     connections: 4,
     latestDataDate: '2026-08-22',
     warningCount: 1,
+    hostCpuPercent: 14.2,
+    hostMemoryUsedPercent: 62.5,
+    hostDiskUsedPercent: 71.4,
   }],
 }
 
@@ -72,6 +90,8 @@ describe('MonitoringPage', () => {
     expect(screen.getByText('Import Batch 18 มีคำเตือน 1 รายการ')).toBeInTheDocument()
     expect(screen.getByText('Stock On Hand: calculated=77904.0, source=77379')).toBeInTheDocument()
     expect(screen.getByText('SELECT * FROM sales_inventory_facts')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'ทรัพยากร Server และฐานข้อมูล' })).toBeInTheDocument()
+    expect(screen.getByText('62.5%')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'ประวัติสถานะรายวัน' })).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: 'ดำเนินการแก้ไข' }))

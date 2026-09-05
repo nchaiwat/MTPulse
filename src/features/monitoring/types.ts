@@ -1,4 +1,26 @@
 export type MonitoringStatus = 'healthy' | 'warning' | 'critical'
+export type TechnicalMetricStatus = MonitoringStatus | 'unknown'
+
+export interface MonitoringHost {
+  status: MonitoringStatus
+  cpuPercent: number | null
+  memoryUsedPercent: number | null
+  memoryTotalBytes: number | null
+  diskUsedPercent: number | null
+  diskTotalBytes: number | null
+  uptimeSeconds: number | null
+}
+
+export interface MonitoringTechnicalMetric {
+  code: string
+  label: string
+  value: number | null
+  unit: string
+  warningThreshold: number
+  criticalThreshold: number
+  status: TechnicalMetricStatus
+  recommendation: string
+}
 
 export interface MonitoringNotice {
   code?: string
@@ -52,7 +74,10 @@ export interface MonitoringCurrent {
   overallStatus: MonitoringStatus
   notices: MonitoringNotice[]
   api: { status: MonitoringStatus }
+  host: MonitoringHost
   database: MonitoringDatabase
+  workerHeartbeatAt: string | null
+  technicalMetrics: MonitoringTechnicalMetric[]
   latestDataDate: string | null
   latestImport: MonitoringImport | null
   modernTrades: MonitoringModernTrade[]
@@ -71,6 +96,9 @@ export interface MonitoringHistory {
   connections: number
   latestDataDate: string | null
   warningCount: number
+  hostCpuPercent: number | null
+  hostMemoryUsedPercent: number | null
+  hostDiskUsedPercent: number | null
 }
 
 export interface MonitoringResponse {

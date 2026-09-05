@@ -15,7 +15,7 @@
 .monitoring-error span { color: var(--text-700); font-size: 11px; }
 .monitoring-inline-error { margin-bottom: 8px; padding: 7px 10px; color: var(--red-700); background: var(--red-100); border-left: 3px solid var(--red-700); font-size: 10px; }
 
-.monitoring-health-ledger { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-bottom: 12px; background: var(--surface); border: 1px solid var(--line); }
+.monitoring-health-ledger { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); margin-bottom: 12px; background: var(--surface); border: 1px solid var(--line); }
 .monitoring-health-ledger article { min-width: 0; min-height: 68px; display: flex; align-items: center; gap: 9px; padding: 9px 11px; border-top: 3px solid var(--teal-600); border-right: 1px solid var(--line); }
 .monitoring-health-ledger article:last-child { border-right: 0; }
 .monitoring-health-ledger article[data-status="warning"] { border-top-color: #d79222; }
@@ -35,6 +35,20 @@
 .monitoring-panel > header div { min-width: 0; flex: 1; }
 .monitoring-panel h3 { margin: 2px 0 0; font-size: 14px; }
 .monitoring-panel > header > small { color: var(--text-600); font-size: 9px; }
+
+.monitoring-technical-panel { margin-bottom: 12px; }
+.monitoring-technical-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.monitoring-technical-grid article { min-width: 0; display: grid; gap: 7px; padding: 11px 12px; border-right: 1px solid var(--line); }
+.monitoring-technical-grid article:last-child { border-right: 0; }
+.monitoring-technical-grid article > span { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.monitoring-technical-grid strong { overflow: hidden; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.monitoring-technical-grid em { font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; font-style: normal; font-weight: 700; }
+.monitoring-technical-grid small { overflow: hidden; color: var(--text-600); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.monitoring-meter { height: 5px; overflow: hidden; background: #e6eef3; border-radius: 999px; }
+.monitoring-meter i { display: block; height: 100%; background: var(--primary-500); border-radius: inherit; transition: width 180ms ease; }
+.monitoring-technical-grid article[data-status="warning"] .monitoring-meter i { background: #d79222; }
+.monitoring-technical-grid article[data-status="critical"] .monitoring-meter i { background: var(--red-700); }
+.monitoring-technical-grid article[data-status="unknown"] .monitoring-meter i { background: var(--text-600); }
 
 .monitoring-database dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; }
 .monitoring-database dl > div { min-width: 0; min-height: 68px; padding: 10px 12px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
@@ -155,6 +169,9 @@
   .monitoring-health-ledger { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .monitoring-health-ledger article { border-bottom: 1px solid var(--line); }
   .monitoring-grid { grid-template-columns: 1fr; }
+  .monitoring-technical-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .monitoring-technical-grid article { border-bottom: 1px solid var(--line); }
+  .monitoring-technical-grid article:nth-child(3n) { border-right: 0; }
   .monitoring-automatic-grid { grid-template-columns: 1fr; }
   .monitoring-automatic-grid > div:first-child { border-right: 0; border-bottom: 1px solid var(--line); }
 }
@@ -170,6 +187,9 @@
   .monitoring-error button { grid-column: 2; justify-self: start; }
   .monitoring-sku-list { grid-template-columns: 1fr; }
   .monitoring-sku-list article { border-right: 0; }
+  .monitoring-technical-grid { grid-template-columns: 1fr 1fr; }
+  .monitoring-technical-grid article:nth-child(3n) { border-right: 1px solid var(--line); }
+  .monitoring-technical-grid article:nth-child(2n) { border-right: 0; }
 }
 @media (max-width: 480px) {
   .monitoring-health-ledger, .monitoring-database dl { grid-template-columns: 1fr; }

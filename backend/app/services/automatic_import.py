@@ -421,10 +421,11 @@ def _unchanged_outcome(row: SourceFile, candidate: SourceCandidate) -> dict | No
     if (
         row.size_bytes != candidate.size_bytes
         or row.modified_at != candidate.modified_at
-        or not row.checksum_sha256
     ):
         return None
     status = row.status
+    if not row.checksum_sha256 and status not in {"failed", "unsupported"}:
+        return None
     if status == "ready" or (
         status == "pending_review"
         and row.error_message
@@ -440,6 +441,7 @@ def _unchanged_outcome(row: SourceFile, candidate: SourceCandidate) -> dict | No
         "status": status,
         "message": row.error_message or "ไฟล์ไม่เปลี่ยนแปลง",
         "batchId": row.imported_batch_id,
+        "event": "unchanged",
     }
 
 
@@ -643,17 +645,37 @@ def _finish_run(
     if pending_sku_count:
         run.summary_message += f" · SKU ใหม่รอตัดสินใจ {pending_sku_count}"
     run.results_json = json.dumps(results, ensure_ascii=False)
+    event_results = [item for item in results if item.get("event") != "unchanged"]
+    event_counts = {
+        "imported": sum(item["status"] == "imported" for item in event_results),
+        "ready": sum(item["status"] == "ready" for item in event_results),
+        "pending": sum(
+            item["status"] in {"pending_review", "missing"}
+            for item in event_results
+        ),
+        "failed": sum(item["status"] == "failed" for item in event_results),
+    }
+    event_counts["skipped"] = len(event_results) - sum(event_counts.values())
+    if event_results:
+        event_summary = (
+            f"Event ใหม่ {len(event_results)} · นำเข้า {event_counts['imported']} · "
+            f"พร้อมนำเข้า {event_counts['ready']} · ข้าม {event_counts['skipped']} · "
+            f"รอตรวจสอบ {event_counts['pending']} · ล้มเหลว {event_counts['failed']}"
+        )
+    else:
+        event_summary = "ไม่พบไฟล์ใหม่หรือการเปลี่ยนแปลง"
+    event_has_warning = bool(event_counts["pending"] or event_counts["failed"])
     delivery = send_telegram(
         session,
         (
             f"⚠️ Automatic Import {mt.code} สำเร็จพร้อมคำเตือน"
-            if run.status == "success_with_warnings"
+            if event_has_warning
             else f"✅ Automatic Import {mt.code} สำเร็จ"
         ),
         [
             f"▶️ Trigger: {run.trigger}",
             f"📂 Mode: {run.mode}",
-            f"📊 {run.summary_message}",
+            f"📊 {event_summary}",
         ],
         force=True,
     )
@@ -670,6 +692,7 @@ def _finish_run(
                     "trigger": run.trigger,
                     "mode": run.mode,
                     "counts": counts,
+                    "eventCounts": event_counts,
                     "notification": {
                         "status": delivery.status,
                         "message": delivery.message,

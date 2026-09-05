@@ -7,6 +7,32 @@ export interface TelegramSettings {
   notifyManualImport: boolean
 }
 
+export type TechnicalMetricCode = 'cpu' | 'memory' | 'disk' | 'connections' | 'deadTuples'
+
+export interface TechnicalNotificationSettings {
+  dailyEnabled: boolean
+  dailyTime: string
+  criticalEnabled: boolean
+  recoveryEnabled: boolean
+  cooldownMinutes: number
+  thresholds: Record<TechnicalMetricCode, { warning: number; critical: number }>
+}
+
+export const defaultTechnicalNotificationSettings: TechnicalNotificationSettings = {
+  dailyEnabled: true,
+  dailyTime: '07:00',
+  criticalEnabled: true,
+  recoveryEnabled: true,
+  cooldownMinutes: 60,
+  thresholds: {
+    cpu: { warning: 80, critical: 95 },
+    memory: { warning: 80, critical: 90 },
+    disk: { warning: 80, critical: 90 },
+    connections: { warning: 80, critical: 95 },
+    deadTuples: { warning: 10, critical: 20 },
+  },
+}
+
 async function detail(response: Response) {
   try {
     const payload = await response.json() as { detail?: string }
@@ -52,4 +78,31 @@ export async function testTelegram(): Promise<string> {
   if (!response.ok) throw new Error(await detail(response))
   const payload = await response.json() as { message: string }
   return payload.message
+}
+
+export async function fetchTechnicalNotificationSettings(
+  signal?: AbortSignal,
+): Promise<TechnicalNotificationSettings> {
+  const response = await fetch(`${apiBaseUrl}/api/settings/system/technical-notifications`, { signal })
+  if (!response.ok) throw new Error(await detail(response))
+  return response.json() as Promise<TechnicalNotificationSettings>
+}
+
+export async function saveTechnicalNotificationSettings(
+  input: TechnicalNotificationSettings,
+): Promise<TechnicalNotificationSettings> {
+  const response = await fetch(`${apiBaseUrl}/api/settings/system/technical-notifications`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      daily_enabled: input.dailyEnabled,
+      daily_time: input.dailyTime,
+      critical_enabled: input.criticalEnabled,
+      recovery_enabled: input.recoveryEnabled,
+      cooldown_minutes: input.cooldownMinutes,
+      thresholds: input.thresholds,
+    }),
+  })
+  if (!response.ok) throw new Error(await detail(response))
+  return response.json() as Promise<TechnicalNotificationSettings>
 }

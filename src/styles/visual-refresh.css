@@ -682,6 +682,183 @@ textarea {
   background: var(--primary-50);
 }
 
+.technical-notification-settings {
+  border-top: 1px solid var(--line);
+}
+
+.technical-notification-settings > header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px 10px;
+  background: #fbfdff;
+}
+
+.technical-notification-settings h4 {
+  margin: 2px 0 1px;
+  font-size: 15px;
+}
+
+.technical-notification-settings header p {
+  margin: 0;
+  color: var(--text-600);
+  font-size: 10px;
+}
+
+.technical-policy-grid {
+  display: grid;
+  grid-template-columns: 1.35fr minmax(140px, .65fr) 1.35fr minmax(140px, .65fr) 1.35fr;
+  gap: 10px;
+  padding: 12px 18px;
+  background: #f5f9fc;
+  border-block: 1px solid var(--line);
+}
+
+.technical-policy-grid > label {
+  display: grid;
+  gap: 5px;
+  color: var(--text-700);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.technical-policy-grid input[type='time'],
+.technical-policy-grid input[type='number'],
+.technical-threshold-table input {
+  width: 100%;
+  min-height: 38px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  color: var(--text-900);
+  background: #fff;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+}
+
+.technical-policy-grid input:focus,
+.technical-threshold-table input:focus {
+  border-color: var(--primary-500);
+  outline: 0;
+  box-shadow: 0 0 0 3px rgb(2 171 255 / .12);
+}
+
+.technical-policy-grid input:disabled {
+  color: var(--text-600);
+  background: #edf3f7;
+}
+
+.technical-toggle {
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  padding: 9px 10px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+
+.technical-toggle > span {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 2px 6px;
+}
+
+.technical-toggle small {
+  grid-column: 1 / -1;
+  color: var(--text-600);
+  font-size: 8px;
+  font-weight: 400;
+}
+
+.technical-threshold-table-wrap {
+  overflow-x: auto;
+}
+
+.technical-threshold-table {
+  width: 100%;
+  min-width: 650px;
+  border-collapse: collapse;
+}
+
+.technical-threshold-table th,
+.technical-threshold-table td {
+  height: 46px;
+  padding: 6px 12px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+}
+
+.technical-threshold-table th:first-child,
+.technical-threshold-table td:first-child {
+  width: 100%;
+  text-align: left;
+}
+
+.technical-threshold-table th:last-child,
+.technical-threshold-table td:last-child {
+  border-right: 0;
+}
+
+.technical-threshold-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.technical-threshold-table th {
+  height: 32px;
+  color: var(--text-600);
+  background: #edf3f7;
+  font-size: 8px;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
+
+.technical-threshold-table td strong,
+.technical-threshold-table td small {
+  display: block;
+}
+
+.technical-threshold-table td strong {
+  font-size: 10px;
+}
+
+.technical-threshold-table td small {
+  margin-top: 2px;
+  color: var(--text-600);
+  font-size: 8px;
+}
+
+.technical-threshold-table input {
+  width: 92px;
+  min-height: 34px;
+  text-align: right;
+}
+
+.system-settings-savebar {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 11px 16px;
+  background: rgb(255 255 255 / .94);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--primary-500);
+  border-radius: 0 0 var(--radius-panel) var(--radius-panel);
+  box-shadow: 0 -8px 24px rgb(15 42 64 / .07);
+  backdrop-filter: blur(10px);
+}
+
+.system-settings-savebar .settings-message {
+  flex: 1;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 7px;
+}
+
 .fileshare-path code,
 .replacement-preview > header,
 .replacement-preview > footer {
@@ -748,6 +925,23 @@ textarea {
 
   .rail-footer {
     display: flex;
+  }
+
+  .technical-policy-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .technical-toggle:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .system-settings-savebar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .system-settings-savebar .primary-action {
+    min-height: 44px;
   }
 }
 

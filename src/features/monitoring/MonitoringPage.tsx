@@ -8,6 +8,7 @@ import {
   FolderSync,
   RefreshCw,
   Server,
+  ServerCog,
   TableProperties,
   XCircle,
 } from 'lucide-react'
@@ -42,6 +43,17 @@ function importStatus(status: string) {
   if (status === 'imported') return 'สำเร็จ'
   if (status === 'imported_with_warnings') return 'สำเร็จพร้อมคำเตือน'
   return status
+}
+
+function formatUptime(value: number | null) {
+  if (value === null) return 'ไม่พร้อมใช้งาน'
+  const days = Math.floor(value / 86_400)
+  const hours = Math.floor((value % 86_400) / 3_600)
+  return days > 0 ? `${integer.format(days)} วัน ${integer.format(hours)} ชม.` : `${integer.format(hours)} ชม.`
+}
+
+function metricValue(value: number | null, unit: string) {
+  return value === null ? 'ไม่พร้อมใช้งาน' : `${decimal.format(value)}${unit}`
 }
 
 function automaticRunStatus(status: string) {
@@ -174,6 +186,10 @@ export function MonitoringPage({ onOpenImports, onOpenCoverage }: MonitoringPage
           <Database size={18} aria-hidden="true" />
           <span><small>PostgreSQL</small><strong>{statusLabel(current.database.status)}</strong></span>
         </article>
+        <article data-status={current.host.status}>
+          <ServerCog size={18} aria-hidden="true" />
+          <span><small>Server resources</small><strong>{statusLabel(current.host.status)}</strong><em>Uptime {formatUptime(current.host.uptimeSeconds)}</em></span>
+        </article>
         <article data-status={current.latestDataDate ? 'healthy' : 'warning'}>
           <Clock3 size={18} aria-hidden="true" />
           <span><small>วันที่ข้อมูลล่าสุด</small><strong>{formatDisplayDate(current.latestDataDate, 'ยังไม่มีข้อมูล')}</strong><em>{latestImport ? `Import ล่าสุด: ${importStatus(latestImport.status)}` : 'ยังไม่มี Import'}</em></span>
@@ -182,6 +198,29 @@ export function MonitoringPage({ onOpenImports, onOpenCoverage }: MonitoringPage
           <AlertTriangle size={18} aria-hidden="true" />
           <span><small>รายการที่ต้องดู</small><strong>{integer.format(current.notices.length)} รายการ</strong></span>
         </article>
+      </section>
+
+      <section className="monitoring-panel monitoring-technical-panel" aria-labelledby="technical-health-heading">
+        <header>
+          <ServerCog size={18} aria-hidden="true" />
+          <div><span className="eyebrow">Technical health</span><h3 id="technical-health-heading">ทรัพยากร Server และฐานข้อมูล</h3></div>
+          <small>Worker ล่าสุด {formatDisplayDateTime(current.workerHeartbeatAt, 'ยังไม่มีข้อมูล')}</small>
+        </header>
+        <div className="monitoring-technical-grid">
+          {current.technicalMetrics.map((metric) => (
+            <article key={metric.code} data-status={metric.status} title={metric.recommendation}>
+              <span><strong>{metric.label}</strong><em>{metricValue(metric.value, metric.unit)}</em></span>
+              <div className="monitoring-meter" aria-label={`${metric.label} ${metricValue(metric.value, metric.unit)}`}>
+                <i style={{ width: `${Math.min(100, Math.max(0, metric.value ?? 0))}%` }} />
+              </div>
+              <small>Warning {decimal.format(metric.warningThreshold)}% · Critical {decimal.format(metric.criticalThreshold)}%</small>
+            </article>
+          ))}
+          <article data-status={current.host.status}>
+            <span><strong>Server capacity</strong><em>{formatBytes(current.host.diskTotalBytes ?? 0)}</em></span>
+            <small>RAM {formatBytes(current.host.memoryTotalBytes ?? 0)} · Uptime {formatUptime(current.host.uptimeSeconds)}</small>
+          </article>
+        </div>
       </section>
 
       <div className="monitoring-grid">

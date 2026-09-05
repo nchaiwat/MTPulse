@@ -848,3 +848,68 @@ Backend ในระยะถัดไปจะแยกขอบเขตเช
 - เป้าหมาย API unfiltered View Date ไม่เกิน 2 วินาทีบน WA-MTPULSE-TEST
 - หาก response ไม่เท่ากันหรือ latency ไม่ถึงเป้า ให้ Performance API fallback Fact query ได้ทันทีโดย Fact data ไม่เปลี่ยน
 - Rollback schema ลบเฉพาะ `daily_sku_summaries`; ไม่มีการเปลี่ยนหรือลบ Fact/Batch/Mapping
+
+# Event-scoped Import Notification และ Daily Technical Health — Implementation Plan
+
+## Summary และ Non-goals
+
+- แยก `scan totals` สำหรับ Monitoring/Audit ออกจาก `event totals` สำหรับ Telegram โดยไม่เปลี่ยน Import decision หรือข้อมูลเดิม
+- เพิ่ม persisted Daily Health schedule, adjustable thresholds, alert state/cooldown/recovery และ daily technical snapshot
+- Non-goals: External Watchdog, Remote auto-remediation, Docker socket access, Auto VACUUM/REINDEX, การเพิ่ม RAM/Disk อัตโนมัติ และ Visual redesign เต็มระบบใน Phase นี้
+
+## Technical Architecture
+
+- เพิ่ม Event classification ให้ outcome ของ Automatic Import ระบุว่าไฟล์ `unchanged` หรือถูกประมวลผล/เปลี่ยนใน Run นี้อย่างชัดเจน
+- `_finish_run` คง Run counters เดิมสำหรับ UI/Audit แต่สร้าง Telegram summary จาก event outcomes เท่านั้น
+- เพิ่ม Health evaluator ที่เก็บ Host/Runtime, PostgreSQL และ Pipeline metrics โดย reuse `collect_monitoring_metrics` และไม่สร้าง query ซ้ำโดยไม่จำเป็น
+- Worker เดิมเป็น scheduler หลัก: ตรวจ Due Daily Report และ Technical thresholds ทุก 5 นาที พร้อม persisted last-sent/alert-state เพื่อทน Restart และป้องกันส่งซ้ำ
+- Host metrics อ่านจาก Linux `/proc` และ filesystem usage เท่าที่ Container มองเห็น โดยไม่ mount Docker socket; Metric ที่อ่านไม่ได้แสดง `ไม่พร้อมใช้งาน` ไม่ตีความเป็น Healthy
+- Telegram delivery failure ไม่ทำให้ Import หรือ Monitoring transaction rollback; ทุกการส่งสร้าง Audit Event พร้อมสถานะ sent/skipped/failed
+
+## Data Model และ Settings
+
+- `system_settings`: daily enabled/time, critical enabled, recovery enabled, cooldown และ threshold pairs โดยใช้ service validation กลาง
+- เพิ่ม Technical snapshot/alert state ที่จำเป็นสำหรับ daily deduplication, trend, cooldown และ recovery; Migration ต้องมี upgrade/downgrade และไม่แตะ Fact/Batch
+- เก็บ `last_worker_heartbeat` เพื่อแสดงความสดของ Worker; ไม่อ้างว่าสามารถแจ้งเองเมื่อ Worker/Server ดับ
+- ค่าเริ่มต้น: 07:00, evaluation 5 นาที, cooldown 60 นาที, CPU 80/95, RAM 80/90, Disk 80/90, Connections 80/95 และ Dead tuples 10/20
+
+## API Plan
+
+- ขยาย System Settings GET/PATCH ด้วย `technicalNotifications` โดยคง Telegram contract เดิมและรองรับ client เก่า
+- ขยาย Monitoring response ด้วย Host/Runtime, worker heartbeat, capacity recommendation และ technical alert state
+- ใช้ endpoint Save ระบบเดิมหรือ orchestration เดิมเพื่อให้หน้า UI มีปุ่ม Save เดียวและบันทึกเฉพาะ section ที่เปลี่ยน
+- ทุก mutation อยู่หลัง System Admin authorization boundary และสร้าง Audit Event
+
+## UI Plan — Phase นี้
+
+- คง Main Menu และ TWD pages เดิม; ปรับเฉพาะ System Settings ที่จำเป็นต่อ Feature ใหม่
+- จัด Telegram panel เป็นสองกลุ่มอ่านง่าย: `ช่องทางส่งข้อความ` และ `นโยบายแจ้งเตือน`
+- เพิ่ม `Technical Health` แบบ Operations Ledger: Daily time/toggles ด้านบน และ Threshold table ด้านล่าง โดยแต่ละแถวแสดง Metric, Warning, Critical, หน่วย และคำอธิบาย
+- ใช้ Primary `#02abff`, Soft semantic colors, Lucide icons, radius/shadow ตาม Design System เดิม; ไม่ทำเป็น Card Grid ฟุ่มเฟือย
+- คง Single Save Bar พร้อม dirty state, loading, inline validation, success/error และ keyboard/focus accessibility
+
+## Antigravity Visual-only Phase — หลัง Functional Release
+
+- เปิดโปรเจกต์ใน isolated worktree/branch และส่ง `PRD.md`, `MEMORY.md`, `design-system/mt-pulse/MASTER.md` พร้อมภาพหน้าปัจจุบันเป็น context
+- Workspace Rules ต้องห้ามแก้ `backend/**`, migrations, API clients/contracts, tests เชิง behavior, state, handlers และ `src/features/performance/**`
+- ให้ Antigravity ส่ง Design Plan/Mockup/Browser screenshots ก่อนเขียนโค้ด และใช้ file allowlist สำหรับ App Shell, Settings presentation และ CSS/tokens เท่านั้น
+- ก่อน merge ตรวจ diff, interaction parity, tests, responsive 375/768/1024/1440, keyboard/focus และ visual regression; หาก protected file เปลี่ยนให้ reject ทั้ง change set
+
+## Phased Implementation
+
+1. เพิ่ม deterministic tests ที่ reproduce การแจ้ง Warning/Failed เก่าซ้ำ และล็อก expected event-only message
+2. เพิ่ม Event classification/message formatter โดยคง Run History counters เดิม
+3. เพิ่ม settings validation, migration และ persisted alert state/snapshot
+4. เพิ่ม Host/DB/Pipeline collector, daily formatter, 5-minute evaluator, cooldown และ recovery
+5. เพิ่ม System Settings/Monitoring UI เฉพาะส่วน Technical Health และ single-save orchestration
+6. รัน regression/lint/build, migration rehearsal, local time simulations และ Telegram mocks
+7. Backup/Deploy WA-MTPULSE-TEST, smoke test Daily trigger แบบเวลาจำลอง และตรวจ Audit โดยไม่ส่งข้อความทดสอบซ้ำเกินจำเป็น
+
+## Verification และ Rollback
+
+- Test unchanged registry หลายร้อยไฟล์พร้อม historical failed/pending แล้ว Telegram ต้องรายงานว่าไม่มี Event ใหม่
+- Test new/changed/missing/failed อย่างละกรณี รวม mixed run และยืนยันว่า Monitoring totals ไม่เปลี่ยน
+- Test 06:59/07:00/restart/catch-up/time change และ timezone Asia/Bangkok; Daily ส่งได้หนึ่งครั้งต่อ local date
+- Test threshold boundary, Warning→Critical, cooldown, Critical→Healthy recovery และ delivery failure
+- Test inaccessible CPU/RAM/Disk metric เป็น Unknown พร้อมคำอธิบาย ไม่เป็น Healthy ปลอม
+- Rollback ปิด Technical scheduler/alerts ผ่าน setting ได้ก่อน downgrade; Migration rollback ลบเฉพาะโครงสร้างใหม่และไม่แตะ Import/Fact/Mapping

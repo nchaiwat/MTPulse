@@ -1,13 +1,20 @@
 import json
+from datetime import time
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import get_session
 from app.models import AuditEvent
+from app.services.technical_health import (
+    DEFAULT_THRESHOLDS,
+    TechnicalNotificationConfig,
+    save_technical_notification_config,
+    technical_notification_config,
+)
 from app.services.telegram import (
     GROUP_KEY,
     NOTIFY_MANUAL_KEY,
@@ -27,6 +34,36 @@ class TelegramSettingsUpdate(BaseModel):
     bot_token: str | None = Field(default=None, max_length=300)
     group_id: str = Field(max_length=100)
     notify_manual_import: bool = True
+
+
+class TechnicalThresholdUpdate(BaseModel):
+    warning: float = Field(ge=0, le=100)
+    critical: float = Field(ge=0, le=100)
+
+    @model_validator(mode="after")
+    def validate_threshold_order(self) -> "TechnicalThresholdUpdate":
+        if self.warning >= self.critical:
+            raise ValueError("Warning ต้องน้อยกว่า Critical")
+        return self
+
+
+class TechnicalNotificationSettingsUpdate(BaseModel):
+    daily_enabled: bool = True
+    daily_time: time = time(7)
+    critical_enabled: bool = True
+    recovery_enabled: bool = True
+    cooldown_minutes: int = Field(default=60, ge=5, le=1440)
+    thresholds: dict[str, TechnicalThresholdUpdate]
+
+    @model_validator(mode="after")
+    def validate_threshold_codes(self) -> "TechnicalNotificationSettingsUpdate":
+        expected = set(DEFAULT_THRESHOLDS)
+        received = set(self.thresholds)
+        if received != expected:
+            raise ValueError(
+                "Threshold ต้องมี cpu, memory, disk, connections และ deadTuples"
+            )
+        return self
 
 
 @router.get("/telegram")
@@ -128,3 +165,44 @@ def test_telegram_settings(
         "status": delivery.status,
         "message": "ส่งข้อความทดสอบสำเร็จ",
     }
+
+
+@router.get("/technical-notifications")
+def get_technical_notification_settings(
+    session: Annotated[Session, Depends(get_session)],
+) -> dict:
+    return technical_notification_config(session).as_dict()
+
+
+@router.patch("/technical-notifications")
+def update_technical_notification_settings(
+    update: TechnicalNotificationSettingsUpdate,
+    session: Annotated[Session, Depends(get_session)],
+) -> dict:
+    actor = "system-settings"
+    before = technical_notification_config(session).as_dict()
+    config = TechnicalNotificationConfig(
+        daily_enabled=update.daily_enabled,
+        daily_time=update.daily_time,
+        critical_enabled=update.critical_enabled,
+        recovery_enabled=update.recovery_enabled,
+        cooldown_minutes=update.cooldown_minutes,
+        thresholds={
+            code: (threshold.warning, threshold.critical)
+            for code, threshold in update.thresholds.items()
+        },
+    )
+    save_technical_notification_config(session, config, actor=actor)
+    after = config.as_dict()
+    session.add(
+        AuditEvent(
+            entity_type="system_setting",
+            entity_id="technical_notifications",
+            action="update",
+            actor=actor,
+            before_json=json.dumps(before, ensure_ascii=False),
+            after_json=json.dumps(after, ensure_ascii=False),
+        )
+    )
+    session.commit()
+    return after

@@ -628,3 +628,51 @@ Discovery สำหรับ Frontend UX Milestone ได้รับอนุ�
 - Response ใหม่ต้องเท่ากับ legacy path สำหรับ `items`, `points`, `dates`, `columnTotals`, `summary`, `branches` และ `meta`
 - Branch/SKU/Date/Search/Mapping filter และ Inventory/Month/Branch views ต้องยังใช้ผลลัพธ์เดิม
 - Full backend/frontend regression, Ruff, ESLint และ production build ต้องผ่านก่อน deploy
+
+## Requirement เพิ่มเติม: Event-scoped Import Notification และ Daily Technical Health — 5 กันยายน 2026
+
+### Objective
+
+- ให้ Telegram ของ Automatic Import สรุปเฉพาะเหตุการณ์ที่เกิดขึ้นใหม่ใน Run นั้น ไม่ส่ง Warning/Failed เก่าซ้ำจาก File Registry ทั้งหมด
+- ส่ง Technical Health Report ทุกวันตามเวลาที่ System Admin กำหนด ค่าเริ่มต้น `07:00` เขตเวลา `Asia/Bangkok` แม้ระบบอยู่ในสถานะปกติ
+- แจ้ง Critical ระหว่างวันทันที ป้องกันข้อความซ้ำด้วย Cooldown 60 นาทีต่อเหตุ และส่ง Recovery ทันทีเมื่อสถานะกลับสู่ปกติ
+- ไม่ทำ External Watchdog; หาก Daily Health Report ไม่มาตามเวลา System Admin จะตรวจสอบ Server ด้วยตนเอง
+
+### Import Notification Rules
+
+- Run History และ Monitoring ยังคงเก็บ Found/Imported/Skipped/Pending/Failed ของการสแกนทั้งหมดเพื่อ Audit และวิเคราะห์ย้อนหลัง
+- Telegram ต่อ Run ต้องนับเฉพาะไฟล์ที่ใหม่ เปลี่ยนแปลง หาย หรือได้รับการประมวลผลใหม่ใน Run ปัจจุบัน
+- ไฟล์ที่ไม่เปลี่ยนแปลงต้องไม่ทำให้ Warning/Failed เก่าถูกแจ้งซ้ำ และไม่ทำให้หัวข้อรอบใหม่เป็น `สำเร็จพร้อมคำเตือน`
+- หากไม่มี Event ใหม่ ให้ส่งสรุปสั้นว่า `ไม่พบไฟล์ใหม่หรือการเปลี่ยนแปลง` พร้อม MT, Trigger, Mode และเวลาที่จบ
+- Pending Review หรือ Failed ที่เกิดใหม่ต้องแสดงเฉพาะจำนวนและรายการสำคัญของ Run นั้น รายละเอียดเต็มยังอยู่ใน Monitoring/Audit Log
+
+### Daily Technical Health Scope
+
+- Host/Container: CPU load, RAM used/free, Disk used/free, Uptime และสถานะ API/Worker ที่ระบบตรวจได้จาก Runtime
+- PostgreSQL: Database/Table/Index size, Connections, Dead tuples, Vacuum/Analyze และ Slow queries
+- Data Pipeline: Worker heartbeat, Queue/Running Run, Run ล่าสุด, วันที่ข้อมูลล่าสุด และ Warning ที่ยังไม่ Resolve
+- Daily Report แสดงค่าปัจจุบัน สถานะ `ปกติ/เฝ้าระวัง/วิกฤต` และคำแนะนำเชิงปฏิบัติ เช่น เตรียมเพิ่ม Disk/RAM หรือตรวจ Query
+- ข้อจำกัดต้องสื่อชัดเจน: Server ที่ดับหรือ Network ขาดไม่สามารถส่ง Telegram จากตัวเองได้; การไม่พบข้อความประจำวันคือสัญญาณให้ Admin ตรวจสอบเอง
+
+### Default Policy และ Admin Controls
+
+- ค่าเริ่มต้น: Daily Report `07:00`, evaluation ทุก 5 นาที, Cooldown Critical 60 นาที และ Recovery enabled
+- ค่าเริ่มต้น Threshold: CPU Warning/Critical `80%/95%`, RAM `80%/90%`, Disk `80%/90%`, PostgreSQL Connections `80%/95%`, Dead tuples `10%/20%`
+- System Admin ปรับ Daily time, เปิด/ปิด Daily/Critical/Recovery, Cooldown และ Threshold แต่ละ Metric ได้จาก System Settings
+- Validation ต้องบังคับ `Warning < Critical`, ค่าเปอร์เซ็นต์อยู่ในช่วงที่ถูกต้อง และห้ามค่าที่ไม่สมเหตุผลถูกบันทึก
+- ใช้ปุ่ม `บันทึกการตั้งค่าระบบ` ปุ่มเดียว โดยบันทึกเฉพาะส่วนที่เปลี่ยนและสร้าง Audit Event โดยไม่เปิดเผย Secret
+
+### Protected Boundaries
+
+- ห้ามเปลี่ยน Parser, Reconciliation, Duplicate Protection, Import transaction, Fact/Batch data และ Function/Logic ของหน้า TWD Performance
+- การแยก Event Notification ห้ามลบหรือแก้สถานะเก่าใน Source File Registry; เปลี่ยนเฉพาะวิธีจำแนก Event ของ Run และข้อความแจ้งเตือน
+- งาน Visual redesign เต็มระบบด้วย Antigravity แยกเป็น Phase ภายหลังใน branch/worktree เฉพาะ และต้องผ่าน Protected File Rules, diff review, regression tests และ Browser QA ก่อน merge
+
+### Success Criteria
+
+- Run ที่ไม่มีไฟล์เปลี่ยนส่งข้อความ `ไม่พบไฟล์ใหม่หรือการเปลี่ยนแปลง` และไม่ยก Warning/Failed เก่ามาเป็น Event ใหม่
+- Run ที่มีไฟล์ใหม่หนึ่งไฟล์สรุปเฉพาะผลของไฟล์นั้น ขณะที่ Run History ยังตรวจสอบยอดสแกนทั้งหมดได้
+- Daily Report ถูกส่งหนึ่งครั้งต่อวันตามเวลาที่ตั้งแม้ Healthy และไม่ส่งซ้ำหลัง Worker restart ในวันเดียวกัน
+- Critical เหตุเดิมแจ้งไม่เกินหนึ่งครั้งต่อ 60 นาที และ Recovery ถูกส่งหนึ่งครั้งเมื่อกลับสู่ปกติ
+- System Settings โหลดค่าที่บันทึกไว้หลัง Refresh/Restart และแสดง Loading, Empty, Error, Validation และ Save feedback ชัดเจน
+- Full backend/frontend regression, Ruff, ESLint, production build และ Migration rehearsal ผ่านก่อน deploy

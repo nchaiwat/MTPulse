@@ -488,3 +488,113 @@ def test_worker_marks_interrupted_run_failed(engine, monkeypatch) -> None:
         assert run.status == "failed"
         assert run.finished_at is not None
         assert "Worker ถูก Restart" in (run.error_message or "")
+
+
+def test_scheduled_notification_excludes_unchanged_historical_issues(
+    engine,
+    monkeypatch,
+) -> None:
+    audit_ids = count(1)
+    modified_at = datetime(2026, 9, 5, 1, 0)
+    candidates = [
+        SourceCandidate(
+            path=rf"\\server\share\TWD\2026-09-0{index}\{filename}",
+            filename=filename,
+            size_bytes=size,
+            modified_at=modified_at,
+        )
+        for index, (filename, size) in enumerate(
+            (("old-empty.xls", 0), ("old-warning.xls", 100)),
+            start=1,
+        )
+    ]
+    deliveries: list[tuple[str, list[str]]] = []
+    monkeypatch.setattr(
+        automatic_import,
+        "AuditEvent",
+        lambda **values: AuditEvent(id=next(audit_ids), **values),
+    )
+    monkeypatch.setattr(
+        automatic_import,
+        "_credentials",
+        lambda session, mt: (r"\\server\share\TWD", r"WA\user", "secret"),
+    )
+    monkeypatch.setattr(
+        automatic_import,
+        "list_twd_source_files",
+        lambda root, username, password: candidates,
+    )
+    monkeypatch.setattr(
+        automatic_import,
+        "download_twd_extract",
+        lambda *args, **kwargs: pytest.fail("unchanged historical file was read again"),
+    )
+
+    def capture_delivery(session, title, details, **kwargs):
+        deliveries.append((title, list(details)))
+        return type("Delivery", (), {"status": "sent", "message": "test"})()
+
+    monkeypatch.setattr(automatic_import, "send_telegram", capture_delivery)
+    monkeypatch.setattr(
+        automatic_import.smbclient,
+        "reset_connection_cache",
+        lambda: None,
+    )
+
+    with Session(engine) as session:
+        mt = ModernTrade(
+            id=1,
+            code="TWD",
+            name="Thai Watsadu",
+            source_subfolder="TWD",
+            source_enabled=True,
+        )
+        run = ImportRun(
+            id=1,
+            modern_trade_id=1,
+            trigger="scheduled",
+            mode="import",
+            status="running",
+            requested_by="system-scheduler",
+        )
+        session.add_all([mt, run])
+        session.add_all(
+            [
+                SourceFile(
+                    modern_trade_id=1,
+                    source_path=candidates[0].path,
+                    source_filename=candidates[0].filename,
+                    size_bytes=candidates[0].size_bytes,
+                    modified_at=modified_at,
+                    checksum_sha256=None,
+                    status="failed",
+                    error_message="ข้ามไฟล์: File size is 0 bytes",
+                ),
+                SourceFile(
+                    modern_trade_id=1,
+                    source_path=candidates[1].path,
+                    source_filename=candidates[1].filename,
+                    size_bytes=candidates[1].size_bytes,
+                    modified_at=modified_at,
+                    checksum_sha256="b" * 64,
+                    status="pending_review",
+                    error_message="ไฟล์มีคำเตือนเดิม",
+                ),
+            ]
+        )
+        session.commit()
+
+        process_run(session, run.id)
+
+        stored = session.get(ImportRun, run.id)
+        assert stored is not None
+        assert stored.status == "success_with_warnings"
+        assert stored.failed_count == 1
+        assert stored.pending_count == 1
+
+    assert len(deliveries) == 1
+    title, details = deliveries[0]
+    assert title == "✅ Automatic Import TWD สำเร็จ"
+    assert any("ไม่พบไฟล์ใหม่หรือการเปลี่ยนแปลง" in detail for detail in details)
+    assert all("ล้มเหลว 1" not in detail for detail in details)
+    assert all("รอตรวจสอบ 1" not in detail for detail in details)
