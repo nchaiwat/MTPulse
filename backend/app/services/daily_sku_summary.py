@@ -1,6 +1,6 @@
 from datetime import date
 
-from sqlalchemy import delete, func, insert, select
+from sqlalchemy import case, delete, func, insert, select
 from sqlalchemy.orm import Session
 
 from app.models import BranchMapping, DailySkuSummary, ImportBatch, SalesInventoryFact
@@ -52,6 +52,21 @@ def _insert_daily_sku_summaries(
             func.min(SalesInventoryFact.source_description),
             func.sum(SalesInventoryFact.amount),
             func.sum(SalesInventoryFact.sales_qty),
+            func.sum(
+                case(
+                    (SalesInventoryFact.amount > 0, SalesInventoryFact.amount),
+                    else_=0,
+                )
+            ),
+            func.sum(
+                case(
+                    (
+                        SalesInventoryFact.sales_qty > 0,
+                        SalesInventoryFact.sales_qty,
+                    ),
+                    else_=0,
+                )
+            ),
             func.sum(SalesInventoryFact.stock_on_hand),
             func.sum(SalesInventoryFact.stock_on_order),
         )
@@ -71,6 +86,8 @@ def _insert_daily_sku_summaries(
                 "source_description",
                 "amount",
                 "sales_qty",
+                "gross_amount",
+                "gross_sales_qty",
                 "stock_on_hand",
                 "stock_on_order",
             ],

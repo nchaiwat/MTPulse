@@ -7,7 +7,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import Integer, cast, distinct, func, or_, select
+from sqlalchemy import Integer, case, cast, distinct, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.database import get_session
@@ -91,6 +91,7 @@ def performance(
     ] = "day",
     period_month: Annotated[str | None, Query(max_length=7)] = None,
     latest_only: Annotated[bool, Query()] = False,
+    sales_basis: Annotated[Literal["net", "gross"], Query()] = "net",
 ) -> dict:
     modern_trade = session.scalar(select(ModernTrade).where(ModernTrade.code == "TWD"))
     if modern_trade is None:
@@ -184,6 +185,21 @@ def performance(
         else SalesInventoryFact
     )
     report_date = report_model.month_start if use_monthly_summary else report_model.data_date
+    if sales_basis == "gross":
+        if use_monthly_summary or use_daily_summary:
+            report_amount = report_model.gross_amount
+            report_qty = report_model.gross_sales_qty
+        else:
+            report_amount = case(
+                (report_model.amount > 0, report_model.amount), else_=Decimal("0")
+            )
+            report_qty = case(
+                (report_model.sales_qty > 0, report_model.sales_qty),
+                else_=Decimal("0"),
+            )
+    else:
+        report_amount = report_model.amount
+        report_qty = report_model.sales_qty
     filters = [report_model.modern_trade_id == twd_id]
     filters.append(~report_model.source_sku.in_(inactive_mapped_skus))
     if latest_only:
@@ -268,8 +284,8 @@ def performance(
     resolved_page_size = max(total_skus, 1) if requested_page_size == 0 else requested_page_size
     total_amount, total_qty = session.execute(
         select(
-            func.coalesce(func.sum(report_model.amount), 0),
-            func.coalesce(func.sum(report_model.sales_qty), 0),
+            func.coalesce(func.sum(report_amount), 0),
+            func.coalesce(func.sum(report_qty), 0),
         ).where(*filters)
     ).one()
     active_branch_count = 0
@@ -321,8 +337,8 @@ def performance(
         total_rows = session.execute(
             select(
                 report_model.source_branch_code,
-                func.coalesce(func.sum(report_model.amount), 0),
-                func.coalesce(func.sum(report_model.sales_qty), 0),
+                func.coalesce(func.sum(report_amount), 0),
+                func.coalesce(func.sum(report_qty), 0),
             )
             .where(*filters)
             .group_by(report_model.source_branch_code)
@@ -339,8 +355,8 @@ def performance(
             select(
                 total_year,
                 total_month,
-                func.coalesce(func.sum(report_model.amount), 0),
-                func.coalesce(func.sum(report_model.sales_qty), 0),
+                func.coalesce(func.sum(report_amount), 0),
+                func.coalesce(func.sum(report_qty), 0),
             )
             .where(*filters)
             .group_by(total_year, total_month)
@@ -354,8 +370,8 @@ def performance(
         total_rows = session.execute(
             select(
                 report_date,
-                func.coalesce(func.sum(report_model.amount), 0),
-                func.coalesce(func.sum(report_model.sales_qty), 0),
+                func.coalesce(func.sum(report_amount), 0),
+                func.coalesce(func.sum(report_qty), 0),
             )
             .where(*filters)
             .group_by(report_date)
@@ -381,8 +397,8 @@ def performance(
                 report_model.source_sku,
                 func.min(report_model.source_description),
                 report_date,
-                func.sum(report_model.amount),
-                func.sum(report_model.sales_qty),
+                func.sum(report_amount),
+                func.sum(report_qty),
                 func.sum(report_model.stock_on_hand),
                 func.sum(report_model.stock_on_order),
             )
@@ -399,8 +415,8 @@ def performance(
                 func.min(report_model.source_description),
                 year_part,
                 month_part,
-                func.sum(report_model.amount),
-                func.sum(report_model.sales_qty),
+                func.sum(report_amount),
+                func.sum(report_qty),
             )
             .where(*filters, report_model.source_sku.in_(skus))
             .group_by(report_model.source_sku, year_part, month_part)
@@ -412,8 +428,8 @@ def performance(
                 report_model.source_sku,
                 func.min(report_model.source_description),
                 report_model.source_branch_code,
-                func.sum(report_model.amount),
-                func.sum(report_model.sales_qty),
+                func.sum(report_amount),
+                func.sum(report_qty),
             )
             .where(*filters, report_model.source_sku.in_(skus))
             .group_by(report_model.source_sku, report_model.source_branch_code)
@@ -425,8 +441,8 @@ def performance(
                 SalesInventoryFact.source_sku,
                 func.min(SalesInventoryFact.source_description),
                 SalesInventoryFact.source_branch_code,
-                func.sum(SalesInventoryFact.amount),
-                func.sum(SalesInventoryFact.sales_qty),
+                func.sum(report_amount),
+                func.sum(report_qty),
             )
             .where(*filters, SalesInventoryFact.source_sku.in_(skus))
             .group_by(SalesInventoryFact.source_sku, SalesInventoryFact.source_branch_code)
@@ -514,8 +530,16 @@ def performance(
             {
                 "date": fact.data_date.isoformat(),
                 "branchId": fact.source_branch_code,
-                "amount": _number(fact.amount),
-                "qty": _number(fact.sales_qty),
+                "amount": _number(
+                    fact.amount
+                    if sales_basis == "net" or fact.amount > 0
+                    else Decimal("0")
+                ),
+                "qty": _number(
+                    fact.sales_qty
+                    if sales_basis == "net" or fact.sales_qty > 0
+                    else Decimal("0")
+                ),
                 "stockOh": _number(fact.stock_on_hand),
                 "stockOnOrder": _number(fact.stock_on_order),
             }
@@ -751,6 +775,7 @@ def export_performance(
     ] = "amount",
     show_descriptions: Annotated[bool, Query()] = True,
     latest_only: Annotated[bool, Query()] = False,
+    sales_basis: Annotated[Literal["net", "gross"], Query()] = "net",
 ) -> StreamingResponse:
     report = performance(
         session=session,
@@ -767,6 +792,7 @@ def export_performance(
         grain=grain,
         period_month=period_month,
         latest_only=latest_only,
+        sales_basis=sales_basis,
     )
     content = build_performance_workbook(
         report,
@@ -776,8 +802,11 @@ def export_performance(
         show_descriptions=show_descriptions,
         branch_id=branch_id,
         branch_ids=_selected_branch_ids(branch_id, branch_ids),
+        sales_basis=sales_basis,
     )
-    filename = performance_export_filename(mode, metric, grain)
+    filename = performance_export_filename(
+        mode, metric, grain, sales_basis=sales_basis
+    )
     return StreamingResponse(
         BytesIO(content),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

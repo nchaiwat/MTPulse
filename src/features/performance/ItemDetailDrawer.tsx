@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { CircleAlert, CircleCheck, LoaderCircle, X } from 'lucide-react'
 import { formatMetric, sumMetric } from './performanceMath'
-import type { Branch, Metric, PerformanceItem, SelectedCell } from './types'
+import type { Branch, Metric, PerformanceItem, SalesBasis, SelectedCell } from './types'
 import { formatDisplayDate } from '../../shared/dateFormat'
 
 interface ItemDetailDrawerProps {
@@ -10,6 +10,7 @@ interface ItemDetailDrawerProps {
   dates: string[]
   branchIds: string[]
   metric: Metric
+  salesBasis: SalesBasis
   branches: Branch[]
   isLoading?: boolean
   loadError?: string | null
@@ -24,7 +25,7 @@ const formatDimension = (date: string) => {
   return formatDisplayDate(date)
 }
 
-export function ItemDetailDrawer({ item, selected, dates, branchIds, metric, branches, isLoading = false, loadError = null, onClose }: ItemDetailDrawerProps) {
+export function ItemDetailDrawer({ item, selected, dates, branchIds, metric, salesBasis, branches, isLoading = false, loadError = null, onClose }: ItemDetailDrawerProps) {
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()
@@ -47,7 +48,7 @@ export function ItemDetailDrawer({ item, selected, dates, branchIds, metric, bra
     <div className="drawer-layer" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) onClose() }}>
       <aside className="detail-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
         <header className="drawer-header">
-          <div><span className="eyebrow">รายละเอียด Item / {focusLabel}</span><h2 id="drawer-title">{item.sku}</h2><p>{item.twdDescription}</p></div>
+          <div><span className="eyebrow">รายละเอียด Item / {focusLabel} / {salesBasis === 'gross' ? 'Gross Sale Out' : 'Net Sales'}</span><h2 id="drawer-title">{item.sku}</h2><p>{item.twdDescription}</p></div>
           <button className="icon-button" type="button" aria-label="ปิดรายละเอียด Item" onClick={onClose}><X size={19} /></button>
         </header>
 
@@ -57,8 +58,8 @@ export function ItemDetailDrawer({ item, selected, dates, branchIds, metric, bra
         </div>
 
         <section className="drawer-kpis" aria-label="ยอดรวม Item">
-          <div><span>Amount</span><strong>{formatMetric(sumMetric(points, 'amount'), 'amount')}</strong></div>
-          <div><span>Sales Qty</span><strong>{formatMetric(sumMetric(points, 'qty'), 'qty')}</strong></div>
+          <div><span>Amount · {salesBasis === 'gross' ? 'Gross' : 'Net'}</span><strong>{formatMetric(sumMetric(points, 'amount'), 'amount')}</strong></div>
+          <div><span>Sales Qty · {salesBasis === 'gross' ? 'Gross' : 'Net'}</span><strong>{formatMetric(sumMetric(points, 'qty'), 'qty')}</strong></div>
           <div><span>Stock OH ล่าสุด</span><strong>{formatMetric(sumMetric(points.filter((point) => point.date === dates.at(-1)), 'stockOh'), 'stockOh')}</strong></div>
           <div><span>Stock On Order</span><strong>{formatMetric(sumMetric(points.filter((point) => point.date === dates.at(-1)), 'stockOnOrder'), 'stockOnOrder')}</strong></div>
         </section>

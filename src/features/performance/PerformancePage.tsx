@@ -5,7 +5,7 @@ import { PerformanceMatrix } from './PerformanceMatrix'
 import { PerformanceToolbar } from './PerformanceToolbar'
 import { downloadPerformanceReport, fetchPerformance, fetchPerformanceItemDetail, fetchSkuOptions } from './performanceApi'
 import { formatMetric, monthKey, monthKeys, pointsForView, sumMetric } from './performanceMath'
-import type { Branch, BranchPeriod, Dimension, Metric, Mode, PerformanceItem, PerformanceResponse, SelectedCell, SkuOption } from './types'
+import type { Branch, BranchPeriod, Dimension, Metric, Mode, PerformanceItem, PerformanceResponse, SalesBasis, SelectedCell, SkuOption } from './types'
 import { formatDisplayDate } from '../../shared/dateFormat'
 
 const emptyDates: string[] = []
@@ -15,6 +15,7 @@ const performanceViewStorageKey = 'mtpulse.performance.twd.current-view'
 
 interface PerformanceViewState {
   mode: Mode
+  salesBasis: SalesBasis
   metric: Metric
   monthFrom: string
   monthTo: string
@@ -32,6 +33,7 @@ interface PerformanceViewState {
 
 const defaultPerformanceView: PerformanceViewState = {
   mode: 'sales',
+  salesBasis: 'net',
   metric: 'amount',
   dimension: 'branch',
   monthFrom: '',
@@ -86,6 +88,7 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(!initialData)
   const [mode, setMode] = useState<Mode>(savedView.mode)
+  const [salesBasis, setSalesBasis] = useState<SalesBasis>(savedView.salesBasis)
   const [metric, setMetric] = useState<Metric>(savedView.metric)
   const [dimension, setDimension] = useState<Dimension>(savedView.dimension)
   const [dateFrom, setDateFrom] = useState(savedView.dateFrom)
@@ -116,6 +119,7 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
   useEffect(() => {
     const currentView: PerformanceViewState = {
       mode,
+      salesBasis,
       metric,
       dimension,
       dateFrom,
@@ -131,7 +135,7 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
       showDescriptions,
     }
     window.localStorage.setItem(performanceViewStorageKey, JSON.stringify(currentView))
-  }, [branchIds, branchMonth, branchPeriod, dateFrom, dateTo, dimension, heatmap, metric, mode, monthFrom, monthTo, page, showDescriptions, skuIds])
+  }, [branchIds, branchMonth, branchPeriod, dateFrom, dateTo, dimension, heatmap, metric, mode, monthFrom, monthTo, page, salesBasis, showDescriptions, skuIds])
 
 
   useEffect(() => {
@@ -157,6 +161,7 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
       monthTo,
       dimension,
       mode,
+      salesBasis,
       branchMonth,
       branchPeriod,
       signal: controller.signal,
@@ -169,7 +174,7 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
       })
       .finally(() => { if (!controller.signal.aborted) setIsLoading(false) })
     return () => controller.abort()
-  }, [branchIds, branchMonth, branchPeriod, dateFrom, dateTo, dimension, initialData, mode, monthFrom, monthTo, page, skuIds])
+  }, [branchIds, branchMonth, branchPeriod, dateFrom, dateTo, dimension, initialData, mode, monthFrom, monthTo, page, salesBasis, skuIds])
 
   const needsDailyDetail = Boolean(
     selected
@@ -178,7 +183,7 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
     && (mode === 'inventory' || (mode === 'sales' && branchPeriod === 'day')),
   )
   const detailRequestKey = needsDailyDetail && selected
-    ? [selected.sku, mode, dateFrom, dateTo, branchIds.join(','), monthFrom, monthTo].join('|')
+    ? [selected.sku, mode, salesBasis, dateFrom, dateTo, branchIds.join(','), monthFrom, monthTo].join('|')
     : ''
   useEffect(() => {
     if (!selected?.sku || !detailRequestKey) return
@@ -194,6 +199,7 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
       monthTo,
       dimension,
       mode,
+      salesBasis,
       branchMonth,
       branchPeriod,
     }, selected.sku, controller.signal)
@@ -202,7 +208,7 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
         if (!controller.signal.aborted) setDetailResult({ key: detailRequestKey, item: null, error: error instanceof Error ? error.message : 'โหลดรายละเอียดรายวันไม่สำเร็จ' })
       })
     return () => controller.abort()
-  }, [branchIds, branchMonth, branchPeriod, dateFrom, dateTo, detailRequestKey, dimension, mode, monthFrom, monthTo, selected?.sku, skuIds])
+  }, [branchIds, branchMonth, branchPeriod, dateFrom, dateTo, detailRequestKey, dimension, mode, monthFrom, monthTo, salesBasis, selected?.sku, skuIds])
 
   const handleDownload = async () => {
     setIsDownloading(true)
@@ -219,6 +225,7 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
         monthTo,
         dimension,
         mode,
+        salesBasis,
         branchMonth,
         branchPeriod,
       }, metric, showDescriptions)
@@ -291,6 +298,7 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
 
         <PerformanceToolbar
           mode={mode}
+          salesBasis={salesBasis}
           metric={metric}
           dimension={dimension}
           dateFrom={dateFrom}
@@ -310,6 +318,7 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
           availableDates={availableDates}
           months={months}
           onModeChange={setMode}
+          onSalesBasisChange={(value) => { setSalesBasis(value); setPage(1); setIsLoading(true); setLoadError(null) }}
           onMetricChange={setMetric}
           onDimensionChange={(value) => { setDimension(value); setPage(1); setIsLoading(true); setLoadError(null) }}
           onDateRangeChange={(from, to) => { setDateFrom(from); setDateTo(to); setPage(1); setIsLoading(true); setLoadError(null) }}
@@ -325,16 +334,16 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
         {loadError && <div className="empty-state" role="alert"><strong>เชื่อมต่อ Backend ไม่สำเร็จ</strong><span>{loadError}</span></div>}
 
         <section className="kpi-ledger" aria-label="สรุป Performance">
-          <article><span>Amount</span><strong>{formatMetric(totalAmount, 'amount')}</strong><small>{hasServerSummary ? 'รวมทุก SKU ในช่วงวันที่เลือก' : 'รวมข้อมูลที่แสดง'}</small></article>
-          <article><span>Sales Qty</span><strong>{formatMetric(totalQty, 'qty')}</strong><small>{totalQty < 0 ? 'ยอด Return สุทธิ' : 'รวม Return และ Adjustment'}</small></article>
+          <article><span>Amount · {salesBasis === 'gross' ? 'Gross' : 'Net'}</span><strong>{formatMetric(totalAmount, 'amount')}</strong><small>{salesBasis === 'gross' ? 'เฉพาะยอดมากกว่า 0 ไม่รวม Return' : hasServerSummary ? 'ยอดสุทธิ รวม Return และ Adjustment' : 'ยอดสุทธิของข้อมูลที่แสดง'}</small></article>
+          <article><span>Sales Qty · {salesBasis === 'gross' ? 'Gross' : 'Net'}</span><strong>{formatMetric(totalQty, 'qty')}</strong><small>{salesBasis === 'gross' ? 'เฉพาะจำนวนมากกว่า 0 ไม่รวม Return' : totalQty < 0 ? 'ยอด Return สุทธิ' : 'รวม Return และ Adjustment'}</small></article>
           <article><span>SKU ที่แสดง</span><strong>{visibleItems.length.toLocaleString('en-US')}</strong><small>จาก {(data?.meta.totalSkus ?? 0).toLocaleString('en-US')} SKU</small></article>
           <article><span>Branch ที่มียอด</span><strong>{activeBranches}</strong><small>จาก {data?.meta.totalBranches ?? 0} Branch ของ TWD</small></article>
         </section>
 
         <div className="matrix-heading">
-          <div><h3>{mode === 'sales' ? 'Sales' : 'Inventory'} ตาม {dimension === 'branch' ? 'Branch' : dimension === 'month' ? 'Month' : 'Date'}</h3><span>{metric === 'amount' ? 'Amount' : metric === 'qty' ? 'Qty' : metric === 'stockOh' ? 'Stock On Hand' : 'Stock On Order'} · {dimension === 'month' ? (monthFrom && monthTo ? `${formatMonth(monthFrom)} – ${formatMonth(monthTo)}` : 'ทุกเดือนที่มีข้อมูล') : mode === 'sales' && dimension === 'branch' && branchPeriod === 'month' && selectedBranchMonth ? formatMonth(selectedBranchMonth) : formatDateRange(selectedDates)}</span></div>
+          <div><h3>{mode === 'sales' ? 'Sales' : 'Inventory'} ตาม {dimension === 'branch' ? 'Branch' : dimension === 'month' ? 'Month' : 'Date'}</h3><span>{metric === 'amount' ? 'Amount' : metric === 'qty' ? 'Qty' : metric === 'stockOh' ? 'Stock On Hand' : 'Stock On Order'}{mode === 'sales' ? ` · ${salesBasis === 'gross' ? 'Gross Sale Out' : 'Net Sales'}` : ''} · {dimension === 'month' ? (monthFrom && monthTo ? `${formatMonth(monthFrom)} – ${formatMonth(monthTo)}` : 'ทุกเดือนที่มีข้อมูล') : mode === 'sales' && dimension === 'branch' && branchPeriod === 'month' && selectedBranchMonth ? formatMonth(selectedBranchMonth) : formatDateRange(selectedDates)}</span></div>
           <div className="matrix-heading-tools">
-            <div className="heat-legend" aria-label="คำอธิบาย Heatmap"><span>ต่ำ</span><i className="heat-low" /><i className="heat-medium" /><i className="heat-high" /><span>สูง</span><i className="heat-negative" /><span>Return</span></div>
+            <div className="heat-legend" aria-label="คำอธิบาย Heatmap"><span>ต่ำ</span><i className="heat-low" /><i className="heat-medium" /><i className="heat-high" /><span>สูง</span>{mode !== 'sales' || salesBasis === 'net' ? <><i className="heat-negative" /><span>Return</span></> : null}</div>
             <div className="matrix-actions">
               <button type="button" disabled={isDownloading} onClick={() => void handleDownload()}><Download size={15} />{isDownloading ? 'กำลัง Download…' : 'Download Excel'}</button>
             </div>
@@ -366,7 +375,7 @@ export function PerformancePage({ initialData }: PerformancePageProps) {
       </div>
 
       {selected && selectedItem && (
-        <ItemDetailDrawer item={currentDetail?.item ?? selectedItem} selected={selected} dates={selectedDates} branchIds={branchIds} metric={metric} branches={branches} isLoading={detailLoading} loadError={currentDetail?.error} onClose={() => setSelected(null)} />
+        <ItemDetailDrawer item={currentDetail?.item ?? selectedItem} selected={selected} dates={selectedDates} branchIds={branchIds} metric={metric} salesBasis={salesBasis} branches={branches} isLoading={detailLoading} loadError={currentDetail?.error} onClose={() => setSelected(null)} />
       )}
     </>
   )

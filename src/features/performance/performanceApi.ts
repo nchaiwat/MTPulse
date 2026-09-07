@@ -1,4 +1,4 @@
-import type { BranchPeriod, Dimension, Metric, Mode, PerformanceItem, PerformanceResponse, SkuOption } from './types'
+import type { BranchPeriod, Dimension, Metric, Mode, PerformanceItem, PerformanceResponse, SalesBasis, SkuOption } from './types'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
 
@@ -13,6 +13,7 @@ export interface PerformanceQuery {
   page: number
   dimension: Dimension
   mode: Mode
+  salesBasis?: SalesBasis
   branchMonth: string
   branchPeriod: BranchPeriod
   signal?: AbortSignal
@@ -45,6 +46,9 @@ function performanceQuery(
         ? 'day_total'
         : 'day'
   const query = new URLSearchParams({ grain })
+  if (queryInput.mode === 'sales') {
+    query.set('sales_basis', queryInput.salesBasis ?? 'net')
+  }
   if (latestInventorySnapshot && queryInput.mode === 'inventory' && queryInput.dimension === 'branch') {
     query.set('latest_only', 'true')
   }

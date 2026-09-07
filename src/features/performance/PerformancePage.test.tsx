@@ -7,6 +7,23 @@ afterEach(() => window.localStorage.removeItem('mtpulse.performance.twd.current-
 
 
 describe('PerformancePage', () => {
+  it('defaults to Net Sales and persists the selected Gross Sale Out basis', async () => {
+    const user = userEvent.setup()
+    const firstRender = render(<PerformancePage initialData={samplePerformanceResponse} />)
+
+    expect(screen.getByRole('button', { name: 'Net Sales' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('Amount · Net')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Gross Sale Out' }))
+    expect(screen.getByRole('button', { name: 'Gross Sale Out' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('Amount · Gross')).toBeInTheDocument()
+    expect(screen.queryByText('Return')).not.toBeInTheDocument()
+
+    await waitFor(() => expect(window.localStorage.getItem('mtpulse.performance.twd.current-view')).toContain('"salesBasis":"gross"'))
+    firstRender.unmount()
+    render(<PerformancePage initialData={samplePerformanceResponse} />)
+    expect(screen.getByRole('button', { name: 'Gross Sale Out' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
   it('shows a visible loading indicator over the matrix while refreshing data', async () => {
     const user = userEvent.setup()
     render(<PerformancePage initialData={samplePerformanceResponse} />)

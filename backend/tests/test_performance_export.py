@@ -165,3 +165,27 @@ def test_performance_export_filename_has_view_and_unique_timestamp() -> None:
         "day",
         datetime(2026, 8, 29, 17, 30, tzinfo=UTC),
     ) == "TWD_Sales_Amount_Branch_20260830_003000.xlsx"
+
+
+def test_gross_sales_export_is_clearly_labeled() -> None:
+    content = build_performance_workbook(
+        _report(),
+        mode="sales",
+        metric="amount",
+        grain="day",
+        show_descriptions=True,
+        sales_basis="gross",
+    )
+    workbook = openpyxl.load_workbook(BytesIO(content), data_only=False)
+    assert workbook["Report"]["A1"].value == (
+        "TWD Sales (Gross Sale Out) by Branch — Amount"
+    )
+    workbook.close()
+
+    assert performance_export_filename(
+        "sales",
+        "amount",
+        "day",
+        datetime(2026, 8, 25, 12, 34, 56),
+        sales_basis="gross",
+    ) == "TWD_Sales_Gross_Amount_Branch_20260825_123456.xlsx"

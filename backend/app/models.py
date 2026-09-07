@@ -225,6 +225,12 @@ class MonthlySalesSummary(Base):
     source_description: Mapped[str | None] = mapped_column(Text)
     amount: Mapped[Decimal] = mapped_column(MONEY)
     sales_qty: Mapped[Decimal] = mapped_column(QUANTITY)
+    gross_amount: Mapped[Decimal] = mapped_column(
+        MONEY, default=Decimal("0"), server_default="0"
+    )
+    gross_sales_qty: Mapped[Decimal] = mapped_column(
+        QUANTITY, default=Decimal("0"), server_default="0"
+    )
 
 
 class DailySkuSummary(Base):
@@ -245,6 +251,12 @@ class DailySkuSummary(Base):
     source_description: Mapped[str | None] = mapped_column(Text)
     amount: Mapped[Decimal] = mapped_column(MONEY)
     sales_qty: Mapped[Decimal] = mapped_column(QUANTITY)
+    gross_amount: Mapped[Decimal] = mapped_column(
+        MONEY, default=Decimal("0"), server_default="0"
+    )
+    gross_sales_qty: Mapped[Decimal] = mapped_column(
+        QUANTITY, default=Decimal("0"), server_default="0"
+    )
     stock_on_hand: Mapped[Decimal] = mapped_column(QUANTITY)
     stock_on_order: Mapped[Decimal] = mapped_column(QUANTITY)
 

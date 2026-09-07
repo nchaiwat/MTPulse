@@ -20,7 +20,11 @@ def _display_date(value: str) -> str:
 
 
 def performance_export_filename(
-    mode: str, metric: str, grain: str, current_time: datetime | None = None
+    mode: str,
+    metric: str,
+    grain: str,
+    current_time: datetime | None = None,
+    sales_basis: str = "net",
 ) -> str:
     timestamp = as_bangkok(current_time or bangkok_now()).strftime("%Y%m%d_%H%M%S")
     view = (
@@ -30,7 +34,9 @@ def performance_export_filename(
         if grain == "month"
         else "Date"
     )
-    return f"TWD_{mode.title()}_{METRIC_LABELS[metric].replace(' ', '')}_{view}_{timestamp}.xlsx"
+    basis = "_Gross" if mode == "sales" and sales_basis == "gross" else ""
+    metric_label = METRIC_LABELS[metric].replace(" ", "")
+    return f"TWD_{mode.title()}{basis}_{metric_label}_{view}_{timestamp}.xlsx"
 
 
 def build_performance_workbook(
@@ -42,6 +48,7 @@ def build_performance_workbook(
     show_descriptions: bool,
     branch_id: str | None = None,
     branch_ids: list[str] | None = None,
+    sales_basis: str = "net",
 ) -> bytes:
     dimension = (
         "branch"
@@ -93,7 +100,15 @@ def build_performance_workbook(
     data_end_row = data_start_row + len(report["items"]) - 1
 
     sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
-    sheet.cell(1, 1, f"TWD {mode.title()} by {dimension.title()} — {METRIC_LABELS[metric]}")
+    basis_label = (
+        "Gross Sale Out" if mode == "sales" and sales_basis == "gross" else "Net Sales"
+    )
+    title_basis = f" ({basis_label})" if mode == "sales" else ""
+    sheet.cell(
+        1,
+        1,
+        f"TWD {mode.title()}{title_basis} by {dimension.title()} — {METRIC_LABELS[metric]}",
+    )
     period = report.get("selectedMonth") or (
         " – ".join(_display_date(value) for value in selected_dates)
         if selected_dates

@@ -3,10 +3,11 @@ import { BranchMultiSelect } from './BranchMultiSelect'
 import { DateRangePicker } from './DateRangePicker'
 import { MonthRangePicker } from './MonthRangePicker'
 import { SkuMultiSelect } from './SkuMultiSelect'
-import type { Branch, BranchPeriod, Dimension, Metric, Mode, SkuOption } from './types'
+import type { Branch, BranchPeriod, Dimension, Metric, Mode, SalesBasis, SkuOption } from './types'
 
 interface PerformanceToolbarProps {
   mode: Mode
+  salesBasis: SalesBasis
   metric: Metric
   dimension: Dimension
   dateFrom: string
@@ -26,6 +27,7 @@ interface PerformanceToolbarProps {
   availableDates: string[]
   months: string[]
   onModeChange: (mode: Mode) => void
+  onSalesBasisChange: (salesBasis: SalesBasis) => void
   onMetricChange: (metric: Metric) => void
   onDimensionChange: (dimension: Dimension) => void
   onDateRangeChange: (dateFrom: string, dateTo: string) => void
@@ -72,6 +74,30 @@ export function PerformanceToolbar(props: PerformanceToolbarProps) {
             ))}
           </div>
         </div>
+
+        {props.mode === 'sales' && (
+          <div className="control-group">
+            <span className="control-label">Sales Basis</span>
+            <div className="segmented-control">
+              <button
+                type="button"
+                aria-pressed={props.salesBasis === 'net'}
+                title="ยอดขายสุทธิ รวม Return และ Adjustment"
+                onClick={() => props.onSalesBasisChange('net')}
+              >
+                Net Sales
+              </button>
+              <button
+                type="button"
+                aria-pressed={props.salesBasis === 'gross'}
+                title="รวมเฉพาะ Amount และ Qty ที่มากกว่า 0 ไม่รวม Return และ Adjustment"
+                onClick={() => props.onSalesBasisChange('gross')}
+              >
+                Gross Sale Out
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="control-group">
           <span className="control-label">Metric</span>

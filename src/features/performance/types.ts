@@ -1,4 +1,5 @@
 export type Mode = 'sales' | 'inventory'
+export type SalesBasis = 'net' | 'gross'
 export type Metric = 'amount' | 'qty' | 'stockOh' | 'stockOnOrder'
 export type Dimension = 'branch' | 'day' | 'month'
 export type BranchPeriod = 'month' | 'day'

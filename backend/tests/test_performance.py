@@ -34,6 +34,138 @@ def test_selected_branch_ids_supports_multi_select_and_legacy_parameter() -> Non
     assert _selected_branch_ids(None, None) == []
 
 
+def test_sales_basis_keeps_net_default_and_excludes_negative_sales_in_gross() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    data_date = date(2026, 7, 31)
+    with Session(engine) as session:
+        session.add(ModernTrade(id=1, code="TWD", name="Thai Watsadu"))
+        session.add(
+            ImportBatch(
+                id=1,
+                modern_trade_id=1,
+                status="imported",
+                data_date=data_date,
+                source_path="sales.xlsx",
+                source_filename="sales.xlsx",
+                checksum_sha256="a" * 64,
+                row_count=2,
+                store_count=2,
+                sku_count=1,
+                negative_row_count=1,
+                source_amount=70,
+                amount=70,
+                sales_qty=7,
+                stock_on_hand=0,
+                reported_stock_on_hand=0,
+                stock_on_order=0,
+            )
+        )
+        session.add(
+            ItemMapping(
+                id=1,
+                modern_trade_id=1,
+                source_sku="SKU-A",
+                source_description="Item A",
+                wa_item_code="WA-A",
+                status="confirmed",
+                effective_from=date(2026, 7, 1),
+                changed_by="test",
+            )
+        )
+        for index, branch in enumerate(("B1", "B2"), start=1):
+            session.add(
+                BranchMapping(
+                    id=index,
+                    modern_trade_id=1,
+                    source_branch_code=branch,
+                    source_branch_description=branch,
+                    wa_branch_code=f"WA-{branch}",
+                    wa_branch_description=branch,
+                    status="confirmed",
+                    effective_from=date(2026, 7, 1),
+                    changed_by="test",
+                )
+            )
+        session.add_all(
+            [
+                SalesInventoryFact(
+                    id=1,
+                    modern_trade_id=1,
+                    batch_id=1,
+                    data_date=data_date,
+                    source_branch_code="B1",
+                    source_branch_name="B1",
+                    source_sku="SKU-A",
+                    source_description="Item A",
+                    source_amount=100,
+                    amount=100,
+                    sales_qty=10,
+                    stock_on_hand=5,
+                    stock_on_order=1,
+                ),
+                SalesInventoryFact(
+                    id=2,
+                    modern_trade_id=1,
+                    batch_id=1,
+                    data_date=data_date,
+                    source_branch_code="B2",
+                    source_branch_name="B2",
+                    source_sku="SKU-A",
+                    source_description="Item A",
+                    source_amount=-30,
+                    amount=-30,
+                    sales_qty=-3,
+                    stock_on_hand=7,
+                    stock_on_order=2,
+                ),
+            ]
+        )
+        session.commit()
+        refresh_monthly_sales_summary(session, 1, data_date)
+        refresh_daily_sku_summary(session, 1, data_date)
+        session.commit()
+
+        def report(grain: str, sales_basis: str = "net") -> dict:
+            return performance(
+                session=session,
+                date_from=None,
+                date_to=None,
+                page=1,
+                page_size=25,
+                branch_id=None,
+                branch_ids=None,
+                sku_ids=None,
+                mapping_status=None,
+                hide_unmapped=False,
+                search=None,
+                grain=grain,
+                period_month="2026-07" if grain == "branch_month" else None,
+                latest_only=False,
+                sales_basis=sales_basis,
+            )
+
+        net_day = report("day")
+        gross_day = report("day", "gross")
+        net_daily_summary = report("day_total")
+        gross_daily_summary = report("day_total", "gross")
+        gross_month = report("month", "gross")
+        gross_branch_month = report("branch_month", "gross")
+
+    assert net_day["summary"]["amount"] == 70
+    assert net_day["summary"]["qty"] == 7
+    assert gross_day["summary"]["amount"] == 100
+    assert gross_day["summary"]["qty"] == 10
+    assert [point["amount"] for point in gross_day["items"][0]["points"]] == [100, 0]
+    assert net_daily_summary["summary"]["amount"] == 70
+    assert gross_daily_summary["summary"]["amount"] == 100
+    assert gross_daily_summary["items"][0]["points"][0]["qty"] == 10
+    assert gross_month["summary"]["amount"] == 100
+    assert gross_month["items"][0]["points"][0]["amount"] == 100
+    assert gross_branch_month["summary"]["amount"] == 100
+    assert [point["amount"] for point in gross_branch_month["items"][0]["points"]] == [100, 0]
+
+
 def test_unfiltered_day_total_daily_summary_matches_fact_fallback() -> None:
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)

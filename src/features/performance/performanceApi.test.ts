@@ -40,6 +40,37 @@ describe('fetchPerformance', () => {
     expect(url.searchParams.has('page_size')).toBe(false)
     expect(url.searchParams.get('grain')).toBe('branch_month')
     expect(url.searchParams.get('period_month')).toBe('latest')
+    expect(url.searchParams.get('sales_basis')).toBe('net')
+  })
+
+  it('passes the selected Gross Sale Out basis to matrix, detail, and export', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      new Response(JSON.stringify({ items: [] }), { status: 200 }),
+    )
+    const query = {
+      dateFrom: '2026-07-01',
+      dateTo: '2026-07-31',
+      branchIds: [],
+      monthFrom: '',
+      monthTo: '',
+      search: '',
+      page: 1,
+      dimension: 'branch' as const,
+      mode: 'sales' as const,
+      salesBasis: 'gross' as const,
+      branchMonth: 'latest',
+      branchPeriod: 'day' as const,
+    }
+
+    await fetchPerformance(query)
+    await fetchPerformanceItemDetail(query, 'SKU-A')
+    fetchMock.mockResolvedValueOnce(new Response(new Blob(['xlsx']), { status: 200 }))
+    await downloadPerformanceReport(query, 'amount', true)
+
+    for (const call of fetchMock.mock.calls) {
+      const url = new URL(String(call[0]), 'http://localhost')
+      expect(url.searchParams.get('sales_basis')).toBe('gross')
+    }
   })
 
   it('requests all available history aggregated by month', async () => {
