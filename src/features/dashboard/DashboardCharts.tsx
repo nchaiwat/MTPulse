@@ -121,11 +121,39 @@ export function RankingBars<T extends { currentAmount: number; previousAmount: n
   currentYear: number
   previousYear: number
 }) {
+  const [activeIndex, setActiveIndex] = useState(0)
   const current = (row: T) => metric === 'amount' ? row.currentAmount : row.currentQty
   const previous = (row: T) => metric === 'amount' ? row.previousAmount : row.previousQty
   const maxValue = Math.max(...rows.flatMap((row) => [current(row), previous(row)]), 1)
+  const activeRow = rows[activeIndex] ?? rows[0]
+  const activeChange = activeRow ? change(activeRow) : null
+  const activeChangeLabel = activeChange === null
+    ? '—'
+    : `${activeChange > 0 ? '+' : activeChange < 0 ? '−' : ''}${Math.abs(activeChange).toFixed(1)}%`
   return (
     <div className="ranking-bars" role="group" aria-label="กราฟอันดับเปรียบเทียบปีปัจจุบันกับปีก่อน">
+      {activeRow && (
+        <div className="ranking-inspector" role="status" aria-live="polite">
+          <span className="ranking-inspector-identity">
+            <strong>{code(activeRow)}</strong>
+            <small title={label(activeRow)}>{label(activeRow)}</small>
+          </span>
+          <span className="ranking-inspector-value is-current">
+            <i className="current-swatch" />
+            <small>{currentYear}</small>
+            <b>{exact.format(current(activeRow))}</b>
+          </span>
+          <span className="ranking-inspector-value is-previous">
+            <i className="previous-swatch" />
+            <small>{previousYear}</small>
+            <b>{exact.format(previous(activeRow))}</b>
+          </span>
+          <span className={`ranking-inspector-change ${activeChange === null || activeChange === 0 ? 'is-neutral' : activeChange > 0 ? 'is-positive' : 'is-negative'}`}>
+            <small>YoY</small>
+            <b>{activeChangeLabel}</b>
+          </span>
+        </div>
+      )}
       {rows.map((row, index) => {
         const changeValue = change(row)
         const changeLabel = changeValue === null
@@ -137,6 +165,9 @@ export function RankingBars<T extends { currentAmount: number; previousAmount: n
             type="button"
             key={`${code(row)}-${index}`}
             aria-label={`อันดับ ${index + 1}, ${code(row)}, ${label(row)}, ${currentYear}: ${exact.format(current(row))}, ${previousYear}: ${exact.format(previous(row))}, YoY: ${changeLabel}`}
+            onMouseEnter={() => setActiveIndex(index)}
+            onFocus={() => setActiveIndex(index)}
+            onClick={() => setActiveIndex(index)}
           >
             <span className="ranking-position">{String(index + 1).padStart(2, '0')}</span>
             <span className="ranking-identity">
@@ -163,12 +194,6 @@ export function RankingBars<T extends { currentAmount: number; previousAmount: n
               className={`ranking-delta ${changeValue === null || changeValue === 0 ? 'is-neutral' : changeValue > 0 ? 'is-positive' : 'is-negative'}`}
             >
               {changeLabel}
-            </span>
-            <span className="chart-tooltip ranking-tooltip">
-              <strong>{code(row)} · {label(row)}</strong>
-              <span><i className="current-swatch" />{currentYear}<b>{exact.format(current(row))}</b></span>
-              <span><i className="previous-swatch" />{previousYear}<b>{exact.format(previous(row))}</b></span>
-              <span className="ranking-tooltip-delta">YoY<b>{changeLabel}</b></span>
             </span>
           </button>
         )

@@ -62,7 +62,7 @@ const response = {
 describe('TwdDashboardPage', () => {
   afterEach(() => vi.restoreAllMocks())
 
-  it('uses mapped branch labels, separate SKU columns, and accessible chart tooltips', async () => {
+  it('uses mapped branch labels, separate SKU columns, and non-overlapping chart details', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify(response), { status: 200 }),
     )
@@ -74,8 +74,12 @@ describe('TwdDashboardPage', () => {
     expect(within(branchSection!).getAllByText('60016 - ภูเก็ต เฟสติวัล (CTW-0048)').length).toBeGreaterThan(0)
     expect(within(branchSection!).getByText('01')).toBeInTheDocument()
     expect(within(branchSection!).getAllByText('60016').length).toBeGreaterThan(0)
-    expect(within(branchSection!).getByText('ภูเก็ต เฟสติวัล (CTW-0048)')).toBeInTheDocument()
+    expect(within(branchSection!).getAllByText('ภูเก็ต เฟสติวัล (CTW-0048)').length).toBeGreaterThanOrEqual(2)
     expect(within(branchSection!).getAllByText('+20.0%').length).toBeGreaterThanOrEqual(2)
+    const branchInspector = within(branchSection!).getByRole('status')
+    expect(within(branchInspector).getByText('1,200')).toBeInTheDocument()
+    expect(within(branchInspector).getByText('1,000')).toBeInTheDocument()
+    expect(branchSection!.querySelector('.ranking-tooltip')).not.toBeInTheDocument()
 
     const skuHeading = screen.getByRole('heading', { name: 'Top 15 SKU' })
     const skuSection = skuHeading.closest('section')
