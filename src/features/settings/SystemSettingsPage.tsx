@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bell, Clock3, Eye, EyeOff, Send, ServerCog, ShieldAlert } from 'lucide-react'
+import { Bell, CheckCircle2, Clock3, Eye, EyeOff, RefreshCw, Send, ServerCog, ShieldAlert } from 'lucide-react'
 import { FileShareSettingsCard, type FileShareSettingsHandle } from './FileShareSettingsCard'
 import {
   defaultTechnicalNotificationSettings,
+  checkTechnicalHealth,
   fetchTechnicalNotificationSettings,
   fetchTelegramSettings,
   fetchTelegramToken,
@@ -29,13 +30,14 @@ export function SystemSettingsPage({ embedded = false }: { embedded?: boolean })
   const [groupId, setGroupId] = useState('')
   const [configured, setConfigured] = useState(false)
   const [notifyManualImport, setNotifyManualImport] = useState(true)
-  const [busy, setBusy] = useState<'save' | 'test' | 'reveal' | null>(null)
+  const [busy, setBusy] = useState<'save' | 'test' | 'reveal' | 'health' | null>(null)
   const [message, setMessage] = useState<SettingsMessage | null>(null)
   const [savedTelegram, setSavedTelegram] = useState({ groupId: '', notifyManualImport: true })
   const [revealedToken, setRevealedToken] = useState('')
   const [fileShareBusy, setFileShareBusy] = useState(false)
   const [technical, setTechnical] = useState<TechnicalNotificationSettings>(defaultTechnicalNotificationSettings)
   const [savedTechnical, setSavedTechnical] = useState<TechnicalNotificationSettings>(defaultTechnicalNotificationSettings)
+  const [healthCheck, setHealthCheck] = useState<{ checkedAt: string, overallStatus: string } | null>(null)
   const fileShareRef = useRef<FileShareSettingsHandle>(null)
 
   useEffect(() => {
@@ -166,6 +168,23 @@ export function SystemSettingsPage({ embedded = false }: { embedded?: boolean })
     }
   }
 
+  const runHealthCheck = async () => {
+    setBusy('health')
+    setMessage(null)
+    try {
+      const result = await checkTechnicalHealth()
+      setHealthCheck({
+        checkedAt: result.checkedAt,
+        overallStatus: result.overallStatus,
+      })
+      setMessage({ text: 'ตรวจสุขภาพระบบและส่ง Telegram แล้ว', tone: 'success' })
+    } catch (error) {
+      setMessage({ text: error instanceof Error ? error.message : 'ตรวจสุขภาพระบบไม่สำเร็จ', tone: 'error' })
+    } finally {
+      setBusy(null)
+    }
+  }
+
   return (
     <div className={`system-settings-page ${embedded ? 'system-settings-page-embedded' : 'page-content'}`}>
       <FileShareSettingsCard ref={fileShareRef} disabled={busy !== null} onBusyChange={setFileShareBusy} />
@@ -190,7 +209,17 @@ export function SystemSettingsPage({ embedded = false }: { embedded?: boolean })
           <header>
             <span className="setting-icon"><ServerCog size={18} aria-hidden="true" /></span>
             <div><span className="eyebrow">Notification policy</span><h4 id="technical-notification-heading">Technical Health</h4><p>รายงานสุขภาพระบบทุกวันและแจ้ง Critical ระหว่างวัน</p></div>
+            <button className="secondary-action technical-health-check" type="button" disabled={busy !== null} onClick={() => void runHealthCheck()}>
+              <RefreshCw size={15} aria-hidden="true" className={busy === 'health' ? 'is-spinning' : undefined} />
+              {busy === 'health' ? 'กำลังตรวจสอบ…' : 'ตรวจสอบและส่งทันที'}
+            </button>
           </header>
+          {healthCheck && (
+            <div className="technical-health-result" data-status={healthCheck.overallStatus} role="status">
+              <CheckCircle2 size={15} aria-hidden="true" />
+              ส่งผลตรวจล่าสุดแล้ว · {new Date(healthCheck.checkedAt).toLocaleString('th-TH')}
+            </div>
+          )}
           <div className="technical-policy-grid">
             <label className="technical-toggle"><input type="checkbox" checked={technical.dailyEnabled} onChange={(event) => setTechnical((current) => ({ ...current, dailyEnabled: event.target.checked }))} /><span><Clock3 size={16} aria-hidden="true" /><strong>Daily report</strong><small>ส่งทุกวันแม้ระบบปกติ</small></span></label>
             <label>เวลารายงาน<input aria-label="เวลารายงาน Technical Health" type="time" value={technical.dailyTime} disabled={!technical.dailyEnabled} onChange={(event) => setTechnical((current) => ({ ...current, dailyTime: event.target.value }))} /></label>

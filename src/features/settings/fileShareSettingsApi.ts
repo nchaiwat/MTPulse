@@ -16,6 +16,8 @@ export interface FileShareProfile {
 export type ImportRunStatus =
   | 'queued'
   | 'running'
+  | 'stop_requested'
+  | 'stopped'
   | 'success'
   | 'success_with_warnings'
   | 'failed'
@@ -41,10 +43,14 @@ export interface ImportRun {
   mtCode: string | null
   mtName: string | null
   trigger: 'manual' | 'scheduled' | 'catch_up'
-  mode: 'scan' | 'import'
+  mode: 'scan' | 'import' | 'registry' | 'sku_backfill'
   status: ImportRunStatus
   requestedBy: string
   scheduledLocalDate: string | null
+  targetSku?: string | null
+  rangeStart?: string | null
+  rangeEnd?: string | null
+  stopRequestedAt?: string | null
   requestedAt: string | null
   startedAt: string | null
   finishedAt: string | null

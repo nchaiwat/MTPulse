@@ -98,8 +98,8 @@ class ImportRun(Base):
             "uq_import_run_active_mt",
             "modern_trade_id",
             unique=True,
-            postgresql_where=text("status IN ('queued', 'running')"),
-            sqlite_where=text("status IN ('queued', 'running')"),
+            postgresql_where=text("status IN ('queued', 'running', 'stop_requested')"),
+            sqlite_where=text("status IN ('queued', 'running', 'stop_requested')"),
         ),
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -123,6 +123,10 @@ class ImportRun(Base):
     summary_message: Mapped[str | None] = mapped_column(Text)
     error_message: Mapped[str | None] = mapped_column(Text)
     results_json: Mapped[str | None] = mapped_column(Text)
+    target_sku: Mapped[str | None] = mapped_column(String(50))
+    range_start: Mapped[date | None] = mapped_column(Date)
+    range_end: Mapped[date | None] = mapped_column(Date)
+    stop_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class SourceFile(Base):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -112,4 +113,57 @@ def decide_sku_interest(
     )
     session.commit()
     session.refresh(interest)
+    return interest
+
+
+def activate_mapped_sku_interest(
+    session: Session,
+    *,
+    modern_trade_id: int,
+    source_sku: str,
+    source_description: str | None,
+    effective_from: date,
+    actor: str,
+) -> SkuInterest:
+    interest = session.scalar(
+        select(SkuInterest).where(
+            SkuInterest.modern_trade_id == modern_trade_id,
+            SkuInterest.source_sku == source_sku,
+        )
+    )
+    now = bangkok_now()
+    if interest is None:
+        interest = SkuInterest(
+            modern_trade_id=modern_trade_id,
+            source_sku=source_sku,
+            source_description=source_description,
+            status="active",
+            first_seen_date=effective_from,
+            last_seen_date=effective_from,
+            first_seen_at=now,
+            last_seen_at=now,
+            decided_by=actor,
+            decided_at=now,
+        )
+        session.add(interest)
+        before = None
+    elif interest.status != "active":
+        before = {"status": interest.status}
+        interest.status = "active"
+        interest.decided_by = actor
+        interest.decided_at = now
+        if source_description and not interest.source_description:
+            interest.source_description = source_description
+    else:
+        return interest
+    session.add(
+        AuditEvent(
+            entity_type="sku_interest",
+            entity_id=f"{modern_trade_id}:{source_sku}",
+            action="activate_from_confirmed_mapping",
+            actor=actor,
+            before_json=json.dumps(before) if before else None,
+            after_json=json.dumps({"status": "active"}, ensure_ascii=False),
+        )
+    )
     return interest

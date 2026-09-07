@@ -694,6 +694,257 @@ textarea {
   background: #fbfdff;
 }
 
+.technical-notification-settings > header > div {
+  flex: 1;
+}
+
+.technical-health-result {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 18px;
+  color: var(--green-700);
+  background: #f0faf7;
+  border-top: 1px solid var(--line);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.technical-health-result[data-status='warning'],
+.technical-health-result[data-status='critical'] {
+  color: var(--amber-700);
+  background: var(--amber-100);
+}
+
+.sku-backfill-settings {
+  margin-bottom: 12px;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-soft);
+}
+
+.sku-backfill-settings > header {
+  min-height: 86px;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  padding: 13px 14px;
+}
+
+.sku-backfill-settings h3 {
+  margin: 2px 0;
+  font-size: 16px;
+}
+
+.sku-backfill-settings p {
+  margin: 0;
+  color: var(--text-600);
+  font-size: 11px;
+}
+
+.sku-backfill-registry {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 14px;
+  color: var(--primary-700);
+  background: linear-gradient(90deg, var(--primary-50), #f8fcff);
+  border-block: 1px solid var(--line);
+}
+
+.sku-backfill-registry span {
+  display: grid;
+  gap: 1px;
+}
+
+.sku-backfill-registry small,
+.sku-backfill-registry time {
+  color: var(--text-600);
+  font-size: 9px;
+}
+
+.sku-backfill-registry strong {
+  color: var(--text-900);
+  font-size: 11px;
+}
+
+.sku-backfill-registry time {
+  margin-left: auto;
+}
+
+.sku-backfill-form {
+  display: grid;
+  grid-template-columns: minmax(300px, 1.5fr) minmax(260px, 1fr) minmax(160px, .65fr) auto;
+  align-items: end;
+  gap: 12px;
+  padding: 14px;
+}
+
+.sku-backfill-form > label {
+  display: grid;
+  gap: 6px;
+  color: var(--text-700);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.sku-backfill-form select,
+.sku-backfill-form input[type='date'] {
+  width: 100%;
+  min-height: 40px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  color: var(--text-900);
+  background: #fbfdff;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+}
+
+.sku-backfill-form select:focus,
+.sku-backfill-form input:focus {
+  border-color: var(--primary-500);
+  outline: 0;
+  box-shadow: 0 0 0 3px rgb(2 171 255 / .12);
+}
+
+.sku-backfill-form fieldset {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+
+.sku-backfill-form legend {
+  padding: 0 4px;
+  color: var(--text-600);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.sku-backfill-form fieldset label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-700);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.sku-backfill-preview {
+  border-top: 1px solid var(--line);
+}
+
+.sku-backfill-counts {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.sku-backfill-counts span {
+  min-height: 60px;
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  padding: 9px 14px;
+  border-right: 1px solid var(--line);
+}
+
+.sku-backfill-counts span:last-child {
+  border-right: 0;
+}
+
+.sku-backfill-counts small {
+  color: var(--text-600);
+  font-size: 9px;
+}
+
+.sku-backfill-counts strong {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 18px;
+}
+
+.sku-backfill-counts [data-tone='primary'] strong { color: var(--primary-700); }
+.sku-backfill-counts [data-tone='warning'] strong { color: var(--amber-700); }
+.sku-backfill-counts [data-tone='danger'] strong { color: var(--red-700); }
+
+.sku-backfill-note {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  color: var(--green-700) !important;
+  background: #f0faf7;
+  border-top: 1px solid var(--line);
+}
+
+.sku-backfill-note[data-tone='error'] {
+  color: var(--red-700) !important;
+  background: var(--red-100);
+}
+
+.sku-backfill-preview-footer,
+.sku-backfill-run {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  background: #f8fbfd;
+  border-top: 1px solid var(--line);
+}
+
+.sku-backfill-preview-footer > span {
+  flex: 1;
+  color: var(--text-700);
+  font-size: 10px;
+}
+
+.sku-backfill-run > div:first-child {
+  min-width: 260px;
+  display: grid;
+  gap: 2px;
+}
+
+.sku-backfill-run small,
+.sku-backfill-run span {
+  color: var(--text-600);
+  font-size: 9px;
+}
+
+.sku-backfill-run strong {
+  font-size: 11px;
+}
+
+.sku-backfill-progress {
+  height: 8px;
+  flex: 1;
+  overflow: hidden;
+  background: #dfeaf1;
+  border-radius: 999px;
+}
+
+.sku-backfill-progress i {
+  height: 100%;
+  display: block;
+  background: linear-gradient(90deg, var(--primary-500), var(--primary-700));
+  border-radius: inherit;
+  transition: width 240ms ease;
+}
+
+.sku-backfill-run > b {
+  min-width: 78px;
+  color: var(--text-700);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 10px;
+  text-align: right;
+}
+
 .technical-notification-settings h4 {
   margin: 2px 0 1px;
   font-size: 15px;
@@ -933,6 +1184,61 @@ textarea {
 
   .technical-toggle:last-child {
     grid-column: 1 / -1;
+  }
+
+  .technical-notification-settings > header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .technical-health-check {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .sku-backfill-settings > header {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+
+  .sku-backfill-settings > header .secondary-action {
+    grid-column: 1 / -1;
+    min-height: 44px;
+  }
+
+  .sku-backfill-form {
+    grid-template-columns: 1fr;
+  }
+
+  .sku-backfill-form .primary-action {
+    min-height: 44px;
+  }
+
+  .sku-backfill-counts {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .sku-backfill-counts span:nth-child(2) {
+    border-right: 0;
+  }
+
+  .sku-backfill-counts span:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--line);
+  }
+
+  .sku-backfill-preview-footer,
+  .sku-backfill-run {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sku-backfill-preview-footer .primary-action,
+  .sku-backfill-run .primary-action,
+  .sku-backfill-run .secondary-action {
+    min-height: 44px;
+  }
+
+  .sku-backfill-run > div:first-child {
+    min-width: 0;
   }
 
   .system-settings-savebar {

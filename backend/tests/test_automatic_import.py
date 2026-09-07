@@ -168,6 +168,85 @@ def test_first_run_is_scan_and_active_run_is_rejected(engine, monkeypatch) -> No
         assert second.mode == "import"
 
 
+def test_registry_run_inspects_file_without_importing_facts(engine, monkeypatch) -> None:
+    audit_ids = count(1)
+    monkeypatch.setattr(
+        automatic_import,
+        "AuditEvent",
+        lambda **values: AuditEvent(id=next(audit_ids), **values),
+    )
+    monkeypatch.setattr(
+        automatic_import,
+        "_credentials",
+        lambda session, mt: (r"\\server\share\TWD", "WA\\user", "secret"),
+    )
+    candidate = SourceCandidate(
+        path=r"\\server\share\TWD\2026-08-31\file.xlsx",
+        filename="file.xlsx",
+        size_bytes=100,
+        modified_at=datetime(2026, 8, 31, tzinfo=UTC),
+    )
+    monkeypatch.setattr(
+        automatic_import,
+        "list_twd_source_files",
+        lambda *args, **kwargs: [candidate],
+    )
+    monkeypatch.setattr(
+        automatic_import,
+        "download_twd_extract",
+        lambda *args, **kwargs: _extract(),
+    )
+    monkeypatch.setattr(
+        automatic_import,
+        "import_twd_extract",
+        lambda *args, **kwargs: pytest.fail("registry refresh must not import"),
+    )
+    with Session(engine) as session:
+        mt = ModernTrade(
+            id=1,
+            code="TWD",
+            name="Thai Watsadu",
+            source_enabled=True,
+            source_subfolder="TWD",
+        )
+        run = ImportRun(
+            id=1,
+            modern_trade_id=1,
+            trigger="manual",
+            mode="registry",
+            status="running",
+            requested_by="admin",
+        )
+        session.add_all([mt, run])
+        session.commit()
+        process_run(session, run.id)
+        stored = session.get(ImportRun, run.id)
+
+    assert stored.status == "success"
+    assert stored.ready_count == 1
+
+
+def test_registry_rechecks_a_file_that_was_missing(engine) -> None:
+    candidate = SourceCandidate(
+        path=r"\\server\share\TWD\2026-08-31\file.xlsx",
+        filename="file.xlsx",
+        size_bytes=100,
+        modified_at=datetime(2026, 8, 31, tzinfo=UTC),
+    )
+    row = SourceFile(
+        modern_trade_id=1,
+        source_path=candidate.path,
+        source_filename=candidate.filename,
+        size_bytes=candidate.size_bytes,
+        modified_at=candidate.modified_at,
+        checksum_sha256="a" * 64,
+        detected_data_date=date(2026, 8, 31),
+        status="missing",
+    )
+
+    assert automatic_import._unchanged_outcome(row, candidate) is None
+
+
 def test_running_payload_reports_live_file_progress(engine) -> None:
     started_at = datetime(2026, 9, 3, 1, 21, tzinfo=UTC)
     with Session(engine) as session:
@@ -488,6 +567,36 @@ def test_worker_marks_interrupted_run_failed(engine, monkeypatch) -> None:
         assert run.status == "failed"
         assert run.finished_at is not None
         assert "Worker ถูก Restart" in (run.error_message or "")
+
+
+def test_worker_recovers_stop_requested_backfill_as_resumable(
+    engine,
+    monkeypatch,
+) -> None:
+    session_factory = sessionmaker(bind=engine)
+    monkeypatch.setattr(worker, "SessionLocal", session_factory)
+    with Session(engine) as session:
+        session.add(ModernTrade(id=1, code="TWD", name="Thai Watsadu"))
+        session.add(
+            ImportRun(
+                id=1,
+                modern_trade_id=1,
+                trigger="manual",
+                mode="sku_backfill",
+                status="stop_requested",
+                requested_by="admin",
+            )
+        )
+        session.commit()
+
+    assert worker.recover_interrupted_runs() == 1
+
+    with Session(engine) as session:
+        run = session.get(ImportRun, 1)
+        assert run is not None
+        assert run.status == "stopped"
+        assert run.error_message is None
+        assert "กดทำต่อ" in (run.summary_message or "")
 
 
 def test_scheduled_notification_excludes_unchanged_historical_issues(

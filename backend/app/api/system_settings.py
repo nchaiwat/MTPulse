@@ -13,6 +13,7 @@ from app.services.technical_health import (
     DEFAULT_THRESHOLDS,
     TechnicalNotificationConfig,
     save_technical_notification_config,
+    send_manual_technical_health,
     technical_notification_config,
 )
 from app.services.telegram import (
@@ -172,6 +173,16 @@ def get_technical_notification_settings(
     session: Annotated[Session, Depends(get_session)],
 ) -> dict:
     return technical_notification_config(session).as_dict()
+
+
+@router.post("/technical-notifications/check")
+def check_technical_health(
+    session: Annotated[Session, Depends(get_session)],
+) -> dict:
+    result = send_manual_technical_health(session, actor="system-settings")
+    if result["status"] != "sent":
+        raise HTTPException(status_code=502, detail=result["message"])
+    return result
 
 
 @router.patch("/technical-notifications")

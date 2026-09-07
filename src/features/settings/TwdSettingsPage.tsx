@@ -9,6 +9,7 @@ import {
   updateReportPageSize,
   type UnmatchedVisibility,
 } from './twdSettingsApi'
+import { SkuBackfillPanel } from './SkuBackfillPanel'
 
 const defaultSettings: UnmatchedVisibility = {
   showUnmatchedItems: false,
@@ -184,6 +185,7 @@ export function TwdSettingsPage({ embedded = false }: { embedded?: boolean }) {
         </div>
         {mappingMessage && <div className="settings-message" data-tone={mappingMessage.tone === 'error' ? 'error' : undefined} role="status">{mappingMessage.text}</div>}
       </section>
+      <SkuBackfillPanel />
       <section className="report-display-settings" aria-labelledby="report-display-heading">
         <header>
           <span className="setting-icon"><Rows3 size={19} aria-hidden="true" /></span>

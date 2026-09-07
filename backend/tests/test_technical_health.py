@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.api import system_settings
 from app.database import Base
 from app.local_time import BANGKOK_TIMEZONE
-from app.models import AuditEvent
+from app.models import AuditEvent, SystemSetting
 from app.services import monitoring, technical_health
 from app.services.technical_health import process_technical_notifications
 
@@ -105,6 +105,68 @@ def test_unavailable_metric_is_unknown_not_healthy() -> None:
 
     cpu = next(item for item in evaluated if item["code"] == "cpu")
     assert cpu["status"] == "unknown"
+
+
+def test_manual_health_sends_fresh_report_without_changing_scheduler_state(
+    monkeypatch,
+) -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    audit_ids = count(1)
+    deliveries: list[str] = []
+    monkeypatch.setattr(
+        monitoring,
+        "collect_monitoring_metrics",
+        lambda session: _metrics(),
+    )
+    monkeypatch.setattr(
+        technical_health,
+        "AuditEvent",
+        lambda **values: AuditEvent(id=next(audit_ids), **values),
+    )
+    monkeypatch.setattr(
+        technical_health,
+        "send_telegram",
+        lambda session, title, details, **kwargs: (
+            deliveries.append(title)
+            or type("Delivery", (), {"status": "sent", "message": "sent"})()
+        ),
+    )
+    protected = {
+        technical_health.LAST_DAILY_SENT_KEY: "2026-09-07",
+        technical_health.LAST_DAILY_ATTEMPT_KEY: "2026-09-07T07:00:00+07:00",
+        technical_health.ALERT_STATE_KEY: '{"cpu":{"active":true}}',
+    }
+    with Session(engine) as session:
+        session.add_all(
+            [
+                SystemSetting(
+                    key=key,
+                    value=value,
+                    is_secret=False,
+                    updated_by="test",
+                )
+                for key, value in protected.items()
+            ]
+        )
+        session.commit()
+        result = technical_health.send_manual_technical_health(
+            session,
+            actor="admin",
+            now=datetime(2026, 9, 7, 9, 30, tzinfo=BANGKOK_TIMEZONE),
+        )
+        after = {
+            key: session.get(SystemSetting, key).value
+            for key in protected
+        }
+        audit = session.query(AuditEvent).one()
+
+    assert result["status"] == "sent"
+    assert result["overallStatus"] == "healthy"
+    assert deliveries == ["🩺 MT Pulse · Technical Health (ตรวจทันที)"]
+    assert after == protected
+    assert audit.action == "manual_health"
+    assert audit.actor == "admin"
 
 
 def test_system_settings_persist_daily_time_and_thresholds(monkeypatch) -> None:

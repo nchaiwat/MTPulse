@@ -44,8 +44,8 @@ from app.services.twd_import import (
     import_twd_extract,
 )
 
-TERMINAL_RUN_STATUSES = {"success", "success_with_warnings", "failed"}
-ACTIVE_RUN_STATUSES = {"queued", "running"}
+TERMINAL_RUN_STATUSES = {"success", "success_with_warnings", "failed", "stopped"}
+ACTIVE_RUN_STATUSES = {"queued", "running", "stop_requested"}
 SUPPORTED_TWD_SUFFIXES = {".xls", ".xlsx"}
 logger = logging.getLogger("mtpulse.automatic_import")
 
@@ -91,6 +91,34 @@ def initial_scan_completed(session: Session, modern_trade_id: int) -> bool:
 def _live_run_progress(session: Session, run: ImportRun) -> dict[str, object] | None:
     if run.status not in ACTIVE_RUN_STATUSES:
         return None
+    if run.mode == "sku_backfill":
+        try:
+            results = json.loads(run.results_json or "[]")
+        except json.JSONDecodeError:
+            results = []
+        processed = len(results) if isinstance(results, list) else 0
+        return {
+            "phase": "queued" if run.status == "queued" else "processing",
+            "processed": processed,
+            "total": run.found_count,
+            "percent": (
+                round(processed * 100 / run.found_count, 1)
+                if run.found_count
+                else 0
+            ),
+            "lastProcessedFile": None,
+            "lastProcessedPath": None,
+            "lastActivityAt": None,
+            "counts": {
+                "found": run.found_count,
+                "imported": run.imported_count,
+                "skipped": run.skipped_count,
+                "ready": run.ready_count,
+                "pending": run.pending_count,
+                "failed": run.failed_count,
+            },
+            "recentIssues": [],
+        }
 
     status_rows = session.execute(
         select(SourceFile.status, func.count(SourceFile.id))
@@ -182,6 +210,12 @@ def run_payload(
         "requestedBy": run.requested_by,
         "scheduledLocalDate": (
             run.scheduled_local_date.isoformat() if run.scheduled_local_date else None
+        ),
+        "targetSku": run.target_sku,
+        "rangeStart": run.range_start.isoformat() if run.range_start else None,
+        "rangeEnd": run.range_end.isoformat() if run.range_end else None,
+        "stopRequestedAt": (
+            run.stop_requested_at.isoformat() if run.stop_requested_at else None
         ),
         "requestedAt": run.requested_at.isoformat() if run.requested_at else None,
         "startedAt": run.started_at.isoformat() if run.started_at else None,
@@ -424,6 +458,8 @@ def _unchanged_outcome(row: SourceFile, candidate: SourceCandidate) -> dict | No
     ):
         return None
     status = row.status
+    if status == "missing":
+        return None
     if not row.checksum_sha256 and status not in {"failed", "unsupported"}:
         return None
     if status == "ready" or (
@@ -498,7 +534,12 @@ def _process_candidate(
             )
         row.checksum_sha256 = extract.checksum_sha256
         row.detected_data_date = extract.data_date
-        decision = decide_twd_extract(session, mt, extract, mode=run.mode)
+        decision = decide_twd_extract(
+            session,
+            mt,
+            extract,
+            mode="scan" if run.mode == "registry" else run.mode,
+        )
         batch_id = decision.batch_id
         if decision.action == "import":
             batch = import_twd_extract(session, extract)
@@ -645,6 +686,27 @@ def _finish_run(
     if pending_sku_count:
         run.summary_message += f" · SKU ใหม่รอตัดสินใจ {pending_sku_count}"
     run.results_json = json.dumps(results, ensure_ascii=False)
+    if run.mode == "registry":
+        session.add(
+            AuditEvent(
+                entity_type="import_run",
+                entity_id=str(run.id),
+                action=run.status,
+                actor=run.requested_by,
+                before_json=None,
+                after_json=json.dumps(
+                    {
+                        "mtCode": mt.code,
+                        "trigger": run.trigger,
+                        "mode": run.mode,
+                        "counts": counts,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        )
+        session.commit()
+        return
     event_results = [item for item in results if item.get("event") != "unchanged"]
     event_counts = {
         "imported": sum(item["status"] == "imported" for item in event_results),

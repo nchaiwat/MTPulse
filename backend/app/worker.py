@@ -11,6 +11,7 @@ from app.database import SessionLocal
 from app.local_time import bangkok_now
 from app.models import ImportRun, ModernTrade
 from app.services.automatic_import import ActiveRunError, create_run, process_run
+from app.services.sku_backfill import process_sku_backfill_run
 from app.services.technical_health import process_technical_notifications
 
 logger = logging.getLogger("mtpulse.worker")
@@ -88,19 +89,28 @@ def claim_next_run() -> int | None:
 def recover_interrupted_runs() -> int:
     with SessionLocal() as session:
         runs = session.scalars(
-            select(ImportRun).where(ImportRun.status == "running")
+            select(ImportRun).where(
+                ImportRun.status.in_({"running", "stop_requested"})
+            )
         ).all()
         if not runs:
             return 0
         finished_at = bangkok_now()
         for run in runs:
-            run.status = "failed"
+            run.status = "stopped" if run.mode == "sku_backfill" else "failed"
             run.finished_at = finished_at
-            run.error_message = "Worker ถูก Restart ระหว่างประมวลผล"
-            run.summary_message = (
-                "Run ถูกยุติ แต่ข้อมูลที่นำเข้าสำเร็จแล้วไม่ถูกลบ "
-                "Run ครั้งถัดไปจะข้ามไฟล์เดิมด้วย checksum"
-            )
+            if run.mode == "sku_backfill":
+                run.error_message = None
+                run.summary_message = (
+                    "Worker ถูก Restart หลังจบ transaction ล่าสุด "
+                    "กดทำต่อเพื่อประมวลผลวันที่ที่ยังเหลือ"
+                )
+            else:
+                run.error_message = "Worker ถูก Restart ระหว่างประมวลผล"
+                run.summary_message = (
+                    "Run ถูกยุติ แต่ข้อมูลที่นำเข้าสำเร็จแล้วไม่ถูกลบ "
+                    "Run ครั้งถัดไปจะข้ามไฟล์เดิมด้วย checksum"
+                )
         session.commit()
         return len(runs)
 
@@ -128,7 +138,11 @@ def run_forever() -> None:
                 time.sleep(poll_seconds)
                 continue
             with SessionLocal() as session:
-                process_run(session, run_id)
+                run = session.get(ImportRun, run_id)
+                if run is not None and run.mode == "sku_backfill":
+                    process_sku_backfill_run(session, run_id)
+                else:
+                    process_run(session, run_id)
         except Exception:
             logger.exception("worker loop failed")
             time.sleep(poll_seconds)

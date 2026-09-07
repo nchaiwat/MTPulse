@@ -239,13 +239,14 @@ def _save_delivery_audit(
     action: str,
     delivery_status: str,
     details: dict[str, object],
+    actor: str = "system-health-scheduler",
 ) -> None:
     session.add(
         AuditEvent(
             entity_type="technical_notification",
             entity_id=action,
             action=action,
-            actor="system-health-scheduler",
+            actor=actor,
             before_json=None,
             after_json=json.dumps(
                 {"deliveryStatus": delivery_status, **details},
@@ -284,6 +285,54 @@ def _daily_details(
         f"ข้อมูลล่าสุด: {latest_date}",
         f"Worker heartbeat: {heartbeat}",
     ]
+
+
+def send_manual_technical_health(
+    session: Session,
+    *,
+    actor: str,
+    now: datetime | None = None,
+) -> dict[str, object]:
+    current = (now or bangkok_now()).astimezone(BANGKOK_TIMEZONE)
+    config = technical_notification_config(session)
+
+    from app.services.monitoring import collect_monitoring_metrics
+
+    metrics = collect_monitoring_metrics(session)
+    evaluated = evaluate_technical_metrics(metrics, config)
+    delivery = send_telegram(
+        session,
+        "🩺 MT Pulse · Technical Health (ตรวจทันที)",
+        _daily_details(metrics, evaluated),
+        force=True,
+    )
+    overall_status = (
+        "critical"
+        if any(item["status"] == "critical" for item in evaluated)
+        else "warning"
+        if any(item["status"] in {"warning", "unknown"} for item in evaluated)
+        else "healthy"
+    )
+    _save_delivery_audit(
+        session,
+        action="manual_health",
+        delivery_status=delivery.status,
+        details={
+            "actor": actor,
+            "checkedAt": current.isoformat(),
+            "overallStatus": overall_status,
+            "metrics": evaluated,
+        },
+        actor=actor,
+    )
+    session.commit()
+    return {
+        "status": delivery.status,
+        "message": delivery.message,
+        "checkedAt": current.isoformat(),
+        "overallStatus": overall_status,
+        "metrics": evaluated,
+    }
 
 
 def process_technical_notifications(

@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.local_time import as_bangkok, bangkok_now
 from app.models import AuditEvent, BranchMapping, ItemMapping, ModernTrade, SalesInventoryFact
 from app.services.daily_sku_summary import rebuild_daily_sku_summaries
+from app.services.sku_interest import activate_mapped_sku_interest
 
 
 def export_filename(
@@ -537,6 +538,18 @@ def import_item_mapping_workbook(
                         )
                     )
                 unchanged += 1
+                if current.status == "confirmed" and current.report_status == "active":
+                    activate_mapped_sku_interest(
+                        session,
+                        modern_trade_id=modern_trade.id,
+                        source_sku=candidate.source_sku,
+                        source_description=(
+                            candidate.source_description
+                            or current.source_description
+                        ),
+                        effective_from=current.effective_from,
+                        actor=actor,
+                    )
             else:
                 existing_conflicts += 1
                 errors.append(
@@ -561,6 +574,15 @@ def import_item_mapping_workbook(
             changed_by=actor,
         )
         session.add(mapping)
+        if candidate.status == "confirmed" and candidate.report_status == "active":
+            activate_mapped_sku_interest(
+                session,
+                modern_trade_id=modern_trade.id,
+                source_sku=candidate.source_sku,
+                source_description=candidate.source_description or None,
+                effective_from=effective_from,
+                actor=actor,
+            )
         session.add(
             AuditEvent(
                 entity_type="item_mapping",

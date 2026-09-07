@@ -18,6 +18,20 @@ export interface TechnicalNotificationSettings {
   thresholds: Record<TechnicalMetricCode, { warning: number; critical: number }>
 }
 
+export interface TechnicalHealthCheck {
+  status: 'sent'
+  message: string
+  checkedAt: string
+  overallStatus: 'healthy' | 'warning' | 'critical'
+  metrics: Array<{
+    code: TechnicalMetricCode
+    label: string
+    value: number | null
+    unit: string
+    status: 'healthy' | 'warning' | 'critical' | 'unknown'
+  }>
+}
+
 export const defaultTechnicalNotificationSettings: TechnicalNotificationSettings = {
   dailyEnabled: true,
   dailyTime: '07:00',
@@ -105,4 +119,13 @@ export async function saveTechnicalNotificationSettings(
   })
   if (!response.ok) throw new Error(await detail(response))
   return response.json() as Promise<TechnicalNotificationSettings>
+}
+
+export async function checkTechnicalHealth(): Promise<TechnicalHealthCheck> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/settings/system/technical-notifications/check`,
+    { method: 'POST' },
+  )
+  if (!response.ok) throw new Error(await detail(response))
+  return response.json() as Promise<TechnicalHealthCheck>
 }

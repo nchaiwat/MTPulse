@@ -146,6 +146,39 @@ def replace_twd_batch(
     return batch
 
 
+def append_twd_sku_facts(
+    session: Session,
+    batch: ImportBatch,
+    extract: TwdExtract,
+    source_sku: str,
+) -> int:
+    if extract.data_date != batch.data_date:
+        raise ValueError("วันที่ข้อมูลในไฟล์ไม่ตรงกับ Batch เดิม")
+    existing = session.scalar(
+        select(SalesInventoryFact.id)
+        .where(
+            SalesInventoryFact.batch_id == batch.id,
+            SalesInventoryFact.source_sku == source_sku,
+        )
+        .limit(1)
+    )
+    if existing is not None:
+        return 0
+    facts = _build_facts(
+        batch.modern_trade_id,
+        batch.id,
+        extract,
+        stored_skus=frozenset({source_sku}),
+    )
+    if not facts:
+        return 0
+    session.add_all(facts)
+    session.flush()
+    refresh_daily_sku_summary(session, batch.modern_trade_id, extract.data_date)
+    refresh_monthly_sales_summary(session, batch.modern_trade_id, extract.data_date)
+    return len(facts)
+
+
 def _build_batch(modern_trade_id: int, extract: TwdExtract) -> ImportBatch:
     summary = extract.summary
     return ImportBatch(

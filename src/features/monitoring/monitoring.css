@@ -6,6 +6,42 @@
 .monitoring-refresh > span { color: var(--text-600); font-size: 10px; }
 .monitoring-refresh time { color: var(--text-900); font-family: "Cascadia Mono", Consolas, monospace; font-weight: 700; }
 .monitoring-refresh .secondary-action { min-width: 104px; }
+
+.monitoring-backfill-detail {
+  border-top: 1px solid var(--line);
+}
+
+.monitoring-backfill-detail summary {
+  min-height: 50px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  color: var(--text-700);
+  background: #f8fbfd;
+  cursor: pointer;
+}
+
+.monitoring-backfill-detail summary span {
+  flex: 1;
+  display: grid;
+  gap: 2px;
+}
+
+.monitoring-backfill-detail summary strong {
+  color: var(--text-900);
+  font-size: 11px;
+}
+
+.monitoring-backfill-detail summary small,
+.monitoring-backfill-detail summary b {
+  font-size: 9px;
+}
+
+.monitoring-backfill-detail summary b {
+  color: var(--primary-700);
+  font-family: "Cascadia Mono", Consolas, monospace;
+}
 .is-spinning { animation: monitoring-spin 900ms linear infinite; }
 @keyframes monitoring-spin { to { transform: rotate(360deg); } }
 

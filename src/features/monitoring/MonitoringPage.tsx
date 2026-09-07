@@ -61,12 +61,14 @@ function automaticRunStatus(status: string) {
   if (status === 'running') return 'กำลังทำงาน'
   if (status === 'success') return 'สำเร็จ'
   if (status === 'success_with_warnings') return 'สำเร็จ มีคำเตือน'
+  if (status === 'stop_requested') return 'กำลังหยุด'
+  if (status === 'stopped') return 'หยุดแล้ว'
   return 'ไม่สำเร็จ'
 }
 
 function automaticRunTone(status: string): MonitoringStatus {
   if (status === 'success') return 'healthy'
-  if (status === 'queued' || status === 'running' || status === 'success_with_warnings') return 'warning'
+  if (status === 'queued' || status === 'running' || status === 'stop_requested' || status === 'stopped' || status === 'success_with_warnings') return 'warning'
   return 'critical'
 }
 
@@ -153,6 +155,7 @@ export function MonitoringPage({ onOpenImports, onOpenCoverage }: MonitoringPage
   const current = data.current
   const latestImport = current.latestImport
   const automaticImports = data.automaticImports ?? { runs: [], pendingFiles: [], pendingSkus: [] }
+  const latestBackfill = automaticImports.runs.find((run) => run.mode === 'sku_backfill')
 
   return (
     <div className="monitoring-page page-content">
@@ -283,7 +286,7 @@ export function MonitoringPage({ onOpenImports, onOpenCoverage }: MonitoringPage
                       <td><strong>{run.mtCode}</strong></td>
                       <td>{formatDisplayDateTime(run.startedAt ?? run.requestedAt, '—')}</td>
                       <td>{run.trigger === 'manual' ? 'Run ทันที' : run.trigger === 'catch_up' ? 'Catch-up' : 'Schedule'}</td>
-                      <td>{run.mode === 'scan' ? 'Initial Scan' : 'Import'}</td>
+                      <td>{run.mode === 'scan' ? 'Initial Scan' : run.mode === 'registry' ? 'File Registry' : run.mode === 'sku_backfill' ? 'SKU Backfill' : 'Import'}</td>
                       <td><span className="monitoring-status-text" data-status={automaticRunTone(run.status)}>{automaticRunStatus(run.status)}</span></td>
                       <td>{integer.format(run.counts.imported)}</td>
                       <td>{integer.format(run.counts.pending + run.counts.failed)}</td>
@@ -314,6 +317,29 @@ export function MonitoringPage({ onOpenImports, onOpenCoverage }: MonitoringPage
               ))}
           </div>
         </div>
+        {latestBackfill && (
+          <details className="monitoring-backfill-detail">
+            <summary>
+              <span><strong>รายละเอียด SKU Backfill ล่าสุด</strong><small>{latestBackfill.targetSku} · {formatDisplayDate(latestBackfill.rangeStart ?? null)} – {formatDisplayDate(latestBackfill.rangeEnd ?? null)}</small></span>
+              <b>{integer.format(latestBackfill.results.length)} วัน</b>
+            </summary>
+            <div className="monitoring-table-scroll">
+              <table>
+                <thead><tr><th>วันที่ข้อมูล</th><th>สถานะ</th><th>รายละเอียด</th></tr></thead>
+                <tbody>
+                  {latestBackfill.results.length === 0 && <tr><td colSpan={3} className="monitoring-table-empty">ยังไม่มีวันที่ที่ประมวลผลเสร็จ</td></tr>}
+                  {latestBackfill.results.map((item) => (
+                    <tr key={item.dataDate ?? item.path}>
+                      <td>{formatDisplayDate(item.dataDate, 'ไม่พบวันที่')}</td>
+                      <td>{item.status}</td>
+                      <td>{item.message}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        )}
       </section>
 
       <section className="monitoring-panel monitoring-sku-panel" aria-labelledby="sku-interest-heading">

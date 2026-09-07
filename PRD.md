@@ -676,3 +676,89 @@ Discovery สำหรับ Frontend UX Milestone ได้รับอนุ�
 - Critical เหตุเดิมแจ้งไม่เกินหนึ่งครั้งต่อ 60 นาที และ Recovery ถูกส่งหนึ่งครั้งเมื่อกลับสู่ปกติ
 - System Settings โหลดค่าที่บันทึกไว้หลัง Refresh/Restart และแสดง Loading, Empty, Error, Validation และ Save feedback ชัดเจน
 - Full backend/frontend regression, Ruff, ESLint, production build และ Migration rehearsal ผ่านก่อน deploy
+
+## Requirement เพิ่มเติม: Manual Health Check และ Single-SKU Historical Backfill — 7 กันยายน 2026
+
+### Objective
+
+- ให้ System Admin กดตรวจ Technical Health และส่ง Telegram ได้ทันทีโดยไม่ต้องรอ Daily Schedule
+- ให้ User เพิ่ม/Map SKU ที่สนใจภายหลัง แล้วเติมข้อมูลย้อนหลังเฉพาะ SKU นั้นตั้งแต่วันที่เลือกหรือไฟล์แรกที่พบ โดยไม่ Import SKU อื่นซ้ำและไม่แก้ Fact ที่มีอยู่แล้ว
+- แยกงาน Functional Phase นี้ออกจาก Antigravity Visual-only Phase เพื่อรักษา Import, Mapping และ TWD Performance logic เดิม
+
+### Manual Technical Health Check
+
+- หน้า `การตั้งค่า > การตั้งค่าระบบ > Technical Health` มีปุ่ม `ตรวจสอบและส่งทันที`
+- เมื่อกด ระบบต้องเก็บ CPU, RAM, Disk, PostgreSQL และ Worker heartbeat ใหม่ ณ เวลานั้น แล้วส่ง Telegram สรุปหนึ่งข้อความทั้งกรณี Healthy, Warning และ Critical
+- การตรวจ Manual ต้องไม่เปลี่ยน `last daily sent`, Daily Schedule, Critical alert state หรือ Critical cooldown
+- UI ต้องมี loading/disabled ระหว่างทำงาน และแสดงเวลาตรวจ, สถานะส่ง และข้อความผิดพลาดโดยไม่เปิดเผย Secret
+- ทุกครั้งที่กดต้องสร้าง Audit Event แยกจาก Daily/Critical/Recovery event
+- ใช้ Telegram Bot/Token เดิมตามการตั้งค่าปัจจุบัน; Phase นี้ไม่รวมการ Rotate Token หรือเปลี่ยน HTTP logging ตามคำสั่ง Product Owner
+
+### Single-SKU Backfill Eligibility
+
+- Phase แรกทำ Backfill ได้ครั้งละหนึ่ง SKU และเฉพาะ TWD
+- SKU ต้องมี Item Mapping สถานะ `confirmed` และ `report_status=active` ก่อนเริ่ม Backfill
+- เมื่อ Import Mapping แบบ `confirmed + active` สำหรับ SKU ที่ Pending/Ignored ให้ถือเป็นการ Accept โดยอัตโนมัติ เปลี่ยน SKU Interest เป็น `active` และสร้าง Audit Event
+- Mapping ต้องมีผลย้อนหลังตั้งแต่วันเริ่ม Backfill เพื่อให้ข้อมูลแสดงในรายงานตั้งแต่วันนั้น
+- หาก Mapping effective date ปัจจุบันอยู่หลังวันเริ่ม Backfill ระบบต้อง Preview การเปลี่ยน effective date และให้ User ยืนยันพร้อม Backfill
+
+### Backfill Source และ Date Rules
+
+- ใช้ Source File Registry เป็นรายการไฟล์อ้างอิงเพื่อไม่ Recursive Scan FileShare ใหม่ทุกครั้ง และแสดงเวลาที่ Registry อัปเดตล่าสุด
+- มี action `อัปเดตรายการไฟล์` ให้ User สั่ง Refresh Registry ก่อน Preview ได้เมื่อจำเป็น โดยยังไม่ Import Fact
+- User เลือกวันเริ่มได้สองแบบ: `ตั้งแต่ไฟล์แรกที่ระบบพบ` หรือ `เลือกวันที่เริ่มเอง`; วันสิ้นสุดใช้วันที่ข้อมูลล่าสุดอัตโนมัติ
+- ยึดวันที่ภายในไฟล์เป็น Data Date ตาม TWD rule เดิม ไม่ใช้ชื่อ Folder เป็นวันที่ข้อมูล
+- Backfill เติมเฉพาะ Data Date ที่มี Import Batch ปกติอยู่แล้ว; วันที่มีไฟล์แต่ยังไม่มี Batch ต้องข้ามเป็น `รอ Import ข้อมูลของวันนั้นก่อน` เพื่อไม่สร้าง Partial Batch ที่ขวาง Normal Import
+- วันที่ไม่พบไฟล์, อ่านไม่ได้, ไฟล์ขัดแย้ง หรือไม่มี Batch ให้ข้ามเฉพาะวันนั้นและประมวลผลวันอื่นต่อ
+
+### Data Integrity และ Idempotency
+
+- สำหรับ SKU เป้าหมายและแต่ละ Data Date ให้ตรวจ Fact ที่มีอยู่ก่อน; หากมี Fact อย่างน้อยหนึ่ง Branch อยู่แล้ว ให้ถือว่าวันนั้นมีข้อมูลและข้ามทั้งวัน ห้ามเติมบาง Branch โดยอัตโนมัติ
+- Backfill ห้ามลบ แก้ไข หรือแทนที่ Fact เดิม และห้ามเปลี่ยน Batch summary/checksum/source metadata
+- อ่านไฟล์ผ่าน temporary copy ตามกติกาเดิมและเลือกเฉพาะแถว SKU เป้าหมายก่อน Insert
+- Fact ใหม่ต้องผูกกับ Import Batch เดิมของ Data Date นั้น และยังอยู่ภายใต้ unique constraint เดิม
+- หลังแต่ละวันที่ Insert สำเร็จ ให้ Refresh Daily SKU Summary และ Monthly Sales Summary เฉพาะ MT/SKU/วันที่หรือเดือนที่ได้รับผลกระทบ
+- การ Retry/Resume ต้องตรวจข้อมูลซ้ำอีกครั้ง ทำให้ Run ปลอดภัยแบบ idempotent
+
+### Backfill Workflow และ Status
+
+1. User เลือก SKU ที่ Map แล้วใน `การตั้งค่า > ไทวัสดุ > Item Mapping`
+2. เลือกช่วงเริ่มและกด Preview
+3. Preview แสดง Registry freshness, ช่วงวันที่, จำนวนวันที่พร้อมเพิ่ม, มีข้อมูลแล้ว, ไม่มี Batch, ไม่พบไฟล์, อ่านไม่ได้ และขัดแย้ง
+4. User ยืนยันก่อนสร้าง Backfill Run
+5. Worker ทำงานทีละไฟล์และแสดง Progress/Current date/Counts ชัดเจน
+6. User กด `หยุดหลังจบไฟล์ปัจจุบัน` ได้ ข้อมูลที่ commit สำเร็จแล้วคงอยู่ และ Run สามารถ Resume เฉพาะวันที่เหลือ
+7. เมื่อจบ ส่ง Telegram หนึ่งข้อความเฉพาะผลของ Run นั้น รายละเอียดรายวันอยู่ใน Monitoring/Audit
+
+### Concurrency และ Failure Safety
+
+- TWD มี Automatic Import หรือ SKU Backfill ทำงานได้ครั้งละหนึ่ง Run; งานใหม่เข้าคิวและห้ามประมวลผลซ้อนกัน
+- Commit แยกต่อ Data Date เพื่อให้หยุด/ล้มเหลวแล้วไม่สูญเสียวันที่ที่ทำสำเร็จ
+- Failure ของไฟล์หนึ่งวันไม่ rollback วันที่ก่อนหน้าและไม่หยุดวันอื่น
+- Preview เป็น read-only และยังไม่สร้าง Run; หลังยืนยัน Status ขั้นต่ำคือ `queued`, `running`, `stop_requested`, `stopped`, `completed`, `completed_with_warnings`, `failed`
+- Full result ต้องเก็บ Run ID, SKU, requested range, effective range, actor, timestamps, counts และ per-date outcome โดยไม่เก็บ Credential/UNC Secret ในข้อความ User-facing
+
+### UI Plan
+
+- Technical Health: เพิ่มปุ่ม Secondary action ที่ header ของ section เดิม พร้อม last manual check result แบบ inline ไม่เพิ่มหน้าใหม่
+- Item Mapping: เพิ่ม section `ดึงข้อมูลย้อนหลังเฉพาะ SKU` ใต้ Mapping exchange ใช้ Search/Select SKU, segmented start option, date input, Preview summary และ Confirm dialog
+- Progress ใช้ Operations Ledger แบบ compact พร้อม progress bar, current file/date, counts และปุ่มหยุดที่ไม่ทำลายข้อมูล
+- Monitoring เพิ่มตาราง Backfill Run ล่าสุดและรายการวันที่ต้องตรวจสอบ โดยไม่เปลี่ยน Layout/Logic ของ TWD Performance report
+- Loading, Empty, Error, Disabled, Confirmation และ Resume states ต้องครบ; สีหลัก `#02abff` และ semantic soft tones ตาม Design System เดิม
+
+### Antigravity Visual-only Phase
+
+- ทำหลัง Functional Phase นี้ Deploy และผ่าน Regression แล้วเท่านั้น
+- ใช้ isolated Git worktree/branch และ Workspace Rules แบบ Always On ใน `.agents/rules`
+- Antigravity ต้องส่ง Implementation Plan และ Mockup/Screenshot ให้ User อนุมัติก่อนแก้ Code
+- File allowlist จำกัดเฉพาะ frontend presentation/CSS/design tokens ที่อนุมัติ; ห้ามแก้ `backend/**`, migrations, API clients/contracts, types, state, handlers, tests เชิง behavior และ `src/features/performance/**`
+- ก่อน merge ต้องตรวจ diff, interaction parity, browser walkthrough, responsive widths, keyboard/focus และ full regression; protected file เปลี่ยนให้ Reject change set
+
+### Success Criteria
+
+- Manual Check ส่งค่าที่ตรวจใหม่ทันทีและไม่ทำให้ Daily message หายหรือ Critical cooldown เปลี่ยน
+- Backfill หนึ่ง SKU เติมเฉพาะวันที่ไม่มี Fact และมี Import Batch เดิม ข้อมูลเดิมทุก SKU/Branch/Batch ไม่เปลี่ยน
+- วันมีปัญหาถูกข้ามพร้อมเหตุผล งานวันอื่นเดินต่อ และ Resume ไม่สร้างข้อมูลซ้ำ
+- Mapping ใหม่แบบ confirmed/active เปิด SKU Interest และมีผลย้อนหลังจากวันเริ่มที่ User ยืนยัน
+- Telegram Backfill มีหนึ่งข้อความต่อ Run และไม่รวม Event เก่า
+- Full backend/frontend regression, Ruff, ESLint, production build, migration rehearsal และ Server smoke test ผ่านก่อนปิดงาน

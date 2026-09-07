@@ -913,3 +913,116 @@ Backend ในระยะถัดไปจะแยกขอบเขตเช
 - Test threshold boundary, Warning→Critical, cooldown, Critical→Healthy recovery และ delivery failure
 - Test inaccessible CPU/RAM/Disk metric เป็น Unknown พร้อมคำอธิบาย ไม่เป็น Healthy ปลอม
 - Rollback ปิด Technical scheduler/alerts ผ่าน setting ได้ก่อน downgrade; Migration rollback ลบเฉพาะโครงสร้างใหม่และไม่แตะ Import/Fact/Mapping
+
+# Manual Health Check และ Single-SKU Historical Backfill — Implementation Plan
+
+## Summary และ Non-goals
+
+- เพิ่ม Manual Technical Health delivery ที่ใช้ collector/formatter เดิม แต่ไม่แตะ state ของ Daily/Critical/Recovery
+- เพิ่ม TWD Backfill ครั้งละหนึ่ง SKU โดย reuse File Registry, Import Batch, parser, queue และ active-run protection เดิม
+- เติมเฉพาะ Data Date ที่ยังไม่มี Fact ของ SKU และมี Normal Import Batch อยู่แล้ว; ไม่ replace, merge บาง Branch หรือลบข้อมูลเดิม
+- Non-goals: Multi-SKU backfill, Partial Batch creation,แก้ไฟล์ NAS, Backfill MT อื่น, Auto-resolve file conflicts, เปลี่ยน TWD Performance behavior และ Antigravity code changes ใน Phase นี้
+- Product Owner ไม่อนุมัติให้เปลี่ยน Telegram Bot/Token, Rotate Token หรือแก้ HTTP client logging ใน Phase นี้
+
+## Manual Technical Health Architecture
+
+- เพิ่ม service function สำหรับ fresh collection + Telegram delivery + Audit โดย reuse `collect_monitoring_metrics`, `evaluate_technical_metrics` และ health formatter
+- เพิ่ม `POST /api/settings/system/technical-notifications/check` ส่งผล `{status, message, checkedAt, overallStatus, metrics}` โดยไม่คืน Secret
+- Function นี้ห้ามเขียน `technical_last_daily_sent_date`, `technical_last_daily_attempt_at`, `technical_alert_state` หรือ timestamp ที่ใช้ Critical cooldown
+- Frontend เพิ่มปุ่ม `ตรวจสอบและส่งทันที` ใน Technical Health header มี loading lock, success/error และ last checked summary
+- Test แยกยืนยันว่ากด Manual ก่อน/หลัง 07:00 แล้ว Daily ยังส่งตามปกติ และ Critical cooldown/state ไม่เปลี่ยน
+
+## Backfill Data Model Direction
+
+- Reuse `import_runs` เพื่อให้ partial unique index `uq_import_run_active_mt` ป้องกัน Automatic Import และ Backfill ทำงานซ้อนกันโดยไม่สร้างระบบ Lock ชุดใหม่
+- Migration เพิ่ม nullable fields ที่จำเป็น เช่น `target_sku`, `range_start`, `range_end`, `stop_requested_at` และใช้ `mode=sku_backfill`
+- `results_json` เก็บ per-date outcome และ checkpoint หลังจบแต่ละไฟล์; counters เดิม map เป็น discovered/inserted/skipped/attention/failed ผ่าน API adapter สำหรับ UI
+- Resume ใช้ Run เดิมกลับเข้า `queued` หลังตรวจว่าไม่มี Active Run และใช้ Fact existence + per-date outcome เป็น idempotency guard
+- ทุก confirm, stop request, resume, per-date failure และ completion สร้าง Audit Event ที่ไม่บันทึก Credential หรือ UNC เต็มในข้อความ User-facing
+
+## Source Selection และ Preview
+
+- Query `source_files` ด้วย MT + `detected_data_date` ในช่วงที่เลือก และแสดง Registry `max(last_seen_at)` เป็น freshness
+- ต่อ Data Date เลือก SourceFile ที่ผูก `imported_batch_id` ตรงกับ Import Batch ของวันนั้นเป็นตัวเลือกหลัก
+- หากไม่มี Batch, ไม่มี SourceFile, status อ่านไม่ได้/หาย หรือมี candidate ขัดแย้งที่ตัดสินไม่ได้ ให้ Preview เป็น attention และไม่เตรียม Insert
+- Preview ตรวจ `sales_inventory_facts` grouped by Data Date สำหรับ target SKU; ถ้าวันใดมี Fact อย่างน้อยหนึ่ง Branch ให้ข้ามทั้งวันเป็น `already_present`
+- Preview endpoint เป็น read-only และไม่สร้าง Run: `POST /api/admin/modern-trades/TWD/sku-backfills/preview`
+- Request ระบุ SKU และ start mode/date; Server คำนวณ end date จาก latest registered/imported data และคืน counts กับ per-date reason
+
+## Confirm, Worker และ Stop/Resume
+
+- Confirm endpoint ตรวจ Preview token/version หรือ revalidate source metadata ก่อนสร้าง queued `ImportRun`; ห้ามเชื่อผลจาก Browser โดยตรง
+- Worker `claim_next_run` เดิมรับ queued row แล้ว dispatch ตาม `mode`; `sku_backfill` ใช้ service แยก ไม่เปลี่ยน normal `process_run` decision path
+- ต่อหนึ่ง Data Date: download temporary copy ด้วย credential service เดิม, parse ด้วย TWD parser เดิม, เลือกเฉพาะ target SKU, recheck Fact existence, insert rows ผูก Batch เดิม, refresh summaries และ commit checkpoint transaction เดียวกัน
+- หาก target SKU ไม่พบในไฟล์ ให้ outcome `sku_not_found`; หาก file/download/parser fail ให้เก็บเหตุผลและทำวันถัดไป
+- Stop endpoint ตั้ง `stop_requested_at`; Worker ตรวจหลัง transaction ของไฟล์ปัจจุบันแล้วเปลี่ยนสถานะ `stopped`
+- Resume endpoint revalidate mapping/source/active-run แล้วเปลี่ยน `stopped` เป็น `queued`; วันที่สำเร็จหรือมี Fact แล้วถูกข้ามอัตโนมัติ
+- Completion ใช้ Event ของ Backfill Run นั้นสร้าง Telegram หนึ่งข้อความและเก็บรายละเอียดเต็มใน Run/Monitoring
+
+## Mapping Integration
+
+- หลัง Import Mapping ให้ sync เฉพาะ SKU candidates ที่ `status=confirmed` และ `report_status=active` ไป `sku_interests.status=active`
+- หาก SKU เดิม Pending/Ignored ให้สร้าง Audit before/after; Mapping ที่ inactive ห้าม activate interest
+- Preview ตรวจ active confirmed mapping ณ requested start date
+- หาก Mapping ใหม่มี `effective_from` หลังวันเริ่ม Backfillและเป็น mapping เดียวกันโดยไม่มีประวัติชนกัน ให้ส่ง proposed effective-date adjustment ใน Preview และแก้เมื่อ Confirm พร้อม Audit
+- หากมี Mapping history คนละ WA Item หรือช่วง effective date ซ้อน ให้ Block Backfill และส่งให้ User ตรวจ Mapping เอง ห้ามแก้อัตโนมัติ
+
+## Summary Refresh และ Data Integrity
+
+- ห้ามแก้ Batch source totals/checksum/status เพราะ Batch ยังคงอธิบายไฟล์ต้นทางทั้งวัน
+- เพิ่ม targeted summary refresh สำหรับ MT + SKU + Date/Month หรือพิสูจน์ด้วย test ว่า helper เดิมให้ผลเท่ากันโดยไม่เปลี่ยน SKU อื่น
+- Unique constraint `(batch_id, source_branch_code, source_sku)` เป็น safety net เพิ่มเติม แต่ service ต้องตรวจล่วงหน้าและไม่ใช้ exception เป็น flow ปกติ
+- ทุกวันที่ทำสำเร็จต้องเปรียบเทียบจำนวน Branch และผลรวม Amount/Qty/Stock ของ target SKU กับ extract subset ก่อน commit
+
+## Frontend UI Plan
+
+- `SystemSettingsPage`: ปุ่ม Secondary `ตรวจสอบและส่งทันที` ใน header Technical Health พร้อม inline result; ไม่เพิ่ม Card หรือหน้าใหม่
+- `TwdSettingsPage`: section `ดึงข้อมูลย้อนหลังเฉพาะ SKU` ต่อจาก Item Mapping ใช้ searchable SKU selector เฉพาะ confirmed/active, ตัวเลือก `ไฟล์แรกที่พบ`/`เลือกวันที่`, date input และ Registry freshness
+- Preview เป็น Operations Ledger แสดง Ready, Already present, No batch, Missing/Unreadable/Conflict และ proposed Mapping effective date ก่อนเปิด Confirm dialog
+- Active Run แสดง Progress, current Data Date, counts, elapsed time, `หยุดหลังจบไฟล์ปัจจุบัน`; Stopped state แสดง Resume
+- `MonitoringPage`: เพิ่ม Run table/filter สำหรับ SKU Backfill และ attention dates แบบ compact โดยไม่แก้ TWD Performance layout
+- รองรับ Loading, Empty, Error, Validation, Disabled, Stop requested และ partial completion; ใช้ `#02abff`, soft semantic colors, existing spacing/radius/type scale
+
+## API และ Module Plan
+
+- `backend/app/api/system_settings.py`: Manual health check endpoint
+- `backend/app/services/technical_health.py`: side-effect-free manual delivery path
+- `backend/app/api/sku_backfills.py`: Preview/Confirm/Status/Stop/Resume endpoints
+- `backend/app/services/sku_backfill.py`: candidate resolution, validation, per-date processing, checkpoints และ Telegram summary
+- `backend/app/worker.py`: mode dispatch โดยคง scheduled import path เดิม
+- `backend/app/services/item_mapping_exchange.py`: confirmed+active interest synchronization
+- `backend/app/models.py` + Alembic migration: ImportRun backfill metadata
+- `src/features/settings/*`: Manual Check และ Backfill workspace/API/types
+- `src/features/monitoring/*`: Backfill run visibility
+
+## Test Plan
+
+- Manual Health: fresh values, Telegram success/failure, Audit, disabled/unconfigured Telegram และ invariant ของ Daily/Critical state
+- Preview: earliest/custom start, latest end, stale Registry, already-present whole date, no Batch, missing/failed/conflict file และ mapping date proposal/block
+- Processing: one SKU only, correct Batch linkage, no mutation of existing facts/batch metadata, target totals, per-date commit, failure continues, retry idempotency
+- Concurrency: queued/running Automatic Import blocks Backfill และ Backfill blocks scheduled/manual Import
+- Stop/Resume: stop after current file, completed dates retained, resume remaining only, worker restart recovery
+- Mapping: confirmed+active auto-accepts Pending/Ignored; inactive/pending mapping does not; conflicting history blocks
+- Regression: existing TWD import, automatic notification, manual import, mapping exchange, summaries, Performance API/UI, backend full suite, Ruff, frontend full suite, ESLint และ production build
+
+## Deployment และ Rollback
+
+1. ตรวจ dirty files และ stage เฉพาะ scope; ห้ามรวม business files/temp/Secrets
+2. Backup PostgreSQL และ verify ด้วย `pg_restore --list`
+3. Deploy migration/code ไป WA-MTPULSE-TEST โดยยังไม่กด Backfill แทน User
+4. Smoke Manual Health Check ด้วย User authorization เพราะจะส่ง Telegram จริง
+5. สร้าง Preview ด้วย test SKU/date ที่ไม่ mutation แล้วให้ User ตรวจ
+6. ทดลอง Backfill SKU ที่ User เลือกหนึ่งรายการและ reconcile ก่อน/หลังระดับ SKU × Date × Branch
+7. Rollback application ก่อน schema; nullable fields ทำให้ code เดิมอ่านต่อได้ แล้ว downgrade migration เมื่อไม่มี active run
+
+## Antigravity Visual-only Phase 2
+
+- สร้าง isolated worktree/branch จาก Functional release ที่ tests ผ่าน และไม่ส่ง `.env`, database dump, NAS credential หรือ business files ให้ agent
+- เพิ่ม Always On Workspace Rule ใน `.agents/rules` พร้อม protected paths และ frontend allowlist
+- ตั้ง Antigravity เป็น Review-driven development ให้สร้าง Implementation Plan/Task List/Mockup ก่อน Code ตาม workflow ที่เอกสารทางการรองรับ
+- ให้ Browser artifact จับภาพ desktop/tablet/mobile, hover/focus/loading/empty/error และ walkthrough ของ workflow สำคัญ
+- กลับมาตรวจ diff กับ allowlist, reject protected changes, รัน regression และให้ Product Owner อนุมัติ screenshots ก่อน merge/deploy
+
+## Open Decision Before Implementation
+
+- ไม่มี Business Rule ค้างสำหรับ Phase 1; รอ Product Owner อนุมัติ PRD/Implementation Plan ก่อนเริ่ม Code
