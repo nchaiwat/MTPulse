@@ -838,6 +838,43 @@ textarea {
   white-space: nowrap;
 }
 
+.sku-backfill-form fieldset:disabled,
+.sku-backfill-form select:disabled,
+.sku-backfill-form input:disabled {
+  cursor: not-allowed;
+  opacity: .58;
+}
+
+.sku-backfill-mapping-gate {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  color: var(--amber-700);
+  background: var(--amber-100);
+  border-top: 1px solid var(--line);
+}
+
+.sku-backfill-mapping-gate > div {
+  display: grid;
+  gap: 2px;
+}
+
+.sku-backfill-mapping-gate strong {
+  color: var(--text-900);
+  font-size: 11px;
+}
+
+.sku-backfill-mapping-gate span,
+.sku-backfill-mapping-gate small {
+  font-size: 9px;
+}
+
+.sku-backfill-mapping-gate small {
+  color: var(--text-600);
+}
+
 .sku-backfill-preview {
   border-top: 1px solid var(--line);
 }
@@ -1226,9 +1263,19 @@ textarea {
   }
 
   .sku-backfill-preview-footer,
-  .sku-backfill-run {
+  .sku-backfill-run,
+  .sku-backfill-mapping-gate {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .sku-backfill-mapping-gate {
+    display: flex;
+  }
+
+  .sku-backfill-mapping-gate .secondary-action {
+    min-height: 44px;
+    justify-content: center;
   }
 
   .sku-backfill-preview-footer .primary-action,

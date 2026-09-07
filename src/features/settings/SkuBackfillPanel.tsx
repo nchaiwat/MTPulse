@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   AlertTriangle,
+  ArrowUpRight,
   CalendarRange,
   CheckCircle2,
   DatabaseZap,
@@ -23,6 +24,11 @@ import {
 } from './skuBackfillApi'
 
 const activeStatuses = new Set(['queued', 'running', 'stop_requested'])
+const interestStatusLabels = {
+  active: 'สนใจแล้ว',
+  pending: 'รอตัดสินใจ',
+  ignored: 'เคย Ignore',
+} as const
 
 function formatDate(value: string | null) {
   if (!value) return 'ยังไม่มีข้อมูล'
@@ -103,6 +109,13 @@ export function SkuBackfillPanel() {
   }, [activeRunId, activeRunStatus, loadOptions])
 
   const selectedStart = startMode === 'custom' ? customStart || null : null
+  const selectedUnmapped = options?.unmappedSkus?.find((item) => item.sourceSku === sourceSku)
+  const needsMapping = Boolean(selectedUnmapped)
+
+  const goToMapping = () => {
+    document.getElementById('twd-item-mapping')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    window.setTimeout(() => document.getElementById('mapping-export-button')?.focus({ preventScroll: true }), 250)
+  }
 
   const createPreview = async () => {
     if (!sourceSku) return
@@ -204,29 +217,52 @@ export function SkuBackfillPanel() {
 
       <div className="sku-backfill-form">
         <label>
-          SKU ที่ Mapping แล้ว
+          SKU ที่สนใจ
           <select aria-label="SKU สำหรับ Backfill" value={sourceSku} disabled={busy === 'load' || isRunning} onChange={(event) => { setSourceSku(event.target.value); setPreview(null) }}>
             <option value="">เลือก SKU</option>
-            {options?.mappings.map((item) => (
-              <option key={item.sourceSku} value={item.sourceSku}>
-                {item.sourceSku} — {item.sourceDescription ?? item.waItemDescription ?? item.waItemCode}
-              </option>
-            ))}
+            {Boolean(options?.mappings.length) && <optgroup label="พร้อม Backfill — Mapping แล้ว">
+              {options?.mappings.map((item) => (
+                <option key={item.sourceSku} value={item.sourceSku}>
+                  {item.sourceSku} — {item.sourceDescription ?? item.waItemDescription ?? item.waItemCode}
+                </option>
+              ))}
+            </optgroup>}
+            {Boolean(options?.unmappedSkus?.length) && <optgroup label="ต้อง Mapping ก่อน">
+              {options?.unmappedSkus?.map((item) => (
+                <option key={item.sourceSku} value={item.sourceSku}>
+                  {item.sourceSku} — {item.sourceDescription ?? 'ไม่มีรายละเอียด'} ({interestStatusLabels[item.interestStatus]})
+                </option>
+              ))}
+            </optgroup>}
           </select>
         </label>
-        <fieldset>
+        <fieldset disabled={needsMapping || isRunning}>
           <legend>เริ่มจาก</legend>
           <label><input type="radio" name="backfill-start" checked={startMode === 'earliest'} onChange={() => { setStartMode('earliest'); setPreview(null) }} />วันแรกใน File Registry</label>
           <label><input type="radio" name="backfill-start" checked={startMode === 'custom'} onChange={() => { setStartMode('custom'); setPreview(null) }} />กำหนดวันที่</label>
         </fieldset>
         <label>
           วันที่เริ่มต้น
-          <input aria-label="วันที่เริ่ม Backfill" type="date" value={customStart} min={options?.registry.earliestDate ?? undefined} max={options?.registry.latestDate ?? undefined} disabled={startMode !== 'custom' || isRunning} onChange={(event) => { setCustomStart(event.target.value); setPreview(null) }} />
+          <input aria-label="วันที่เริ่ม Backfill" type="date" value={customStart} min={options?.registry.earliestDate ?? undefined} max={options?.registry.latestDate ?? undefined} disabled={startMode !== 'custom' || needsMapping || isRunning} onChange={(event) => { setCustomStart(event.target.value); setPreview(null) }} />
         </label>
-        <button className="primary-action" type="button" disabled={!sourceSku || busy !== null || isRunning} onClick={() => void createPreview()}>
+        <button className="primary-action" type="button" disabled={!sourceSku || needsMapping || busy !== null || isRunning} onClick={() => void createPreview()}>
           {busy === 'preview' ? 'กำลังตรวจสอบ…' : 'Preview ก่อนเริ่ม'}
         </button>
       </div>
+
+      {selectedUnmapped && (
+        <div className="sku-backfill-mapping-gate" role="status">
+          <AlertTriangle size={17} aria-hidden="true" />
+          <div>
+            <strong>SKU {selectedUnmapped.sourceSku} ยังไม่ได้ Mapping</strong>
+            <span>สถานะปัจจุบัน: {interestStatusLabels[selectedUnmapped.interestStatus]} · ต้อง Export/แก้ไข/Import Mapping และยืนยันเป็น Active ก่อน Preview</span>
+            {selectedUnmapped.interestStatus === 'ignored' && <small>เมื่อ Mapping ยืนยันแล้ว ระบบจะเปลี่ยน SKU นี้เป็น Active โดยอัตโนมัติ</small>}
+          </div>
+          <button className="secondary-action" type="button" onClick={goToMapping}>
+            ไปกำหนด Mapping <ArrowUpRight size={15} aria-hidden="true" />
+          </button>
+        </div>
+      )}
 
       {preview && (
         <div className="sku-backfill-preview">

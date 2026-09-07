@@ -76,6 +76,16 @@ def backfill_options(session: Session, mt: ModernTrade) -> dict[str, object]:
         )
         .order_by(ItemMapping.source_sku)
     ).all()
+    mapped_skus = {item.source_sku for item in mappings}
+    unmapped_interests = [
+        interest
+        for interest in session.scalars(
+            select(SkuInterest)
+            .where(SkuInterest.modern_trade_id == mt.id)
+            .order_by(SkuInterest.source_sku)
+        ).all()
+        if interest.source_sku not in mapped_skus
+    ]
     earliest, latest = session.execute(
         select(
             func.min(SourceFile.detected_data_date),
@@ -103,6 +113,16 @@ def backfill_options(session: Session, mt: ModernTrade) -> dict[str, object]:
                 "effectiveFrom": item.effective_from.isoformat(),
             }
             for item in mappings
+        ],
+        "unmappedSkus": [
+            {
+                "sourceSku": item.source_sku,
+                "sourceDescription": item.source_description,
+                "interestStatus": item.status,
+                "firstSeenDate": item.first_seen_date.isoformat(),
+                "lastSeenDate": item.last_seen_date.isoformat(),
+            }
+            for item in unmapped_interests
         ],
         "registry": {
             "earliestDate": earliest.isoformat() if earliest else None,

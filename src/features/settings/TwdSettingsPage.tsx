@@ -30,6 +30,7 @@ export function TwdSettingsPage({ embedded = false }: { embedded?: boolean }) {
   const [isExporting, setIsExporting] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const [mappingMessage, setMappingMessage] = useState<{ tone: 'success' | 'error', text: string } | null>(null)
+  const [mappingRevision, setMappingRevision] = useState(0)
   const [coverageYear, setCoverageYear] = useState(currentYear)
   const [isCoverageDownloading, setIsCoverageDownloading] = useState(false)
   const [isPageSizeUpdating, setIsPageSizeUpdating] = useState(false)
@@ -105,6 +106,7 @@ export function TwdSettingsPage({ embedded = false }: { embedded?: boolean }) {
       details.push(`Branch ใหม่ ${report.branch_inserted_pending}`, `Branch อัปเดต ${report.branch_updated}`, `Branch เดิม ${report.branch_unchanged}`)
       if (report.branch_conflicts) details.push(`Branch ขัดแย้ง ${report.branch_conflicts}`)
       setMappingMessage({ tone: report.conflicts || report.branch_conflicts ? 'error' : 'success', text: `Import สำเร็จ: ${details.join(' · ')}` })
+      setMappingRevision((current) => current + 1)
     } catch (error) {
       setMappingMessage({ tone: 'error', text: error instanceof Error ? error.message : 'Import Mapping ไม่สำเร็จ' })
     } finally {
@@ -164,7 +166,7 @@ export function TwdSettingsPage({ embedded = false }: { embedded?: boolean }) {
         </div>
       </div>
 }
-      <section className="mapping-settings" aria-labelledby="mapping-exchange-heading">
+      <section id="twd-item-mapping" className="mapping-settings" aria-labelledby="mapping-exchange-heading">
         <header>
           <span className="setting-icon"><FileSpreadsheet size={19} aria-hidden="true" /></span>
           <div>
@@ -173,7 +175,7 @@ export function TwdSettingsPage({ embedded = false }: { embedded?: boolean }) {
             <p>Export ไปตรวจสอบหรือแก้ไขใน Excel แล้ว Import กลับเข้าการตั้งค่าไทวัสดุ</p>
           </div>
           <div className="mapping-settings-actions">
-            <button className="secondary-action" type="button" disabled={isExporting || isImporting} onClick={() => void handleExport()}><Download size={15} />{isExporting ? 'กำลัง Export…' : 'Export Mapping'}</button>
+            <button id="mapping-export-button" className="secondary-action" type="button" disabled={isExporting || isImporting} onClick={() => void handleExport()}><Download size={15} />{isExporting ? 'กำลัง Export…' : 'Export Mapping'}</button>
             <button className="primary-action" type="button" disabled={isExporting || isImporting} onClick={() => importInputRef.current?.click()}><Upload size={15} />{isImporting ? 'กำลัง Import…' : 'Import Mapping'}</button>
             <input ref={importInputRef} className="sr-only" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(event) => { const file = event.target.files?.[0]; if (file) void handleImport(file) }} />
           </div>
@@ -185,7 +187,7 @@ export function TwdSettingsPage({ embedded = false }: { embedded?: boolean }) {
         </div>
         {mappingMessage && <div className="settings-message" data-tone={mappingMessage.tone === 'error' ? 'error' : undefined} role="status">{mappingMessage.text}</div>}
       </section>
-      <SkuBackfillPanel />
+      <SkuBackfillPanel key={mappingRevision} />
       <section className="report-display-settings" aria-labelledby="report-display-heading">
         <header>
           <span className="setting-icon"><Rows3 size={19} aria-hidden="true" /></span>

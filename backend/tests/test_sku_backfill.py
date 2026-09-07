@@ -66,6 +66,102 @@ def _extract() -> TwdExtract:
     )
 
 
+def test_backfill_options_include_unmapped_interests_without_duplicates() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        mt = ModernTrade(id=1, code="TWD", name="Thai Watsadu")
+        session.add_all(
+            [
+                mt,
+                ItemMapping(
+                    id=1,
+                    modern_trade_id=1,
+                    source_sku="SKU-MAPPED",
+                    source_description="Mapped product",
+                    wa_item_code="WA-1",
+                    status="confirmed",
+                    report_status="active",
+                    effective_from=date(2025, 1, 1),
+                    changed_by="test",
+                ),
+                SkuInterest(
+                    id=1,
+                    modern_trade_id=1,
+                    source_sku="SKU-MAPPED",
+                    source_description="Mapped product",
+                    status="active",
+                    first_seen_date=date(2025, 1, 1),
+                    last_seen_date=date(2026, 9, 1),
+                ),
+                SkuInterest(
+                    id=2,
+                    modern_trade_id=1,
+                    source_sku="SKU-IGNORED",
+                    source_description="Interesting later",
+                    status="ignored",
+                    first_seen_date=date(2025, 2, 1),
+                    last_seen_date=date(2026, 9, 1),
+                ),
+            ]
+        )
+        session.commit()
+
+        options = sku_backfill.backfill_options(session, mt)
+
+    assert [item["sourceSku"] for item in options["mappings"]] == ["SKU-MAPPED"]
+    assert options["unmappedSkus"] == [
+        {
+            "sourceSku": "SKU-IGNORED",
+            "sourceDescription": "Interesting later",
+            "interestStatus": "ignored",
+            "firstSeenDate": "2025-02-01",
+            "lastSeenDate": "2026-09-01",
+        }
+    ]
+
+
+def test_preview_rejects_an_unmapped_sku() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    at = datetime(2026, 9, 1, tzinfo=UTC)
+    with Session(engine) as session:
+        mt = ModernTrade(id=1, code="TWD", name="Thai Watsadu")
+        session.add_all(
+            [
+                mt,
+                SourceFile(
+                    id=1,
+                    modern_trade_id=1,
+                    source_path=r"\\server\share\TWD\2026-09-01\data.xlsx",
+                    source_filename="data.xlsx",
+                    size_bytes=100,
+                    modified_at=at,
+                    detected_data_date=date(2026, 9, 1),
+                    status="ready",
+                    last_seen_at=at,
+                ),
+                SkuInterest(
+                    id=1,
+                    modern_trade_id=1,
+                    source_sku="SKU-UNMAPPED",
+                    status="ignored",
+                    first_seen_date=date(2026, 9, 1),
+                    last_seen_date=date(2026, 9, 1),
+                ),
+            ]
+        )
+        session.commit()
+
+        with pytest.raises(ValueError, match="confirmed และ active"):
+            sku_backfill.preview_sku_backfill(
+                session,
+                mt,
+                "SKU-UNMAPPED",
+                None,
+            )
+
+
 def test_backfill_adds_only_missing_sku_to_existing_batch(monkeypatch) -> None:
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)

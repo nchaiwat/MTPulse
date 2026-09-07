@@ -10,6 +10,13 @@ export interface SkuBackfillOptions {
     waItemDescription: string | null
     effectiveFrom: string
   }>
+  unmappedSkus: Array<{
+    sourceSku: string
+    sourceDescription: string | null
+    interestStatus: 'active' | 'pending' | 'ignored'
+    firstSeenDate: string
+    lastSeenDate: string
+  }>
   registry: {
     earliestDate: string | null
     latestDate: string | null
