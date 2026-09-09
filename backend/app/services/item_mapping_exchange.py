@@ -245,9 +245,9 @@ def build_item_mapping_workbook(
     instructions.column_dimensions["A"].width = 110
     notes = (
         "1. ใช้ Sheet 'Item Mapping' สำหรับ VLOOKUP และแก้ไขข้อมูล",
-        "2. ห้ามแก้ TWD SKU เพราะเป็น Key ที่ใช้ Import",
+        f"2. ห้ามแก้ {mt_code} SKU เพราะเป็น Key ที่ใช้ Import",
         "3. กรอก WA Item และ WA Description เฉพาะรายการที่ยังไม่มี Mapping",
-        "4. สามารถเพิ่ม TWD SKU และ TWD Description ใหม่ต่อท้ายตารางได้",
+        f"4. สามารถเพิ่ม {mt_code} SKU และ {mt_code} Description ใหม่ต่อท้ายตารางได้",
         "5. Import จะไม่แก้ทับ Mapping เดิม และรายการใหม่จะเข้าระบบเป็นสถานะรอตรวจสอบ",
         "6. หากใช้สูตร VLOOKUP ให้เปิดไฟล์และ Save ด้วย Excel ก่อน Import เพื่อบันทึกค่าที่คำนวณแล้ว",
         "7. ใช้ Sheet 'Branch Mapping' เพื่อกรอก WA Branch และชื่อ Branch ที่ต้องการแสดงในระบบ",
@@ -296,7 +296,10 @@ def parse_item_mapping_workbook(content: bytes, mt_code: str = "TWD") -> ParsedI
             if not any(value not in (None, "") for value in row):
                 continue
             row_count += 1
-            sku = _identifier(row[header_map[source_sku_header]], 9)
+            sku = _identifier(
+                row[header_map[source_sku_header]],
+                9 if mt_code == "TWD" else 0,
+            )
             wa_item = _text(row[header_map["WA Item"]])
             source_description = (
                 _text(row[source_description_index])
@@ -330,7 +333,7 @@ def parse_item_mapping_workbook(content: bytes, mt_code: str = "TWD") -> ParsedI
                 excel_row=excel_row,
             )
             if not sku:
-                errors.append(f"แถว {excel_row}: ไม่มี TWD SKU")
+                errors.append(f"แถว {excel_row}: ไม่มี {mt_code} SKU")
                 continue
             if not wa_item:
                 skipped_blank += 1
@@ -381,7 +384,10 @@ def parse_item_mapping_workbook(content: bytes, mt_code: str = "TWD") -> ParsedI
                 if not any(value not in (None, "") for value in row):
                     continue
                 branch_row_count += 1
-                source_code = _identifier(row[branch_headers[source_branch_header]], 5)
+                source_code = _identifier(
+                    row[branch_headers[source_branch_header]],
+                    5 if mt_code == "TWD" else 0,
+                )
                 wa_code = _text(row[branch_headers["WA Branch"]])
                 source_name = (
                     _text(row[source_name_index])
@@ -399,7 +405,7 @@ def parse_item_mapping_workbook(content: bytes, mt_code: str = "TWD") -> ParsedI
                     else None
                 )
                 if not source_code:
-                    errors.append(f"Branch แถว {excel_row}: ไม่มี TWD Branch")
+                    errors.append(f"Branch แถว {excel_row}: ไม่มี {mt_code} Branch")
                     continue
                 if not wa_code:
                     branch_skipped_blank += 1

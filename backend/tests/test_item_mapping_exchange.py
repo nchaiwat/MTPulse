@@ -96,6 +96,28 @@ def test_parse_deduplicates_rows_and_rejects_conflicting_mapping() -> None:
     ]
 
 
+def test_parse_applies_identifier_rules_per_modern_trade() -> None:
+    expectations = {
+        "TWD": "060424005",
+        "HP": "60424005",
+        "MH": "60424005",
+    }
+
+    for mt_code, expected_sku in expectations.items():
+        workbook = openpyxl.Workbook()
+        sheet = workbook.active
+        sheet.title = "Item Mapping"
+        sheet.append([f"{mt_code} SKU", "WA Item", "Mapping Status"])
+        sheet.append([60424005, "WA-001", "confirmed"])
+        output = BytesIO()
+        workbook.save(output)
+        workbook.close()
+
+        parsed = parse_item_mapping_workbook(output.getvalue(), mt_code)
+
+        assert parsed.candidates[0].source_sku == expected_sku
+
+
 class _ScalarRows:
     def __init__(self, values: list[object]) -> None:
         self.values = values
