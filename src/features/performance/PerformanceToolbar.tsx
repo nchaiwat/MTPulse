@@ -62,9 +62,6 @@ export function PerformanceToolbar(props: PerformanceToolbarProps) {
   function changeMode(mode: Mode) {
     props.onModeChange(mode)
     props.onMetricChange(mode === 'sales' ? 'amount' : 'stockOh')
-    if (mode === 'inventory' && props.dimension === 'month' && props.sourceCode !== 'TWD') {
-      props.onDimensionChange('branch')
-    }
   }
 
   return (
@@ -131,7 +128,7 @@ export function PerformanceToolbar(props: PerformanceToolbarProps) {
             <div className="segmented-control">
               <button type="button" aria-pressed={props.dimension === 'branch'} onClick={() => props.onDimensionChange('branch')}>Branch</button>
               <button type="button" aria-pressed={props.dimension === 'day'} onClick={() => props.onDimensionChange('day')}>Date</button>
-              {(props.mode === 'sales' || props.sourceCode === 'TWD') && <button type="button" aria-pressed={props.dimension === 'month'} onClick={() => props.onDimensionChange('month')}>Month</button>}
+              <button type="button" aria-pressed={props.dimension === 'month'} onClick={() => props.onDimensionChange('month')}>Month</button>
             </div>
             <button className="description-toggle" type="button" aria-pressed={props.showDescriptions} onClick={() => props.onShowDescriptionsChange(!props.showDescriptions)}>
               {props.showDescriptions ? <Eye size={15} aria-hidden="true" /> : <EyeOff size={15} aria-hidden="true" />}
@@ -141,7 +138,7 @@ export function PerformanceToolbar(props: PerformanceToolbarProps) {
         </div>
       </section>
 
-      <section className={`filter-bar ${props.sourceCode === 'TWD' ? 'has-sku-flags' : ''}`} aria-label="ตัวกรอง Performance">
+      <section className="filter-bar has-sku-flags" aria-label="ตัวกรอง Performance">
         <SkuMultiSelect
           options={props.skuOptions}
           selectedSkuIds={props.skuIds}
@@ -150,22 +147,20 @@ export function PerformanceToolbar(props: PerformanceToolbarProps) {
           onApply={props.onSkuChange}
         />
 
-        {props.sourceCode === 'TWD' && (
-          <label className="sku-flag-filter">
-            <span>สถานะ SKU</span>
-            <div className="select-wrap">
-              <Tags size={16} aria-hidden="true" />
-              <select aria-label="สถานะ Sho/Pro" value={props.skuFlag} onChange={(event) => props.onSkuFlagChange(event.target.value as SkuFlagFilter)}>
-                <option value="all">ทั้งหมด</option>
-                <option value="flagged">มีสถานะ Sho หรือ Pro</option>
-                <option value="sho">Sho · สินค้าตัวโชว์</option>
-                <option value="pro">Pro · Promotion</option>
-                <option value="both">Sho + Pro</option>
-                <option value="none">ยังไม่กำหนดสถานะ</option>
-              </select>
-            </div>
-          </label>
-        )}
+        <label className="sku-flag-filter">
+          <span>สถานะ SKU</span>
+          <div className="select-wrap">
+            <Tags size={16} aria-hidden="true" />
+            <select aria-label="สถานะ Sho/Pro" value={props.skuFlag} onChange={(event) => props.onSkuFlagChange(event.target.value as SkuFlagFilter)}>
+              <option value="all">ทั้งหมด</option>
+              <option value="flagged">มีสถานะ Sho หรือ Pro</option>
+              <option value="sho">Sho · สินค้าตัวโชว์</option>
+              <option value="pro">Pro · Promotion</option>
+              <option value="both">Sho + Pro</option>
+              <option value="none">ยังไม่กำหนดสถานะ</option>
+            </select>
+          </div>
+        </label>
 
         {props.dimension === 'month' ? (
           <MonthRangePicker monthFrom={props.monthFrom} monthTo={props.monthTo} months={props.months} onApply={props.onMonthRangeChange} />

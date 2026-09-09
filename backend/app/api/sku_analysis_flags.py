@@ -17,9 +17,9 @@ class SkuAnalysisFlagUpdate(BaseModel):
     enabled: bool
 
 
-def _payload(flag: SkuAnalysisFlag) -> dict:
+def _payload(flag: SkuAnalysisFlag, mt_code: str) -> dict:
     return {
-        "mtCode": "TWD",
+        "mtCode": mt_code,
         "sku": flag.source_sku,
         "isSho": flag.is_showroom,
         "isPro": flag.is_promotion,
@@ -35,18 +35,16 @@ def update_sku_analysis_flag(
     session: Annotated[Session, Depends(get_session)],
 ) -> dict:
     normalized_mt_code = mt_code.strip().upper()
-    if normalized_mt_code != "TWD":
-        raise HTTPException(
-            status_code=422,
-            detail="Sho/Pro Prototype รองรับเฉพาะ TWD ใน Phase นี้",
-        )
     modern_trade = session.scalar(
         select(ModernTrade)
         .where(ModernTrade.code == normalized_mt_code)
         .with_for_update()
     )
     if modern_trade is None:
-        raise HTTPException(status_code=404, detail="ไม่พบ Modern Trade รหัส TWD")
+        raise HTTPException(
+            status_code=404,
+            detail=f"ไม่พบ Modern Trade รหัส {normalized_mt_code}",
+        )
 
     normalized_sku = source_sku.strip()
     if not normalized_sku:
@@ -67,7 +65,10 @@ def update_sku_analysis_flag(
         .limit(1)
     )
     if known_sku is None:
-        raise HTTPException(status_code=404, detail=f"ไม่พบ SKU {normalized_sku} ของ TWD")
+        raise HTTPException(
+            status_code=404,
+            detail=f"ไม่พบ SKU {normalized_sku} ของ {normalized_mt_code}",
+        )
 
     analysis_flag = session.scalar(
         select(SkuAnalysisFlag).where(
@@ -110,4 +111,4 @@ def update_sku_analysis_flag(
         )
     session.commit()
     session.refresh(analysis_flag)
-    return _payload(analysis_flag)
+    return _payload(analysis_flag, normalized_mt_code)

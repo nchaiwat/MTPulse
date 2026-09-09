@@ -75,8 +75,8 @@ const MatrixTable = memo(function MatrixTable({ items, branches, dates, branchId
     ? columnTotals[key][salesMetric]
     : rows.reduce((total, row) => total + (row.values[key] ?? 0), 0)
   const summaryTotal = grandTotal ?? rows.reduce((total, row) => total + row.total, 0)
-  const showTurnover = mode === 'inventory' && sourceCode === 'TWD'
-  const showFlags = sourceCode === 'TWD'
+  const showTurnover = mode === 'inventory'
+  const showFlags = true
   const showSummary = mode === 'sales' || showTurnover
 
   useLayoutEffect(() => {

@@ -1,7 +1,6 @@
 from datetime import date
 
 import pytest
-from fastapi import HTTPException
 from sqlalchemy import create_engine, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -169,20 +168,50 @@ def test_flag_survives_mapping_inactive_and_reactivate(
         assert flag.is_showroom is True
 
 
-def test_phase_one_endpoint_rejects_other_modern_trades() -> None:
+@pytest.mark.parametrize("mt_code", ["HP", "MH"])
+def test_endpoint_scopes_flags_to_every_supported_modern_trade(
+    mt_code: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
+    audit_ids = iter(range(100, 110))
+    monkeypatch.setattr(
+        sku_analysis_flags_api,
+        "AuditEvent",
+        lambda **values: AuditEvent(id=next(audit_ids), **values),
+    )
     with Session(engine) as session:
         _seed(session)
-        with pytest.raises(HTTPException) as exc_info:
-            update_sku_analysis_flag(
-                mt_code="HP",
-                source_sku="SKU-A",
-                request=SkuAnalysisFlagUpdate(flag="sho", enabled=True),
-                session=session,
+        if mt_code == "MH":
+            session.add_all(
+                [
+                    ModernTrade(id=3, code="MH", name="MegaHome"),
+                    ItemMapping(
+                        id=30,
+                        modern_trade_id=3,
+                        source_sku="SKU-A",
+                        source_description="Item A at MH",
+                        wa_item_code="WA-A",
+                        wa_item_description="WA Item A",
+                        status="confirmed",
+                        item_type="normal",
+                        report_status="active",
+                        effective_from=date(2026, 1, 1),
+                        changed_by="test",
+                    ),
+                ]
             )
+            session.commit()
+        result = update_sku_analysis_flag(
+            mt_code=mt_code,
+            source_sku="SKU-A",
+            request=SkuAnalysisFlagUpdate(flag="sho", enabled=True),
+            session=session,
+        )
 
-    assert exc_info.value.status_code == 422
+    assert result["mtCode"] == mt_code
+    assert result["isSho"] is True
 
 
 def _seed_performance_scope(session: Session) -> None:
@@ -381,15 +410,24 @@ def test_performance_flag_filter_scopes_items_summary_pagination_and_turnover(
     ) == expected_flags[report["items"][0]["sku"]]
 
 
-def test_phase_one_performance_filter_rejects_other_modern_trades() -> None:
+def test_performance_flag_filter_supports_hp_scope() -> None:
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
     with Session(engine) as session:
         _seed(session)
-        with pytest.raises(HTTPException) as exc_info:
-            performance(session=session, mt_code="HP", sku_flag="sho")
+        session.add(
+            SkuAnalysisFlag(
+                modern_trade_id=2,
+                source_sku="SKU-A",
+                is_showroom=True,
+                updated_by="test",
+            )
+        )
+        session.commit()
+        report = performance(session=session, mt_code="HP", sku_flag="sho")
 
-    assert exc_info.value.status_code == 422
+    assert [item["sku"] for item in report["items"]] == ["SKU-A"]
+    assert report["items"][0]["isSho"] is True
 
 
 def test_flag_filter_applies_to_daily_and_monthly_summary_fast_paths() -> None:

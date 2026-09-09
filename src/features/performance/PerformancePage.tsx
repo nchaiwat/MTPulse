@@ -145,7 +145,7 @@ export function PerformancePage({ initialData, mtCode = 'TWD' }: PerformancePage
   const [page, setPage] = useState(savedView.page)
   const [heatmap, setHeatmap] = useState(savedView.heatmap)
   const [showDescriptions, setShowDescriptions] = useState(savedView.showDescriptions)
-  const [skuFlag, setSkuFlag] = useState<SkuFlagFilter>(mtCode === 'TWD' ? savedView.skuFlag : 'all')
+  const [skuFlag, setSkuFlag] = useState<SkuFlagFilter>(savedView.skuFlag)
   const [pendingSkuFlags, setPendingSkuFlags] = useState<Set<string>>(() => new Set())
   const [flagMessage, setFlagMessage] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
@@ -281,7 +281,6 @@ export function PerformancePage({ initialData, mtCode = 'TWD' }: PerformancePage
   }
 
   const handleSkuFlagChange = async (item: PerformanceItem, flag: SkuAnalysisFlagName, enabled: boolean) => {
-    if (mtCode !== 'TWD') return
     const key = `${item.sku}:${flag}`
     if (pendingSkuFlags.has(key)) return
     const previous = flag === 'sho' ? Boolean(item.isSho) : Boolean(item.isPro)

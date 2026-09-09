@@ -237,11 +237,6 @@ def performance(
     modern_trade = session.scalar(select(ModernTrade).where(ModernTrade.code == mt_code))
     if modern_trade is None:
         raise HTTPException(status_code=404, detail=f"ไม่พบ Modern Trade รหัส {mt_code}")
-    if sku_flag != "all" and mt_code != "TWD":
-        raise HTTPException(
-            status_code=422,
-            detail="Sho/Pro Prototype รองรับเฉพาะ TWD ใน Phase นี้",
-        )
     modern_trade_id = modern_trade.id
     all_dates = session.scalars(
         select(ImportBatch.data_date)
@@ -599,7 +594,7 @@ def performance(
     average_tom = None
     average_tod = None
     turnover_reference_date = None
-    if include_turnover and mt_code == "TWD":
+    if include_turnover:
         eligible_reference_dates = [
             value
             for value in all_dates
@@ -832,7 +827,7 @@ def performance(
     ).all()
     mapping_by_sku = {mapping.source_sku: mapping for mapping in mappings}
     analysis_flags_by_sku = {}
-    if mt_code == "TWD" and skus:
+    if skus:
         analysis_flags = session.scalars(
             select(SkuAnalysisFlag).where(
                 SkuAnalysisFlag.modern_trade_id == modern_trade_id,
@@ -861,15 +856,14 @@ def performance(
                 "itemType": mapping.item_type if mapping else "normal",
                 "points": [],
             }
-            if mt_code == "TWD":
-                analysis_flag = analysis_flags_by_sku.get(source_sku)
-                item["isSho"] = bool(
-                    analysis_flag and analysis_flag.is_showroom
-                )
-                item["isPro"] = bool(
-                    analysis_flag and analysis_flag.is_promotion
-                )
-            if include_turnover and mt_code == "TWD":
+            analysis_flag = analysis_flags_by_sku.get(source_sku)
+            item["isSho"] = bool(
+                analysis_flag and analysis_flag.is_showroom
+            )
+            item["isPro"] = bool(
+                analysis_flag and analysis_flag.is_promotion
+            )
+            if include_turnover:
                 item["tom"] = (
                     _number(turnover_by_sku[source_sku][0])
                     if source_sku in turnover_by_sku
@@ -1055,7 +1049,7 @@ def performance(
                     if turnover_reference_date
                     else None,
                 }
-                if include_turnover and mt_code == "TWD"
+                if include_turnover
                 else {}
             ),
         },

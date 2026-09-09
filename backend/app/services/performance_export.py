@@ -86,13 +86,13 @@ def build_performance_workbook(
     sheet.title = "Report"
     sheet.sheet_view.showGridLines = False
 
-    identity_headers = [f"{mt_code} SKU"]
+    identity_headers = ["Sho", "Pro", f"{mt_code} SKU"]
     if show_descriptions:
         identity_headers.append(f"{mt_code} Description")
     identity_headers.append("WA Item")
     if show_descriptions:
         identity_headers.append("WA Description")
-    show_turnover = mode == "inventory" and mt_code == "TWD"
+    show_turnover = mode == "inventory"
     if show_turnover:
         identity_headers.extend(["TOM", "TOD"])
     headers = (
@@ -146,7 +146,11 @@ def build_performance_workbook(
         else '#,##0;[Red]-#,##0;-""'
     )
     for row_number, item in enumerate(report["items"], start=data_start_row):
-        values = [item["sku"]]
+        values = [
+            "✓" if item.get("isSho") else "",
+            "✓" if item.get("isPro") else "",
+            item["sku"],
+        ]
         if show_descriptions:
             values.append(item["twdDescription"])
         values.append(item["waItem"] or "")
@@ -156,7 +160,7 @@ def build_performance_workbook(
             values.extend([item.get("tom"), item.get("tod")])
         for column, value in enumerate(values, start=1):
             cell = sheet.cell(row_number, column, value)
-            if column in {1, 3 if show_descriptions else 2}:
+            if column in {3, 5 if show_descriptions else 4}:
                 cell.data_type = "s"
                 cell.number_format = "@"
         if show_turnover:
@@ -220,6 +224,8 @@ def build_performance_workbook(
         cell.fill = header_fill
         cell.font = Font(color="FFFFFF", bold=True)
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    sheet["A5"].fill = PatternFill("solid", fgColor="D97706")
+    sheet["B5"].fill = PatternFill("solid", fgColor="7C3AED")
     for cell in sheet[4]:
         cell.fill = sum_fill
         cell.font = Font(color="102A43", bold=True)
@@ -231,7 +237,7 @@ def build_performance_workbook(
         f"A5:{openpyxl.utils.get_column_letter(len(headers))}{max(5, data_end_row)}"
     )
 
-    widths = [14]
+    widths = [8, 8, 14]
     if show_descriptions:
         widths.append(42)
     widths.append(24)
@@ -245,6 +251,27 @@ def build_performance_workbook(
     for row in sheet.iter_rows(min_row=data_start_row, max_row=max(data_start_row, data_end_row)):
         for cell in row:
             cell.alignment = Alignment(vertical="center", wrap_text=False)
+    for row_number, item in enumerate(report["items"], start=data_start_row):
+        is_sho = bool(item.get("isSho"))
+        is_pro = bool(item.get("isPro"))
+        row_color = (
+            "F6E8EC"
+            if is_sho and is_pro
+            else "FFF5DF"
+            if is_sho
+            else "F3E8FF"
+            if is_pro
+            else None
+        )
+        if row_color:
+            for column in range(1, len(headers) + 1):
+                sheet.cell(row_number, column).fill = PatternFill("solid", fgColor=row_color)
+        if is_sho:
+            sheet.cell(row_number, 1).fill = PatternFill("solid", fgColor="D97706")
+            sheet.cell(row_number, 1).font = Font(color="FFFFFF", bold=True)
+        if is_pro:
+            sheet.cell(row_number, 2).fill = PatternFill("solid", fgColor="7C3AED")
+            sheet.cell(row_number, 2).font = Font(color="FFFFFF", bold=True)
 
     if report["items"] and dimension_keys:
         value_range = (

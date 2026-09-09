@@ -13,12 +13,15 @@ afterEach(() => {
 
 
 describe('PerformancePage', () => {
-  it('shows HP source labels and Stock Value instead of Stock On Order', async () => {
+  it.each([
+    ['HP', 'HomePro'],
+    ['MH', 'MegaHome'],
+  ] as const)('shows %s template columns and Stock Value instead of Stock On Order', async (mtCode, mtName) => {
     const user = userEvent.setup()
     const hpData: PerformanceResponse = {
       ...samplePerformanceResponse,
-      mtCode: 'HP' as const,
-      mtName: 'HomePro',
+      mtCode,
+      mtName,
       metricCapabilities: {
         sales: ['amount', 'qty'],
         inventory: ['stockOh', 'stockValue'],
@@ -26,18 +29,25 @@ describe('PerformancePage', () => {
       inventorySummary: { stockOh: 15, stockOnOrder: 0, stockValue: 35000 },
       items: samplePerformanceResponse.items.map((item) => ({
         ...item,
+        tom: 5.99,
+        tod: 179.7,
         points: item.points.map((point) => ({ ...point, stockValue: point.stockOh * 2000 })),
       })),
     }
 
-    render(<PerformancePage mtCode="HP" initialData={hpData} />)
+    render(<PerformancePage mtCode={mtCode} initialData={hpData} />)
 
-    expect(screen.getByRole('heading', { name: 'Matrix Performance ของ HomePro (HP)' })).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: 'HP SKU' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: `Matrix Performance ของ ${mtName} (${mtCode})` })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: `${mtCode} SKU` })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Inventory' }))
     expect(screen.getByRole('button', { name: 'Stock value' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Stock on order' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Month' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Month' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Sho' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Pro' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'TOM' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'TOD' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'สถานะ Sho/Pro' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Stock value' }))
     expect(screen.getByText(/Stock Value \(Source\)/)).toBeInTheDocument()
   })
@@ -329,7 +339,7 @@ describe('Sho/Pro Phase 3 interactions', () => {
     expect(screen.getByText('17/08/2026')).toBeInTheDocument()
   })
 
-  it('shows sticky Sho/Pro controls in every TWD view but not HP', async () => {
+  it('shows sticky Sho/Pro controls in every TWD and HP view', async () => {
     const user = userEvent.setup()
     const twd = render(<PerformancePage initialData={flaggedData()} />)
 
@@ -350,9 +360,9 @@ describe('Sho/Pro Phase 3 interactions', () => {
 
     twd.unmount()
     render(<PerformancePage mtCode="HP" initialData={{ ...flaggedData(), mtCode: 'HP', mtName: 'HomePro' }} />)
-    expect(screen.queryByRole('columnheader', { name: 'Sho' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('columnheader', { name: 'Pro' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('combobox', { name: 'สถานะ Sho/Pro' })).not.toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Sho' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Pro' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'สถานะ Sho/Pro' })).toBeInTheDocument()
   })
 
   it('updates a flag optimistically and keeps the selected row treatment', async () => {

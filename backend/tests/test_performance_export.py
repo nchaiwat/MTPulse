@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from io import BytesIO
 
 import openpyxl
+import pytest
 
 from app.services.performance_export import (
     build_performance_workbook,
@@ -20,6 +21,8 @@ def _report() -> dict:
         "items": [
             {
                 "sku": "060277546",
+                "isSho": True,
+                "isPro": False,
                 "twdDescription": "สินค้าไทยหนึ่ง",
                 "waItem": "FA09-W0112-080050",
                 "waDescription": "สินค้า WA หนึ่ง",
@@ -44,6 +47,8 @@ def _report() -> dict:
             },
             {
                 "sku": "060277547",
+                "isSho": False,
+                "isPro": True,
                 "twdDescription": "สินค้าไทยสอง",
                 "waItem": "FA09-W0112-100110",
                 "waDescription": "สินค้า WA สอง",
@@ -74,20 +79,24 @@ def test_performance_workbook_contains_all_rows_formulas_and_branch_headers() ->
     workbook = openpyxl.load_workbook(BytesIO(content), data_only=False)
     sheet = workbook["Report"]
 
-    assert sheet["A5"].value == "TWD SKU"
-    assert sheet["B5"].value == "TWD Description"
-    assert sheet["E5"].value == "TOTAL"
-    assert sheet["F5"].value == "60016 - ภูเก็ต เฟสติวัล"
-    assert sheet["G5"].value == "60926 - ลำปาง"
-    assert sheet["A6"].value == "060277546"
-    assert sheet["A7"].value == "060277547"
-    assert sheet["E6"].value == "=SUM(F6:G6)"
-    assert sheet["E4"].value == "=SUM(E6:E7)"
-    assert sheet["F6"].value == 100.5
-    assert sheet["G6"].value == 50
-    assert sheet["G7"].value == -25
-    assert sheet.freeze_panes == "F6"
-    assert sheet.auto_filter.ref == "A5:G7"
+    assert sheet["A5"].value == "Sho"
+    assert sheet["B5"].value == "Pro"
+    assert sheet["C5"].value == "TWD SKU"
+    assert sheet["D5"].value == "TWD Description"
+    assert sheet["G5"].value == "TOTAL"
+    assert sheet["H5"].value == "60016 - ภูเก็ต เฟสติวัล"
+    assert sheet["I5"].value == "60926 - ลำปาง"
+    assert sheet["A6"].value == "✓"
+    assert sheet["B7"].value == "✓"
+    assert sheet["C6"].value == "060277546"
+    assert sheet["C7"].value == "060277547"
+    assert sheet["G6"].value == "=SUM(H6:I6)"
+    assert sheet["G4"].value == "=SUM(G6:G7)"
+    assert sheet["H6"].value == 100.5
+    assert sheet["I6"].value == 50
+    assert sheet["I7"].value == -25
+    assert sheet.freeze_panes == "H6"
+    assert sheet.auto_filter.ref == "A5:I7"
     workbook.close()
 
 
@@ -103,14 +112,16 @@ def test_performance_workbook_can_hide_description_columns() -> None:
     workbook = openpyxl.load_workbook(BytesIO(content), data_only=False)
     sheet = workbook["Report"]
 
-    assert [sheet.cell(5, column).value for column in range(1, 6)] == [
+    assert [sheet.cell(5, column).value for column in range(1, 8)] == [
+        "Sho",
+        "Pro",
         "TWD SKU",
         "WA Item",
         "TOTAL",
         "60016 - ภูเก็ต เฟสติวัล",
         "60926 - ลำปาง",
     ]
-    assert sheet["C6"].value == "=SUM(D6:E6)"
+    assert sheet["E6"].value == "=SUM(F6:G6)"
     workbook.close()
 
 
@@ -144,9 +155,9 @@ def test_performance_workbook_keeps_backend_aggregate_for_selected_branches() ->
     workbook = openpyxl.load_workbook(BytesIO(content), data_only=False)
     sheet = workbook["Report"]
 
-    assert sheet["D5"].value == "17/08/2026"
-    assert sheet["D6"].value == 150.5
-    assert sheet["C6"].value == "=SUM(D6:D6)"
+    assert sheet["F5"].value == "17/08/2026"
+    assert sheet["F6"].value == 150.5
+    assert sheet["E6"].value == "=SUM(F6:F6)"
     workbook.close()
 
 def test_performance_export_filename_has_view_and_unique_timestamp() -> None:
@@ -191,7 +202,8 @@ def test_gross_sales_export_is_clearly_labeled() -> None:
     ) == "TWD_Sales_Gross_Amount_Branch_20260825_123456.xlsx"
 
 
-def test_inventory_export_contains_turnover_and_exact_selected_ranges() -> None:
+@pytest.mark.parametrize("mt_code", ["TWD", "HP", "MH"])
+def test_inventory_export_contains_turnover_and_exact_selected_ranges(mt_code: str) -> None:
     report = _report()
     report["selectedMonth"] = None
     report["selectedDateRanges"] = [
@@ -207,13 +219,16 @@ def test_inventory_export_contains_turnover_and_exact_selected_ranges() -> None:
         metric="stockOh",
         grain="day",
         show_descriptions=True,
+        mt_code=mt_code,
     )
     workbook = openpyxl.load_workbook(BytesIO(content), data_only=False)
     sheet = workbook["Report"]
 
-    assert [sheet.cell(5, column).value for column in range(1, 8)] == [
-        "TWD SKU",
-        "TWD Description",
+    assert [sheet.cell(5, column).value for column in range(1, 10)] == [
+        "Sho",
+        "Pro",
+        f"{mt_code} SKU",
+        f"{mt_code} Description",
         "WA Item",
         "WA Description",
         "TOM",
@@ -221,11 +236,11 @@ def test_inventory_export_contains_turnover_and_exact_selected_ranges() -> None:
         "TOTAL",
     ]
     assert sheet["A4"].value == "AVG"
-    assert sheet["E4"].value == 5.99
-    assert sheet["F4"].value == 179.7
-    assert sheet["E6"].value == 5.99
-    assert sheet["F6"].value == 179.7
-    assert sheet.freeze_panes == "H6"
+    assert sheet["G4"].value == 5.99
+    assert sheet["H4"].value == 179.7
+    assert sheet["G6"].value == 5.99
+    assert sheet["H6"].value == 179.7
+    assert sheet.freeze_panes == "J6"
     assert "01/06/2026 – 30/06/2026, 17/08/2026" in sheet["A2"].value
     workbook.close()
 
@@ -271,10 +286,10 @@ def test_inventory_month_export_matches_monthly_snapshot_points() -> None:
     workbook = openpyxl.load_workbook(BytesIO(content), data_only=False)
     sheet = workbook["Report"]
 
-    assert sheet["H5"].value == "2026-07"
-    assert sheet["I5"].value == "2026-08"
-    assert sheet["H6"].value == 10
-    assert sheet["I6"].value == 20
-    assert sheet["G6"].value == "=SUM(H6:I6)"
+    assert sheet["J5"].value == "2026-07"
+    assert sheet["K5"].value == "2026-08"
+    assert sheet["J6"].value == 10
+    assert sheet["K6"].value == 20
+    assert sheet["I6"].value == "=SUM(J6:K6)"
     assert "Jul 2026 – Aug 2026" in sheet["A2"].value
     workbook.close()

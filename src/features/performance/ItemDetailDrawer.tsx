@@ -56,7 +56,7 @@ export function ItemDetailDrawer({ item, selected, dates, branchIds, metric, sal
         </header>
 
         <div className="drawer-identities">
-          <div><span>WA Item</span><strong className="mono">{item.waItem ?? 'ยังไม่ Mapping'}</strong><small>{item.waDescription ?? 'เลือก Item ของ Window Asia ก่อนยืนยัน Mapping'}</small>{sourceCode === 'TWD' && <div className="sku-flag-badges" aria-label="สถานะความสนใจ SKU"><span className="sku-flag-badge flag-sho" data-active={item.isSho || undefined}>Sho</span><span className="sku-flag-badge flag-pro" data-active={item.isPro || undefined}>Pro</span></div>}</div>
+          <div><span>WA Item</span><strong className="mono">{item.waItem ?? 'ยังไม่ Mapping'}</strong><small>{item.waDescription ?? 'เลือก Item ของ Window Asia ก่อนยืนยัน Mapping'}</small><div className="sku-flag-badges" aria-label="สถานะความสนใจ SKU"><span className="sku-flag-badge flag-sho" data-active={item.isSho || undefined}>Sho</span><span className="sku-flag-badge flag-pro" data-active={item.isPro || undefined}>Pro</span></div></div>
           <span className={`status status-${item.mappingStatus}`}><span aria-hidden="true" />{item.mappingStatus === 'confirmed' ? 'ยืนยันแล้ว' : item.mappingStatus === 'pending' ? 'รอตรวจสอบ' : 'ยังไม่ Mapping'}</span>
         </div>
 

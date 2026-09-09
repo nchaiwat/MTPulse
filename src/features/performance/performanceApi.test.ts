@@ -4,7 +4,7 @@ import { downloadPerformanceReport, fetchPerformance, fetchPerformanceItemDetail
 describe('fetchPerformance', () => {
   afterEach(() => vi.restoreAllMocks())
 
-  it('serializes non-overlapping ranges and requests TWD turnover in Inventory mode', async () => {
+  it('serializes non-overlapping ranges and requests turnover in Inventory mode', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({}), { status: 200 }),
     )
@@ -205,7 +205,7 @@ describe('fetchPerformance', () => {
       mode: 'inventory',
       branchMonth: 'latest',
       branchPeriod: 'month',
-      mtCode: 'TWD',
+      mtCode: 'HP',
     })
 
     const url = new URL(String(fetchMock.mock.calls[0][0]), 'http://localhost')

@@ -55,7 +55,7 @@ function performanceQuery(
   if (queryInput.mode === 'sales') {
     query.set('sales_basis', queryInput.salesBasis ?? 'net')
   }
-  if (queryInput.mode === 'inventory' && (queryInput.mtCode ?? 'TWD') === 'TWD') {
+  if (queryInput.mode === 'inventory') {
     query.set('include_turnover', 'true')
   }
   if (latestInventorySnapshot && queryInput.mode === 'inventory' && queryInput.dimension === 'branch') {
