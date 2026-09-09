@@ -82,8 +82,12 @@ describe('App navigation', () => {
     await userEvent.click(screen.getByRole('button', { name: 'การตั้งค่า' }))
 
     expect(screen.getByRole('heading', { level: 1, name: 'การตั้งค่า' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 2, name: 'ไทวัสดุ' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 2, name: 'การตั้งค่าระบบ' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'Settings Control Plane' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'Global Settings' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Global/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: /TWD/ })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /HP/ })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /MH/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'การตั้งค่า' })).toHaveAttribute('aria-current', 'page')
     expect(screen.queryByText('มี Token บันทึกอยู่')).not.toBeInTheDocument()
     expect(screen.getByDisplayValue('https://api.telegram.org')).toBeInTheDocument()
@@ -95,7 +99,22 @@ describe('App navigation', () => {
     await userEvent.click(screen.getByRole('button', { name: 'แสดง Bot Token' }))
     expect(tokenInput).toHaveAttribute('type', 'text')
     expect(tokenInput).toHaveValue('123456:test-token')
-  })
+
+    const globalTab = screen.getByRole('tab', { name: /Global/ })
+    globalTab.focus()
+    await userEvent.keyboard('{ArrowRight}')
+    expect(screen.getByRole('tab', { name: /TWD/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('heading', { level: 2, name: 'Thai Watsadu' })).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('tab', { name: /HP/ }))
+    expect(screen.getByRole('heading', { level: 2, name: 'HomePro' })).toBeInTheDocument()
+    expect(screen.getByText('Shared source & schedule · HP + MH')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Item และ Branch Mapping' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'ดึงข้อมูลย้อนหลังเฉพาะ SKU' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'การแสดงผลรายงาน' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'ความครบถ้วนของข้อมูล' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'ข้อมูลที่ยังไม่ Mapping' })).toBeInTheDocument()
+  }, 10_000)
 
   it('opens the TWD dashboard from its own navigation group', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
@@ -121,9 +140,66 @@ describe('App navigation', () => {
     render(<App />)
     await userEvent.click(screen.getByRole('button', { name: 'แดชบอร์ด ไทวัสดุ' }))
 
-    expect(screen.getByRole('heading', { level: 1, name: 'แดชบอร์ดไทวัสดุ' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 2, name: 'ภาพรวม Performance ไทวัสดุ' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 1, name: 'แดชบอร์ดไทวัสดุ' })).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'ภาพรวม Performance ของ TWD' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'แดชบอร์ด ไทวัสดุ' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('button', { name: /เปิดรายงานรายละเอียด/ })).toBeInTheDocument()
+  })
+
+  it('opens separate HomePro and MegaHome dashboards with the matching API routes', async () => {
+    const requested: string[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input)
+      requested.push(url)
+      if (!url.includes('/api/dashboards/')) {
+        return new Response(JSON.stringify(performanceResponse), { status: 200 })
+      }
+      const code = url.includes('/api/dashboards/mh') ? 'MH' : 'HP'
+      return new Response(JSON.stringify({
+        meta: {
+          mtCode: code,
+          mtName: code === 'HP' ? 'HomePro' : 'MegaHome',
+          year: null,
+          previousYear: null,
+          period: 'ytd',
+          latestDataDate: null,
+          availableYears: [],
+          loadedDays: 0,
+          expectedDays: 0,
+          completenessPercent: 0,
+        },
+        summary: null,
+        monthly: [],
+        topBranches: [],
+        topSkus: [],
+      }), { status: 200 })
+    })
+
+    render(<App />)
+    await userEvent.click(screen.getByRole('button', { name: 'แดชบอร์ด HomePro' }))
+    expect(await screen.findByRole('heading', { level: 2, name: 'ภาพรวม Performance ของ HomePro (HP)' })).toBeInTheDocument()
+    expect(requested.some((url) => url.includes('/api/dashboards/hp'))).toBe(true)
+    expect(screen.getByRole('button', { name: /เปิดรายงานรายละเอียด/ })).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'แดชบอร์ด MegaHome' }))
+    expect(await screen.findByRole('heading', { level: 2, name: 'ภาพรวม Performance ของ MegaHome (MH)' })).toBeInTheDocument()
+    expect(requested.some((url) => url.includes('/api/dashboards/mh'))).toBe(true)
+  })
+
+  it('opens separate HomePro and MegaHome report pages with matching MT API filters', async () => {
+    const requested: string[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      requested.push(String(input))
+      return new Response(JSON.stringify(performanceResponse), { status: 200 })
+    })
+
+    render(<App />)
+    await userEvent.click(screen.getByRole('button', { name: 'รายงาน HomePro' }))
+    expect(await screen.findByRole('heading', { level: 2, name: 'Matrix Performance ของ HomePro (HP)' })).toBeInTheDocument()
+    expect(requested.some((url) => url.includes('mt_code=HP'))).toBe(true)
+
+    await userEvent.click(screen.getByRole('button', { name: 'รายงาน MegaHome' }))
+    expect(await screen.findByRole('heading', { level: 2, name: 'Matrix Performance ของ MegaHome (MH)' })).toBeInTheDocument()
+    expect(requested.some((url) => url.includes('mt_code=MH'))).toBe(true)
   })
 })

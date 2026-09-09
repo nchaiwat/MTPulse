@@ -89,4 +89,58 @@ describe('FileShareSettingsCard progress', () => {
     expect(screen.getByText(/empty\.xls/)).toBeInTheDocument()
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '419')
   })
+
+  it('groups HP and MH under one shared source while keeping per-MT counts', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(
+      JSON.stringify({
+        baseUnc: '\\\\server\\share',
+        domain: 'WA',
+        username: 'user',
+        passwordConfigured: true,
+        passwordMasked: '********',
+        lastTestAt: null,
+        lastTestStatus: null,
+        lastTestResults: [],
+        profiles: [
+          {
+            code: 'HP', name: 'HomePro', subfolder: 'HP_MH', enabled: true,
+            fullPath: '\\\\server\\share\\HP_MH', scheduleEnabled: true,
+            scheduleTime: '07:15', initialScanCompleted: true, nextRunAt: null,
+            sourceGroup: 'HP_MH', sharedProfileOwner: true, sharedWith: ['MH'],
+            lastRun: {
+              runId: 7, mtCode: 'HP', mtName: 'HomePro', trigger: 'scheduled',
+              mode: 'import', status: 'success', requestedBy: 'worker',
+              scheduledLocalDate: '2026-09-07', requestedAt: '2026-09-07T00:15:00Z',
+              startedAt: '2026-09-07T00:15:01Z', finishedAt: '2026-09-07T00:16:00Z',
+              counts: { found: 1, imported: 1, skipped: 0, ready: 0, pending: 0, failed: 0 },
+              progress: null, message: 'นำเข้า 1 คู่', error: null,
+              results: [{
+                status: 'imported', message: 'สำเร็จ',
+                mt: {
+                  HP: { rows: 39, newPendingSkus: 2 },
+                  MH: { rows: 26, newPendingSkus: 1 },
+                },
+              }],
+            },
+          },
+          {
+            code: 'MH', name: 'MegaHome', subfolder: 'HP_MH', enabled: true,
+            fullPath: '\\\\server\\share\\HP_MH', scheduleEnabled: true,
+            scheduleTime: '07:15', initialScanCompleted: true, nextRunAt: null,
+            sourceGroup: 'HP_MH', sharedProfileOwner: false, sharedWith: ['HP'],
+            lastRun: null,
+          },
+        ],
+      }),
+      { status: 200 },
+    ))
+
+    const { container } = render(<FileShareSettingsCard />)
+
+    expect(await screen.findByText('HomePro Group — Shared Source')).toBeInTheDocument()
+    expect(screen.getByText('MegaHome')).toBeInTheDocument()
+    expect(screen.getByText('39')).toBeInTheDocument()
+    expect(screen.getByText('26')).toBeInTheDocument()
+    expect(container.querySelectorAll('article[data-source-group="HP_MH"]')).toHaveLength(1)
+  })
 })

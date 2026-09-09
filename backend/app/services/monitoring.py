@@ -8,7 +8,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from sqlalchemy import delete, func, select, text
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.local_time import bangkok_now
@@ -403,12 +403,23 @@ def capture_monitoring_snapshot(
         if metrics["workerHeartbeatAt"]
         else None
     )
-    session.execute(
-        delete(MonitoringSnapshot).where(
-            MonitoringSnapshot.snapshot_date < snapshot_date - timedelta(days=364)
+    try:
+        session.flush()
+        session.execute(
+            delete(MonitoringSnapshot).where(
+                MonitoringSnapshot.snapshot_date < snapshot_date - timedelta(days=364)
+            )
         )
-    )
-    session.commit()
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        concurrent_snapshot = session.scalar(
+            select(MonitoringSnapshot).where(
+                MonitoringSnapshot.snapshot_date == snapshot_date
+            )
+        )
+        if concurrent_snapshot is None:
+            raise
     return metrics
 
 

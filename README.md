@@ -90,3 +90,10 @@ npm.cmd run build
 - `PRD.md` — ข้อกำหนดผลิตภัณฑ์
 - `implementation_plan.md` — แผนดำเนินงานทั้งหมด
 - `design-system/mt-pulse/MASTER.md` — กติกา UI และ Design Tokens
+
+## TWD Performance: Multi-range และ Inventory Turnover
+
+- ตัวกรองวันที่รองรับ query ซ้ำ `date_range=YYYY-MM-DD,YYYY-MM-DD` ได้สูงสุด 12 ช่วง โดยช่วงต้องไม่ทับกัน
+- ถ้าไม่ส่ง `date_range` ระบบยังรองรับ `date_from/date_to` เดิม
+- TWD Inventory ส่ง `include_turnover=true` เพื่อรับ TOM/TOD และค่าเฉลี่ยจากสามเดือนปฏิทินเต็มก่อน Reference Date
+- Excel export ใช้ Date ranges, SKU, Branch, Mode, Metric และ View เดียวกับหน้า App

@@ -31,12 +31,13 @@ from app.services.automatic_import import (
     _credentials,
     download_twd_extract,
 )
+from app.services.hp_mh_import import append_hp_mh_sku_facts
 from app.services.telegram import send_telegram
 from app.services.twd_import import append_twd_sku_facts
 
 logger = logging.getLogger("mtpulse.sku_backfill")
 AVAILABLE_BATCH_STATUSES = {"imported", "imported_with_warnings"}
-USABLE_SOURCE_STATUSES = {"imported", "ready", "skipped"}
+USABLE_SOURCE_STATUSES = {"imported", "ready", "skipped", "duplicate"}
 
 
 def _mapping(
@@ -52,10 +53,7 @@ def _mapping(
             ItemMapping.source_sku == source_sku,
             ItemMapping.status == "confirmed",
             ItemMapping.report_status == "active",
-            (
-                ItemMapping.effective_to.is_(None)
-                | (ItemMapping.effective_to >= range_end)
-            ),
+            (ItemMapping.effective_to.is_(None) | (ItemMapping.effective_to >= range_end)),
         )
         .order_by(ItemMapping.effective_from.desc(), ItemMapping.id.desc())
         .limit(1)
@@ -86,19 +84,24 @@ def backfill_options(session: Session, mt: ModernTrade) -> dict[str, object]:
         ).all()
         if interest.source_sku not in mapped_skus
     ]
+    registry_mt_id = mt.id
+    if mt.source_group_code == "HP_MH":
+        registry_mt_id = (
+            session.scalar(select(ModernTrade.id).where(ModernTrade.code == "HP")) or mt.id
+        )
     earliest, latest = session.execute(
         select(
             func.min(SourceFile.detected_data_date),
             func.max(SourceFile.detected_data_date),
         ).where(
-            SourceFile.modern_trade_id == mt.id,
+            SourceFile.modern_trade_id == registry_mt_id,
             SourceFile.detected_data_date.is_not(None),
             SourceFile.size_bytes > 0,
         )
     ).one()
     refreshed_at = session.scalar(
         select(func.max(ImportRun.finished_at)).where(
-            ImportRun.modern_trade_id == mt.id,
+            ImportRun.modern_trade_id == registry_mt_id,
             ImportRun.mode.in_({"scan", "import", "registry"}),
             ImportRun.status.in_({"success", "success_with_warnings"}),
         )
@@ -139,6 +142,8 @@ def _plan(
     range_start: date,
     range_end: date,
 ) -> tuple[ItemMapping, list[dict[str, object]], bool]:
+    if mt.source_group_code == "HP_MH":
+        return _plan_hp_mh(session, mt, source_sku, range_start, range_end)
     mapping = _mapping(session, mt.id, source_sku, range_end)
     source_rows = session.scalars(
         select(SourceFile)
@@ -198,10 +203,7 @@ def _plan(
                 "source_conflict",
                 "ไม่พบไฟล์ที่ใช้ได้เพียงหนึ่งไฟล์ใน File Registry",
             )
-        elif (
-            usable[0].imported_batch_id is not None
-            and usable[0].imported_batch_id != batch.id
-        ):
+        elif usable[0].imported_batch_id is not None and usable[0].imported_batch_id != batch.id:
             status, message = "source_conflict", "ไฟล์ใน Registry ผูกกับ Batch อื่น"
         elif (
             usable[0].imported_batch_id != batch.id
@@ -230,10 +232,107 @@ def _plan(
                 ItemMapping.source_sku == source_sku,
                 ItemMapping.id != mapping.id,
                 ItemMapping.effective_from <= prior_end,
-                (
-                    ItemMapping.effective_to.is_(None)
-                    | (ItemMapping.effective_to >= range_start)
-                ),
+                (ItemMapping.effective_to.is_(None) | (ItemMapping.effective_to >= range_start)),
+            )
+            .limit(1)
+        )
+        is not None
+    )
+    return mapping, items, conflict
+
+
+def _plan_hp_mh(
+    session: Session,
+    mt: ModernTrade,
+    source_sku: str,
+    range_start: date,
+    range_end: date,
+) -> tuple[ItemMapping, list[dict[str, object]], bool]:
+    mapping = _mapping(session, mt.id, source_sku, range_end)
+    owner_id = session.scalar(select(ModernTrade.id).where(ModernTrade.code == "HP")) or mt.id
+    source_rows = session.scalars(
+        select(SourceFile)
+        .where(
+            SourceFile.modern_trade_id == owner_id,
+            SourceFile.detected_data_date >= range_start,
+            SourceFile.detected_data_date <= range_end,
+            SourceFile.source_kind.in_(("inventory", "sales")),
+        )
+        .order_by(SourceFile.detected_data_date, SourceFile.id)
+    ).all()
+    grouped: dict[date, list[SourceFile]] = defaultdict(list)
+    for row in source_rows:
+        if row.detected_data_date is not None:
+            grouped[row.detected_data_date].append(row)
+    batches = {
+        batch.data_date: batch
+        for batch in session.scalars(
+            select(ImportBatch).where(
+                ImportBatch.modern_trade_id == mt.id,
+                ImportBatch.data_date >= range_start,
+                ImportBatch.data_date <= range_end,
+                ImportBatch.status.in_(AVAILABLE_BATCH_STATUSES),
+            )
+        )
+    }
+    existing_dates = set(
+        session.scalars(
+            select(SalesInventoryFact.data_date)
+            .where(
+                SalesInventoryFact.modern_trade_id == mt.id,
+                SalesInventoryFact.source_sku == source_sku,
+                SalesInventoryFact.data_date >= range_start,
+                SalesInventoryFact.data_date <= range_end,
+            )
+            .distinct()
+        )
+    )
+    items: list[dict[str, object]] = []
+    for data_date, rows in sorted(grouped.items()):
+        inventory = [
+            row
+            for row in rows
+            if row.source_kind == "inventory"
+            and row.size_bytes > 0
+            and row.status in USABLE_SOURCE_STATUSES
+        ]
+        sales = [
+            row
+            for row in rows
+            if row.source_kind == "sales"
+            and row.size_bytes > 0
+            and row.status in USABLE_SOURCE_STATUSES
+        ]
+        batch = batches.get(data_date)
+        status, message = "candidate", "พร้อมดึงเฉพาะ SKU"
+        if data_date in existing_dates:
+            status, message = "already_present", "มีข้อมูล SKU วันนี้แล้ว ไม่เขียนทับ"
+        elif batch is None:
+            status, message = "waiting_for_batch", "รอ Import ข้อมูลของวันนี้ก่อน"
+        elif len(inventory) != 1 or len(sales) != 1:
+            status, message = "source_conflict", "ไม่พบคู่ไฟล์ Inventory/Sale Out ที่ใช้ได้"
+        items.append(
+            {
+                "dataDate": data_date.isoformat(),
+                "status": status,
+                "message": message,
+                "sourceFileId": inventory[0].id if len(inventory) == 1 else None,
+                "inventorySourceFileId": inventory[0].id if len(inventory) == 1 else None,
+                "salesSourceFileId": sales[0].id if len(sales) == 1 else None,
+                "batchId": batch.id if batch else None,
+            }
+        )
+    prior_end = mapping.effective_from - timedelta(days=1)
+    conflict = (
+        range_start < mapping.effective_from
+        and session.scalar(
+            select(ItemMapping.id)
+            .where(
+                ItemMapping.modern_trade_id == mt.id,
+                ItemMapping.source_sku == source_sku,
+                ItemMapping.id != mapping.id,
+                ItemMapping.effective_from <= prior_end,
+                ItemMapping.effective_to.is_(None) | (ItemMapping.effective_to >= range_start),
             )
             .limit(1)
         )
@@ -252,7 +351,7 @@ def preview_sku_backfill(
     earliest = registry["earliestDate"]
     latest = registry["latestDate"]
     if not earliest or not latest:
-        raise ValueError("File Registry ยังไม่มีวันที่ข้อมูลสำหรับ TWD")
+        raise ValueError(f"File Registry ยังไม่มีวันที่ข้อมูลสำหรับ {mt.code}")
     selected_start = range_start or date.fromisoformat(str(earliest))
     selected_end = date.fromisoformat(str(latest))
     if selected_start < date.fromisoformat(str(earliest)):
@@ -281,9 +380,7 @@ def preview_sku_backfill(
         "rangeEnd": selected_end.isoformat(),
         "mappingEffectiveFrom": mapping.effective_from.isoformat(),
         "mappingWillMoveTo": (
-            selected_start.isoformat()
-            if selected_start < mapping.effective_from
-            else None
+            selected_start.isoformat() if selected_start < mapping.effective_from else None
         ),
         "mappingConflict": conflict,
         "registry": registry,
@@ -424,12 +521,9 @@ def _save_progress(
 ) -> None:
     run.found_count = total
     run.imported_count = sum(item["status"] == "imported" for item in results)
-    run.skipped_count = sum(
-        item["status"] in {"already_present", "not_found"} for item in results
-    )
+    run.skipped_count = sum(item["status"] in {"already_present", "not_found"} for item in results)
     run.pending_count = sum(
-        item["status"] in {"waiting_for_batch", "source_conflict"}
-        for item in results
+        item["status"] in {"waiting_for_batch", "source_conflict"} for item in results
     )
     run.failed_count = sum(item["status"] == "failed" for item in results)
     run.results_json = json.dumps(results, ensure_ascii=False)
@@ -444,11 +538,7 @@ def _finish(
     total: int,
 ) -> None:
     _save_progress(session, run, results, total, "")
-    run.status = (
-        "success_with_warnings"
-        if run.pending_count or run.failed_count
-        else "success"
-    )
+    run.status = "success_with_warnings" if run.pending_count or run.failed_count else "success"
     run.finished_at = bangkok_now()
     run.summary_message = (
         f"SKU {run.target_sku} · ตรวจ {len(results)}/{total} วัน · "
@@ -458,9 +548,9 @@ def _finish(
     delivery = send_telegram(
         session,
         (
-            "⚠️ TWD SKU Backfill สำเร็จพร้อมคำเตือน"
+            f"⚠️ {mt.code} SKU Backfill สำเร็จพร้อมคำเตือน"
             if run.status == "success_with_warnings"
-            else "✅ TWD SKU Backfill สำเร็จ"
+            else f"✅ {mt.code} SKU Backfill สำเร็จ"
         ),
         [
             f"SKU: {run.target_sku}",
@@ -544,32 +634,56 @@ def process_sku_backfill_run(session: Session, run_id: int) -> None:
                     batch = session.get(ImportBatch, int(item["batchId"]))
                     if source is None or batch is None:
                         raise ValueError("File Registry หรือ Batch เปลี่ยนระหว่าง Run")
-                    candidate = SourceCandidate(
-                        path=source.source_path,
-                        filename=source.source_filename,
-                        size_bytes=source.size_bytes,
-                        modified_at=source.modified_at,
-                    )
-                    extract = download_twd_extract(
-                        candidate,
-                        username=username,
-                        password=password,
-                    )
-                    if extract.data_date.isoformat() != data_date_text:
-                        raise ValueError("วันที่ในไฟล์เปลี่ยนจาก File Registry")
-                    count = append_twd_sku_facts(
-                        session,
-                        batch,
-                        extract,
-                        run.target_sku,
-                    )
+                    if mt.source_group_code == "HP_MH":
+                        from app.services.hp_mh_automatic_import import (
+                            HpMhPairCandidate,
+                            _download_pair,
+                        )
+
+                        inventory = session.get(SourceFile, int(item["inventorySourceFileId"]))
+                        sales = session.get(SourceFile, int(item["salesSourceFileId"]))
+                        if inventory is None or sales is None:
+                            raise ValueError("คู่ไฟล์ใน Registry เปลี่ยนระหว่าง Run")
+                        pair_extract = _download_pair(
+                            HpMhPairCandidate(
+                                key=inventory.pair_key or str(inventory.detected_data_date),
+                                inventory=SourceCandidate(
+                                    inventory.source_path,
+                                    inventory.source_filename,
+                                    inventory.size_bytes,
+                                    inventory.modified_at,
+                                ),
+                                sales=SourceCandidate(
+                                    sales.source_path,
+                                    sales.source_filename,
+                                    sales.size_bytes,
+                                    sales.modified_at,
+                                ),
+                                superseded=(),
+                            ),
+                            username=username,
+                            password=password,
+                        )
+                        extract = pair_extract.hp if mt.code == "HP" else pair_extract.mh
+                        count = append_hp_mh_sku_facts(session, batch, extract, run.target_sku)
+                    else:
+                        candidate = SourceCandidate(
+                            path=source.source_path,
+                            filename=source.source_filename,
+                            size_bytes=source.size_bytes,
+                            modified_at=source.modified_at,
+                        )
+                        extract = download_twd_extract(
+                            candidate, username=username, password=password
+                        )
+                        if extract.data_date.isoformat() != data_date_text:
+                            raise ValueError("วันที่ในไฟล์เปลี่ยนจาก File Registry")
+                        count = append_twd_sku_facts(session, batch, extract, run.target_sku)
                     outcome = {
                         **item,
                         "status": "imported" if count else "not_found",
                         "message": (
-                            f"เติม {count} Branch สำเร็จ"
-                            if count
-                            else "ไม่พบ SKU นี้ในไฟล์ต้นทาง"
+                            f"เติม {count} Branch สำเร็จ" if count else "ไม่พบ SKU นี้ในไฟล์ต้นทาง"
                         ),
                     }
                     results.append(outcome)
@@ -594,8 +708,7 @@ def process_sku_backfill_run(session: Session, run_id: int) -> None:
                 run.status = "stopped"
                 run.finished_at = bangkok_now()
                 run.summary_message = (
-                    f"หยุดหลังจบไฟล์ปัจจุบัน · ทำแล้ว {len(results)}/{total} วัน "
-                    "สามารถกดทำต่อได้"
+                    f"หยุดหลังจบไฟล์ปัจจุบัน · ทำแล้ว {len(results)}/{total} วัน สามารถกดทำต่อได้"
                 )
                 session.commit()
                 return
@@ -614,7 +727,7 @@ def process_sku_backfill_run(session: Session, run_id: int) -> None:
         session.commit()
         send_telegram(
             session,
-            "❌ TWD SKU Backfill ไม่สำเร็จ",
+            f"❌ {mt.code} SKU Backfill ไม่สำเร็จ",
             [f"SKU: {run.target_sku}", f"สาเหตุ: {run.error_message}"],
             force=True,
         )

@@ -11,6 +11,9 @@ export interface FileShareProfile {
   initialScanCompleted: boolean
   lastRun: ImportRun | null
   nextRunAt: string | null
+  sourceGroup?: string | null
+  sharedProfileOwner?: boolean
+  sharedWith?: string[]
 }
 
 export type ImportRunStatus =
@@ -66,12 +69,28 @@ export interface ImportRun {
   message: string | null
   error: string | null
   results: Array<{
-    path: string
-    filename: string
+    path?: string
+    filename?: string
+    pairKey?: string
+    inventoryFilename?: string | null
+    salesFilename?: string | null
     dataDate: string | null
     status: string
     message: string
-    batchId: number | null
+    batchId?: number | null
+    event?: string | null
+    mt?: Record<string, {
+      rows: number
+      stores: number
+      skus: number
+      returns: number
+      salesQty: number
+      salesAmount: number
+      stockOnHand: number
+      stockValue: number
+      newPendingSkus: number
+      batchId: number | null
+    }>
   }>
 }
 

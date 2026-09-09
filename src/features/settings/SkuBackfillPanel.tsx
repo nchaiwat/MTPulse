@@ -55,7 +55,7 @@ function runStatus(run: ImportRun) {
   return 'ไม่สำเร็จ'
 }
 
-export function SkuBackfillPanel() {
+export function SkuBackfillPanel({ mtCode = 'TWD' }: { mtCode?: 'TWD' | 'HP' | 'MH' }) {
   const [expanded, setExpanded] = useState(false)
   const [options, setOptions] = useState<SkuBackfillOptions | null>(null)
   const [sourceSku, setSourceSku] = useState('')
@@ -68,15 +68,15 @@ export function SkuBackfillPanel() {
 
   const loadOptions = useCallback(async (signal?: AbortSignal) => {
     const [loaded, latestRun] = await Promise.all([
-      fetchSkuBackfillOptions(signal),
-      fetchLatestBackfillRun(signal),
+      fetchSkuBackfillOptions(mtCode, signal),
+      fetchLatestBackfillRun(mtCode, signal),
     ])
     setOptions(loaded)
     setRun(latestRun)
     if (loaded.registry.earliestDate) {
       setCustomStart((current) => current || loaded.registry.earliestDate || '')
     }
-  }, [])
+  }, [mtCode])
 
   const openPanel = async () => {
     setExpanded(true)
@@ -113,7 +113,7 @@ export function SkuBackfillPanel() {
   const needsMapping = Boolean(selectedUnmapped)
 
   const goToMapping = () => {
-    document.getElementById('twd-item-mapping')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    document.getElementById(`${mtCode.toLowerCase()}-item-mapping`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     window.setTimeout(() => document.getElementById('mapping-export-button')?.focus({ preventScroll: true }), 250)
   }
 
@@ -122,7 +122,7 @@ export function SkuBackfillPanel() {
     setBusy('preview')
     setMessage(null)
     try {
-      setPreview(await previewSkuBackfill(sourceSku, selectedStart))
+      setPreview(await previewSkuBackfill(sourceSku, selectedStart, mtCode))
     } catch (error) {
       setPreview(null)
       setMessage({ tone: 'error', text: error instanceof Error ? error.message : 'Preview ไม่สำเร็จ' })
@@ -135,7 +135,7 @@ export function SkuBackfillPanel() {
     setBusy('start')
     setMessage(null)
     try {
-      const created = await startSkuBackfill(sourceSku, selectedStart)
+      const created = await startSkuBackfill(sourceSku, selectedStart, mtCode)
       setRun(created)
       setPreview(null)
       setMessage({ tone: 'success', text: 'ส่งงานเข้าคิวแล้ว ระบบจะเติมเฉพาะวันที่ยังไม่มี SKU นี้' })
@@ -150,7 +150,7 @@ export function SkuBackfillPanel() {
     setBusy('registry')
     setMessage(null)
     try {
-      const created = await refreshSourceRegistry()
+      const created = await refreshSourceRegistry(mtCode)
       setRun(created)
       setPreview(null)
       setMessage({ tone: 'success', text: 'ส่งงานอัปเดต File Registry เข้าคิวแล้ว' })

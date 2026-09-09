@@ -363,8 +363,8 @@ git -c safe.directory=D:/Python/MTPulse status --short --branch
 
 ## 14. Ubuntu Test Server และข้อมูลทดสอบ (29/08/2026)
 
-- Test Server: `wa-mtpulse-test` (`192.168.68.129`), Ubuntu 24.04.4 LTS, i7-1255U, RAM 15 GiB
-- URL: `http://192.168.68.129`; Source: `/opt/mtpulse`; ใช้ `compose.server.yaml`
+- Test Server: `wa-mtpulse-test` (`192.168.10.20`, DHCP Reservation), Ubuntu 24.04.4 LTS, i7-1255U, RAM 15 GiB
+- URL: `http://192.168.10.20`; Source: `/opt/mtpulse`; ใช้ `compose.server.yaml`
 - Docker Engine 29.7.2 / Compose 5.5.0; PostgreSQL 17, API และ Web healthy
 - Deployment commit เริ่มต้น: `271beb2 Add Ubuntu server Docker deployment`
 - ย้าย PostgreSQL จาก Local สำเร็จ พร้อม Settings encryption key; ตรวจ Bot Token decrypt ได้โดยไม่แสดงค่าจริง
@@ -468,3 +468,144 @@ git -c safe.directory=D:/Python/MTPulse status --short --branch
 - เทียบกับการระบุ 31/08/2026 โดยตรง: items, branches, summary และ column totals ตรงกันทั้งหมด
 - Regression: Backend 72 tests, Frontend 42 tests, Ruff, ESLint และ production build ผ่าน
 - ระหว่าง Deploy Docker Desktop หยุดทำงานและตอบ Engine 500; เปิด Docker Desktop ใหม่แล้ว db/api/worker กลับมาปกติ และ Vite 5173 ตอบ 200
+
+## 21. Event-scoped Import Notification และ Daily Technical Health (06/09/2026)
+
+สถานะงาน:
+
+- Implement, review, commit และ push ไป `origin/main` แล้วที่ commit `d489997 Add event-scoped alerts and technical health monitoring`
+- Deploy ไป WA-MTPULSE-TEST `192.168.10.20` สำเร็จแล้วเมื่อ 07/09/2026; Server อยู่ที่ commit `d489997`
+- PostgreSQL/API/Worker/Web ทำงานปกติ, API และ Web healthy, Alembic อยู่ที่ `d5e6f7a8b9c0 (head)`
+
+สิ่งที่เปลี่ยน:
+
+- Telegram ของ Automatic Import ใช้ Event ของ Run ปัจจุบันในการสรุปเท่านั้น ไม่ยก Warning/Failed เก่าจาก File Registry มารวมในหัวข้อหรือจำนวนของข้อความรอบใหม่
+- Run History, Source File Registry และ Monitoring ยังคงข้อมูลสถานะเดิมครบสำหรับ Audit; ไม่มีการลบหรือเปลี่ยน Fact/Batch/Mapping
+- ไฟล์ Failed/Unsupported ที่ไม่มี checksum แต่ขนาดและ modified time ไม่เปลี่ยนจะถูกจัดเป็น `unchanged` เพื่อไม่เปิดอ่านและแจ้งซ้ำทุก Run โดยเฉพาะไฟล์ 0 bytes
+- เพิ่ม Daily Technical Health ผ่าน worker ค่าเริ่มต้นทุกวันเวลา `07:00` Asia/Bangkok แม้ระบบปกติ
+- เพิ่ม Critical alert, Cooldown ค่าเริ่มต้น 60 นาที และ Recovery notification พร้อม persisted state ป้องกันส่งซ้ำหลัง worker restart
+- ค่าเริ่มต้น Threshold: CPU 80/95, RAM 80/90, Disk 80/90, PostgreSQL Connections 80/95 และ Dead tuples 10/20 เปอร์เซ็นต์
+- หน้า System Settings ปรับเวลา เปิด/ปิด Daily/Critical/Recovery, Cooldown และ Threshold ได้ โดยใช้ปุ่ม `บันทึกการตั้งค่าระบบ` ปุ่มเดียวและบันทึกเฉพาะส่วนที่เปลี่ยน
+- หน้า Monitoring เพิ่ม CPU/RAM/Disk, Server capacity/Uptime, PostgreSQL technical metrics และ Worker heartbeat
+- Host metrics อ่านจาก Linux `/proc` และ filesystem ที่ container มองเห็น; ค่าที่อ่านไม่ได้ต้องแสดง `ไม่พร้อมใช้งาน`/Unknown ไม่ตีความเป็น Healthy
+- ไม่ได้แก้ Function/Logic ของหน้า TWD Performance
+
+Migration:
+
+- Alembic head ใหม่ `d5e6f7a8b9c0` เพิ่ม nullable host metric fields ใน `monitoring_snapshots`
+- API container รัน `python -m alembic upgrade head` ก่อนเริ่ม Uvicorn ตาม `compose.server.yaml`
+- ตรวจ Alembic แล้วมี head เดียว: `d5e6f7a8b9c0`
+
+ผลตรวจคุณภาพล่าสุด:
+
+- Backend full suite: 87 tests ผ่าน
+- Backend targeted final: 18 tests ผ่าน
+- Frontend full suite: 53 tests ผ่าน
+- Ruff, ESLint, production build และ `git diff --check` ผ่าน
+- Pytest มี warning เรื่องสร้าง cache ที่ `backend/.pytest_cache` บน Windows ไม่ได้ แต่ไม่กระทบผลทดสอบ; full suite ผ่านเมื่อระบุ `--basetemp` ภายใน workspace
+- Browser visual smoke test ยังไม่ได้ทำ เพราะ browser-control runtime บนเครื่องพัฒนาเริ่มไม่ได้จาก Windows sandbox error; ต้อง smoke test Settings และ Monitoring หลัง Deploy
+
+ขั้นตอนเริ่มงานครั้งถัดไป:
+
+1. อ่าน `PRD.md`, `HANDOFF.md`, `MEMORY.md`, `PROJECT_CONTEXT.md` และ `implementation_plan.md`
+2. ตรวจ Local ด้วย `git -c safe.directory=D:/Python/MTPulse status --short --branch` และยืนยัน `origin/main` มี `d489997`
+3. รักษาไฟล์ค้างเดิมของ User: `INFRASTRUCTURE_AND_DATABASE_SIZING.md` และไฟล์ temp ใต้ `backend/`; ห้ามลบหรือรวมใน commit โดยไม่ตรวจที่มา
+4. ทดสอบ `ssh -i C:\Users\Chaiwat.N\.ssh\mtpulse_test_automation_v2_ed25519 it-admin@192.168.10.20`
+5. เมื่อเข้า Server ได้ ให้ตรวจ `/opt/mtpulse`, `git status`, commit ปัจจุบัน และ `docker compose --env-file .env.server -f compose.server.yaml ps`
+6. สำรอง PostgreSQL และตรวจ backup ก่อน pull/rebuild ห้ามแสดง Secret จาก `.env.server`
+7. Pull `origin/main`, rebuild/recreate `api`, `worker`, `web`; migration จะทำงานตอน API start
+8. ตรวจ `docker compose ps`, API `/health`, Web HTTP, Alembic current, worker logs และยืนยันว่าไม่มี migration/import error
+9. Smoke test หน้า System Settings ว่าโหลดค่าเริ่มต้น 07:00 และบันทึก/refresh แล้วยังคงค่า จากนั้นตรวจหน้า Monitoring ว่ามี Host metrics และ heartbeat
+10. อย่ากด Initial Scan, Run ทันที หรือเปิด Schedule Import แทน User เว้นแต่ได้รับอนุมัติเฉพาะเจาะจง
+
+ข้อสังเกตหลัง Deploy:
+
+- Worker ทำ catch-up Daily Technical Health ของวันที่ 07/09/2026 สำเร็จ และ persisted `technical_last_daily_sent_date=2026-09-07`
+- Smoke test Monitoring เวลา 07:52 พบ Host healthy: CPU 2.2%, RAM 8.51%, Disk 7.21%, Technical metrics 5 รายการ และ Worker heartbeat ทำงาน
+- Backup ก่อน Deploy: `/opt/mtpulse/backups/mtpulse-before-d489997-20260907.dump`, ขนาดประมาณ 97 MB, ตรวจ `pg_restore --list` ผ่าน, SHA-256 `b3a7b1049697ba051906fb5bac4e943e68b80eae08eb256746887671107b6996`
+- พบประเด็นเร่งด่วน: HTTP client logger เขียน Telegram request URL ซึ่งมี Bot Token ลง Docker log เมื่อส่งข้อความ ต้องแก้ให้ไม่ log URL/Token และควร Rotate Bot Token ผ่าน BotFather แล้วบันทึกค่าใหม่ใน System Settings; ห้ามคัดลอก Token เดิมลงเอกสารหรือข้อความ
+- ระบบนี้ไม่ใช่ External Watchdog: หาก Server, Network หรือ worker ดับ ระบบไม่สามารถส่ง Telegram จากตัวเองได้ การไม่มี Daily message ตามเวลาคือสัญญาณให้ Admin เข้าไปตรวจสอบ
+- Visual redesign เต็มระบบด้วย Antigravity ยังเป็น Phase ถัดไป ต้องทำใน isolated worktree/branch และห้ามแก้ Backend/API/State/Handlers/TWD Performance logic
+
+## 22. Manual Technical Health และ TWD Single-SKU Backfill (07/09/2026)
+
+สถานะงาน:
+
+- Implement, review, test, commit และ push ไป `origin/main` แล้วที่ commit `ca8d3c1 Add manual health check and SKU backfill`
+- Deploy ไป WA-MTPULSE-TEST `192.168.10.20` สำเร็จ; Server อยู่ที่ commit `ca8d3c1`
+- PostgreSQL/API/Worker/Web ทำงานปกติ, API และ Web healthy, Alembic อยู่ที่ `e6f7a8b9c0d1 (head)`
+- ก่อน Deploy ยืนยันว่าไม่มี Import Run ทำงาน และหลัง Deploy ยังคง `ACTIVE_RUNS=0`; ไม่ได้กด Initial Scan, Import, Registry Refresh หรือ Backfill แทน User
+
+สิ่งที่เปลี่ยน:
+
+- หน้า System Settings มีปุ่ม `ตรวจสอบและส่งทันที` สำหรับเก็บ Technical Health สดและส่งรายงานผ่าน Telegram Bot เดิม โดยไม่เลื่อนรอบ Daily schedule และไม่เปลี่ยน Critical cooldown/recovery state
+- หน้า Settings > TWD > Item Mapping มีเครื่องมือ Backfill แบบซ่อนไว้ก่อน ใช้เติมประวัติย้อนหลังได้ครั้งละหนึ่ง SKU ที่ Mapping ยืนยันและ Active แล้ว
+- Backfill เลือกตั้งแต่วันแรกใน File Registry หรือกำหนดวันเริ่มเอง, มี Preview ก่อนยืนยัน, Progress, Safe Stop หลังจบไฟล์ปัจจุบัน และ Resume เฉพาะวันที่เหลือ
+- Backfill เพิ่มเฉพาะ SKU เป้าหมายเข้า ImportBatch ปกติที่มีอยู่แล้ว; ถ้าวันใดมี Fact ของ SKU นั้นแล้วจะ Skip ทั้งวันและไม่ Overwrite
+- วันที่ไม่มี ImportBatch, ไฟล์ไม่พร้อมใช้ หรือ checksum ขัดกับ Batch จะ Skip พร้อมบันทึกเหตุผล ไม่สร้าง Partial Batch
+- เพิ่ม Metadata-only File Registry Refresh; ตรวจไฟล์แต่ไม่ Import Fact
+- เมื่อ Import Mapping ที่ Confirmed และ Active ระบบจะ Activate SKU Interest ของ SKU นั้นพร้อม Audit เพื่อให้ Backfill ใช้งานได้
+- หน้า Monitoring แสดงประเภท Registry/Backfill, สถานะ Stop/Resume และเปิดดูผลรายวันของ Backfill ได้
+- ไม่ได้แก้ Layout หรือ Function/Logic ของหน้า TWD Performance
+
+ความปลอดภัยและการกู้คืน:
+
+- Backup ก่อน Migration: `/opt/mtpulse/backups/mtpulse_pre_ca8d3c1_20260907.dump`
+- ขนาดประมาณ 97 MB, ตรวจ archive list ผ่าน, SHA-256 `4329e54800dad12cd55d4a5d9c53857c8f4ea5c3c18466bd33cdca175380cf14`
+- Migration เพิ่ม `target_sku`, `range_start`, `range_end`, `stop_requested_at` ใน `import_runs` และปรับ unique active-run index ให้ครอบคลุม `stop_requested`
+
+ผลตรวจคุณภาพ:
+
+- Backend: Ruff ผ่าน และ Pytest 95 tests ผ่าน
+- Frontend: ESLint ผ่าน, Vitest 56 tests ผ่าน และ production build ผ่าน
+- Server smoke test: `/health` = 200/ok, หน้าเว็บ = 200, Backfill options endpoint = 200, schema/index ใหม่ครบ และไม่พบ Error/Exception ใน log หลัง Deploy
+- Browser visual smoke test จากเครื่องพัฒนายังทำไม่ได้เพราะ browser-control runtime ติด Windows sandbox error; ไม่ใช่ Error ของแอปบน Server
+
+ข้อควรจำ:
+
+1. การกด `ตรวจสอบและส่งทันที` จะส่ง Telegram จริงทันที แต่ไม่มีผลต่อรายงานประจำวัน
+2. ก่อนเริ่ม Backfill ให้ตรวจ Mapping/SKU Interest, กด Preview และอ่านจำนวน Import/Skip/Conflict ก่อนยืนยัน
+3. ห้ามสั่ง Backfill หรือ Registry Refresh แทน User โดยไม่ได้รับอนุมัติเฉพาะเจาะจง
+4. Antigravity visual-only redesign ยังเป็น Phase ถัดไป และต้องแยก branch/worktree พร้อมข้อห้ามแก้ Logic เดิม
+
+## 23. แสดง SKU ที่ยังไม่ Mapping ใน Backfill Picker (07/09/2026)
+
+- Implement และ Deploy ไป WA-MTPULSE-TEST แล้วที่ commit `219aaec Show unmapped SKUs in backfill picker`
+- Dropdown แบ่งเป็น `พร้อม Backfill — Mapping แล้ว` และ `ต้อง Mapping ก่อน`; ครอบคลุม SKU Interest สถานะ Active, Pending และ Ignored ที่ยังไม่มี Confirmed Active Mapping
+- SKU ที่ยังไม่ Mapping เลือกดูได้ แต่ช่วงวันที่และปุ่ม Preview ถูกปิด พร้อมเหตุผลและปุ่มเลื่อนไปยัง Item Mapping
+- หลัง Import Mapping สำเร็จ แผง Backfill จะ Reset และโหลด options ล่าสุดเมื่อเปิดใหม่; Confirmed Active Mapping จะ Activate SKU Interest เดิมโดยอัตโนมัติ
+- Backend ยังคงปฏิเสธ Preview/Run หาก Mapping ไม่ใช่ Confirmed และ Active จึงไม่สามารถข้ามกฎผ่าน API ได้
+- ไม่มี Migration และไม่ได้เปลี่ยน Fact, ImportBatch, Mapping หรือ Logic รายงาน TWD
+- ก่อน Deploy `ACTIVE_RUNS=0`; ไม่ได้เริ่ม Initial Scan, Registry Refresh, Import หรือ Backfill
+- Server smoke test: commit `219aaec`, API/Web healthy, Frontend และ options endpoint ตอบ 200, `unmappedSkus` อยู่ใน response, Alembic `e6f7a8b9c0d1 (head)`, ไม่มี Error/Exception หลัง Deploy
+- Regression: Backend full suite 96 tests, Frontend full suite 57 tests, targeted Backend 6 tests, targeted Frontend 3 tests, ESLint และ Production Build ผ่าน
+# Update 8 September 2026 — TWD Multi-range + TOM/TOD Prototype
+
+- TWD Performance รองรับ Date ranges สูงสุด 12 ช่วงผ่าน repeated `date_range=from,to`; Server ตรวจรูปแบบ, จำนวน, From/To และ Inclusive overlap
+- ช่วงวันที่ถูกใช้เป็น Union เดียวกันใน Matrix, Summary, Pagination, Item detail และ Excel; Gap ไม่ถูกนำมารวม
+- TWD Inventory เพิ่ม Sticky TOM/TOD หลัง WA Description (หรือ WA Item เมื่อซ่อน Description) และ Header AVG จาก SKU ทั้งหมดที่ผ่าน Filter
+- สูตร: Positive Sales Qty ของสามเดือนเต็มก่อน Reference Month ÷ 3 ปัด HALF_UP 2 ตำแหน่ง; Stock ÷ Average = TOM; TOM × 30 = TOD โดยปัดทุกขั้น
+- Average sales = 0, ไม่มี Stock row ใน Reference Date หรือ Stock ติดลบ แสดง `—` และไม่นับ AVG
+- แก้คอลัมน์ขวาสุดโดย sync top scrollbar ด้วยความกว้าง Vertical Scrollbar ที่วัดจริงและใช้ stable gutter
+- Feature นี้เปิดเฉพาะ TWD; HP/MH response และ UI contract เดิมไม่เปลี่ยน
+- Verification: frontend 69 tests, backend 114 tests, focused App/Excel parity และ local PostgreSQL smoke ผ่าน; ไม่พบ measurable turnover overhead ใน warm comparison
+- ยังไม่ได้ Push หรือ Deploy ไป WA-MTPULSE-TEST ในรอบนี้
+# TWD Inventory Month และ Visual Hierarchy — 8 กันยายน 2026
+
+- TWD Inventory มี View Month แล้ว โดย Backend ใช้วันล่าสุดที่มีข้อมูลของแต่ละเดือนเป็น Stock Snapshot และไม่รวม Stock ข้ามวัน
+- Frontend ส่ง `report_mode=inventory` เพื่อแยก Snapshot semantics จาก Monthly Sales Summary
+- Excel Inventory Month ใช้ข้อมูลและช่วงเดือนเดียวกับ App พร้อม TOM/TOD
+- Visual layer เฉพาะ TWD ปรับ Font hierarchy, Control/KPI sizing, Navy matrix header และ Selected state โดยไม่เปลี่ยน Logic
+- HP/MH ยังไม่เปิด Inventory Month และไม่รับ Visual override รอบนี้
+- Verification: Backend 115 tests, Frontend 70 tests, lint/build ผ่าน; Local smoke Jul–Aug 2026 แสดง Stock 642/638 สำหรับ SKU ตัวอย่างและ Excel HTTP 200
+
+# TWD Performance Tuning — 8 กันยายน 2026
+
+- ตรวจพบ fixed query cost หลักจากการสร้าง Branch list ด้วยการ scan `sales_inventory_facts` ของ TWD ประมาณ 4.5 ล้าน rows; เปลี่ยนไปอ่าน `monthly_sales_summaries` และกรองด้วย Active Branch Mapping โดย fallback ไป Fact เฉพาะกรณี summary ยังไม่มี
+- Branch list ยังคง semantics เดิม: แสดงเฉพาะ Branch ที่มีข้อมูลและ Mapping; local smoke ยืนยัน `branches=90` ตรงกับ `meta.totalBranches=90`
+- TOM/TOD ที่ไม่ได้กรอง Branch ใช้ `daily_sku_summaries` (`gross_sales_qty` และ Stock snapshot) เมื่อ summary coverage ครบ; กรณีกรอง Branch ยังใช้ Fact เดิมเพื่อรักษาความถูกต้อง
+- Frontend memoize `allPoints`, matrix keys/rows/max และ matrix body; การเปิด/ปิด Description ใช้ CSS ซ่อน cell และไม่สร้าง numeric cells หลายพันช่องใหม่ รวมทั้งตัด forced layout dependency ของ Description toggle
+- Local API benchmark page size 100 หลังแก้: Sales Branch Month 210–565 ms, Inventory Branch + TOM 390–572 ms, Inventory Date Aug 1.24–1.47 s, Inventory Month All 1.22–1.27 s; ก่อนแก้ warm cases อยู่ประมาณ 0.95–2.36 s และ cold สูงสุดประมาณ 3.94 s
+- Verification: Backend full 115 tests + Ruff ผ่าน; focused performance/export 21 tests ผ่าน; Frontend 70 tests + ESLint + production build ผ่าน; `git diff --check` ผ่าน
+- Rebuild เฉพาะ Local API แล้วเพื่อ benchmark; ยังไม่ได้ Push หรือ Deploy ไป WA-MTPULSE-TEST
+- Browser visual/profiler smoke ยังทำไม่ได้เพราะ browser-control runtime บน Windows ติด `helper_unknown_error`; API behavior และ automated UI regression ผ่านครบ

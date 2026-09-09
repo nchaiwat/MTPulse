@@ -10,9 +10,13 @@ from sqlalchemy.orm import Session
 from app import auth
 from app.api.fileshare_settings import (
     FileShareSettingsUpdate,
+    FileShareTestRequest,
     SourceProfileUpdate,
     get_fileshare_password,
     update_fileshare_settings,
+)
+from app.api.fileshare_settings import (
+    test_fileshare_settings as _test_fileshare_connection,
 )
 from app.database import Base
 from app.models import AuditEvent, ModernTrade
@@ -165,3 +169,55 @@ def test_development_auth_stub_and_ad_boundary(monkeypatch) -> None:
     with pytest.raises(HTTPException) as error:
         auth.require_system_admin()
     assert error.value.status_code == 503
+
+
+def test_shared_hp_mh_connection_tests_the_physical_path_once(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    captured: list[list[tuple[str, str, str]]] = []
+    monkeypatch.setattr(
+        "app.api.fileshare_settings.test_paths",
+        lambda **values: captured.append(values["profiles"]) or [],
+    )
+    monkeypatch.setattr(
+        "app.api.fileshare_settings.record_test",
+        lambda session, results, actor: "success",
+    )
+    audit_model = AuditEvent
+    monkeypatch.setattr(
+        "app.api.fileshare_settings.AuditEvent",
+        lambda **values: audit_model(id=1, **values),
+    )
+    with Session(engine) as session:
+        session.add_all(
+            [
+                ModernTrade(
+                    id=1,
+                    code="HP",
+                    name="HomePro",
+                    source_group_code="HP_MH",
+                ),
+                ModernTrade(
+                    id=2,
+                    code="MH",
+                    name="MegaHome",
+                    source_group_code="HP_MH",
+                ),
+            ]
+        )
+        session.commit()
+        request = FileShareTestRequest(
+            base_unc=r"\\server\share",
+            domain="WA",
+            username="user",
+            password="secret",
+            profiles=[
+                SourceProfileUpdate(code="HP", subfolder="HP_MH", enabled=True),
+                SourceProfileUpdate(code="MH", subfolder="HP_MH", enabled=True),
+            ],
+        )
+
+        response = _test_fileshare_connection(request, session, "admin")
+
+    assert response["status"] == "success"
+    assert captured == [[("HP", "HomePro", "HP_MH")]]

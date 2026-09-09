@@ -1,10 +1,18 @@
 from datetime import date
+from decimal import Decimal
 
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.api.performance import _month_bounds, _selected_branch_ids, performance, sku_options
+from app.api.performance import (
+    _month_bounds,
+    _normalized_date_ranges,
+    _selected_branch_ids,
+    _turnover_values,
+    performance,
+    sku_options,
+)
 from app.database import Base
 from app.models import (
     BranchMapping,
@@ -32,6 +40,141 @@ def test_selected_branch_ids_supports_multi_select_and_legacy_parameter() -> Non
     assert _selected_branch_ids("60020", None) == ["60020"]
     assert _selected_branch_ids("60020", "60016,60923") == ["60016", "60923"]
     assert _selected_branch_ids(None, None) == []
+
+
+def test_date_ranges_reject_overlap_but_allow_adjacent_days() -> None:
+    assert _normalized_date_ranges(
+        ["2026-09-11,2026-09-15", "2026-09-01,2026-09-10"], None, None
+    ) == [
+        (date(2026, 9, 1), date(2026, 9, 10)),
+        (date(2026, 9, 11), date(2026, 9, 15)),
+    ]
+    with pytest.raises(Exception, match="ทับ"):
+        _normalized_date_ranges(
+            ["2026-09-01,2026-09-10", "2026-09-10,2026-09-15"], None, None
+        )
+
+
+def test_turnover_rounds_each_step_and_rejects_invalid_stock() -> None:
+    assert _turnover_values(Decimal("10"), Decimal("5")) == (
+        Decimal("5.99"),
+        Decimal("179.70"),
+    )
+    assert _turnover_values(Decimal("-1"), Decimal("5")) is None
+    assert _turnover_values(Decimal("10"), Decimal("0")) is None
+
+
+def test_multi_range_union_and_turnover_use_three_full_previous_months() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    fact_dates = [
+        date(2026, 6, 1),
+        date(2026, 7, 1),
+        date(2026, 8, 1),
+        date(2026, 8, 2),
+        date(2026, 9, 8),
+    ]
+    quantities = [1, 3, 1, -4, 0]
+    with Session(engine) as session:
+        session.add(ModernTrade(id=1, code="TWD", name="Thai Watsadu"))
+        session.add(
+            ItemMapping(
+                id=1,
+                modern_trade_id=1,
+                source_sku="SKU-A",
+                source_description="Item A",
+                wa_item_code="WA-A",
+                wa_item_description="WA Item A",
+                status="confirmed",
+                effective_from=date(2026, 1, 1),
+                changed_by="test",
+            )
+        )
+        session.add(
+            BranchMapping(
+                id=1,
+                modern_trade_id=1,
+                source_branch_code="B1",
+                source_branch_description="Branch 1",
+                wa_branch_code="WA-B1",
+                wa_branch_description="Branch 1",
+                status="confirmed",
+                effective_from=date(2026, 1, 1),
+                changed_by="test",
+            )
+        )
+        for index, (data_date, qty) in enumerate(
+            zip(fact_dates, quantities, strict=True), start=1
+        ):
+            session.add(
+                ImportBatch(
+                    id=index,
+                    modern_trade_id=1,
+                    status="imported",
+                    data_date=data_date,
+                    source_path=f"{data_date}.xlsx",
+                    source_filename=f"{data_date}.xlsx",
+                    checksum_sha256=str(index) * 64,
+                    row_count=1,
+                    store_count=1,
+                    sku_count=1,
+                    negative_row_count=1 if qty < 0 else 0,
+                    source_amount=0,
+                    amount=0,
+                    sales_qty=qty,
+                    stock_on_hand=10 if data_date == date(2026, 9, 8) else 0,
+                    reported_stock_on_hand=10
+                    if data_date == date(2026, 9, 8)
+                    else 0,
+                    stock_on_order=0,
+                )
+            )
+            session.add(
+                SalesInventoryFact(
+                    id=index,
+                    modern_trade_id=1,
+                    batch_id=index,
+                    data_date=data_date,
+                    source_branch_code="B1",
+                    source_branch_name="Branch 1",
+                    source_sku="SKU-A",
+                    source_description="Item A",
+                    source_amount=0,
+                    amount=0,
+                    sales_qty=qty,
+                    stock_on_hand=10 if data_date == date(2026, 9, 8) else 0,
+                    stock_on_order=0,
+                )
+            )
+        session.commit()
+        for data_date in fact_dates:
+            refresh_daily_sku_summary(session, 1, data_date)
+        session.commit()
+
+        result = performance(
+            session=session,
+            date_range=[
+                "2026-06-01,2026-06-30",
+                "2026-08-01,2026-09-08",
+            ],
+            page=1,
+            page_size=25,
+            branch_id=None,
+            mapping_status=None,
+            hide_unmapped=False,
+            search=None,
+            grain="day_total",
+            period_month=None,
+            include_turnover=True,
+        )
+
+    assert "2026-07-01" not in result["dates"]
+    assert result["items"][0]["tom"] == 5.99
+    assert result["items"][0]["tod"] == 179.7
+    assert result["inventorySummary"]["averageTom"] == 5.99
+    assert result["inventorySummary"]["averageTod"] == 179.7
+    assert result["inventorySummary"]["turnoverSkuCount"] == 1
+    assert result["inventorySummary"]["turnoverReferenceDate"] == "2026-09-08"
 
 
 def test_sales_basis_keeps_net_default_and_excludes_negative_sales_in_gross() -> None:
@@ -417,11 +560,13 @@ def test_performance_search_includes_mapping_without_facts() -> None:
             "twdDescription": "สินค้าใหม่",
             "waItem": "FAE09-W6612-100100",
             "waDescription": "รายละเอียดสินค้าใหม่",
-            "mappingStatus": "pending",
-            "itemType": "normal",
-            "points": [],
-        }
-    ]
+                "mappingStatus": "pending",
+                "itemType": "normal",
+                "points": [],
+                "isSho": False,
+                "isPro": False,
+            }
+        ]
     assert result["summary"]["amount"] == 0
     assert result["summary"]["qty"] == 0
 
@@ -559,6 +704,25 @@ def test_branch_month_uses_current_mapping_for_historical_facts() -> None:
                     reported_stock_on_hand=0,
                     stock_on_order=0,
                 ),
+                ImportBatch(
+                    id=3,
+                    modern_trade_id=1,
+                    status="imported",
+                    data_date=date(2026, 7, 15),
+                    source_path="july-earlier.xlsx",
+                    source_filename="july-earlier.xlsx",
+                    checksum_sha256="3" * 64,
+                    row_count=1,
+                    store_count=1,
+                    sku_count=1,
+                    negative_row_count=0,
+                    source_amount=0,
+                    amount=0,
+                    sales_qty=0,
+                    stock_on_hand=0,
+                    reported_stock_on_hand=0,
+                    stock_on_order=0,
+                ),
                 ItemMapping(
                     id=1,
                     modern_trade_id=1,
@@ -610,6 +774,21 @@ def test_branch_month_uses_current_mapping_for_historical_facts() -> None:
                     sales_qty=0,
                     stock_on_hand=20,
                     stock_on_order=7,
+                ),
+                SalesInventoryFact(
+                    modern_trade_id=1,
+                    id=3,
+                    batch_id=3,
+                    data_date=date(2026, 7, 15),
+                    source_branch_code="HISTORICAL-BRANCH",
+                    source_branch_name="สาขาต้นทาง",
+                    source_sku="HISTORICAL-ITEM",
+                    source_description="สินค้ากรกฎาคม",
+                    source_amount=0,
+                    amount=0,
+                    sales_qty=0,
+                    stock_on_hand=4,
+                    stock_on_order=1,
                 ),
             ]
         )
@@ -671,6 +850,20 @@ def test_branch_month_uses_current_mapping_for_historical_facts() -> None:
             period_month=None,
             latest_only=True,
         )
+        inventory_month_result = performance(
+            session,
+            date_from=None,
+            date_to=None,
+            page=1,
+            page_size=25,
+            branch_id=None,
+            mapping_status=None,
+            hide_unmapped=False,
+            search=None,
+            grain="month",
+            period_month=None,
+            report_mode="inventory",
+        )
 
     assert result["meta"]["totalSkus"] == 1
     assert result["meta"]["totalBranches"] == 1
@@ -690,6 +883,7 @@ def test_branch_month_uses_current_mapping_for_historical_facts() -> None:
             "qty": 2.0,
             "stockOh": 0,
             "stockOnOrder": 0,
+            "stockValue": 0,
         }
     ]
     assert inventory_snapshot_result["dates"] == ["2026-08-16"]
@@ -701,7 +895,29 @@ def test_branch_month_uses_current_mapping_for_historical_facts() -> None:
             "qty": 0.0,
             "stockOh": 20.0,
             "stockOnOrder": 7.0,
+            "stockValue": 0.0,
         }
+    ]
+    assert inventory_month_result["dates"] == ["2026-07", "2026-08"]
+    assert inventory_month_result["items"][0]["points"] == [
+        {
+            "date": "2026-07",
+            "branchId": "all",
+            "amount": 100.0,
+            "qty": 2.0,
+            "stockOh": 10.0,
+            "stockOnOrder": 3.0,
+            "stockValue": 0.0,
+        },
+        {
+            "date": "2026-08",
+            "branchId": "all",
+            "amount": 0.0,
+            "qty": 0.0,
+            "stockOh": 20.0,
+            "stockOnOrder": 7.0,
+            "stockValue": 0.0,
+        },
     ]
 
 

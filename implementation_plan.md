@@ -1026,3 +1026,460 @@ Backend ในระยะถัดไปจะแยกขอบเขตเช
 ## Open Decision Before Implementation
 
 - ไม่มี Business Rule ค้างสำหรับ Phase 1; รอ Product Owner อนุมัติ PRD/Implementation Plan ก่อนเริ่ม Code
+
+# Shared HP/MH FileShare Import และ Dashboard — Implementation Plan
+
+## Architecture และ Migration
+
+- เพิ่ม Shared Source Group สำหรับ `HP_MH` และผูกสมาชิก HP/MH โดยเก็บ configuration/schedule เพียงชุดเดียว; seed ModernTrade `HP`/`MH` แบบ idempotent
+- เพิ่ม Shared Import Run/Pair registry เพื่อให้ source file หนึ่งชุดถูก discover/download/parse ครั้งเดียว และเก็บ per-MT outcome ภายใน run เดียว
+- เพิ่ม source kind, pair timestamp, business fingerprint, selected/superseded state และ coverage metadata ที่จำเป็นผ่าน Alembic migration โดยไม่แก้ uniqueness/behavior เดิมของ TWD
+- ใช้ transaction boundary ต่อ Data Date ครอบคลุม HP/MH batches, facts, interest discovery และ summaries; corrected-day replacement ลบ/สร้างเฉพาะสอง MT และวันเป้าหมายใน transaction เดียว
+
+## Parser และ Import Pipeline
+
+- เพิ่ม `hp_mh` importer สำหรับ ZIP/CSV: validate metadata/header, normalize Excel-style quoted values, parse internal date และ classify Inventory/Sales
+- Pair candidates ตาม Data Date + kind; เลือก generation timestamp ล่าสุด, mark older candidates superseded และ validate internal dates match
+- Split branch prefix S/M, aggregate Sales และ sparse Inventory เป็น grain MT × Date × Branch × SKU; merge metrics ก่อน reconcile
+- คำนวณ Sales Ex.VAT ด้วย VAT policy เดิม, เก็บ gross/source amount, Return และ Stock Value source โดยไม่สร้าง Stock On Order ปลอม
+- Discover SKU candidate เฉพาะ Sale Out และ apply interest/mapping แยก MT; store coverage ของ Inventory แยกจาก sparse facts
+- เพิ่ม initial, incremental 7-day + failed retry และ date-range rescan paths พร้อม business fingerprint/idempotency/reimport audit
+
+## API, Worker และ Notification
+
+- Generalize automatic-import dispatch จาก TWD-only เป็น strategy ตาม source group โดยรักษา TWD path เดิม
+- เพิ่ม Shared HP/MH run endpoints/status payload และ per-stage progress; scheduler enqueue เพียงหนึ่ง run ต่อ shared schedule
+- Settings API อ่าน/บันทึก Shared profile หนึ่งจุดและคืน child status/counters ของ HP/MH; connection test ทดสอบ shared pathครั้งเดียว
+- Telegram formatter ส่งหนึ่ง event-scoped message มี HP/MH sections และไม่รวม registry event เก่า
+
+## Frontend
+
+- เพิ่ม shared source group card ใน System Settings พร้อม visual grouping, shared controls และ HP/MH child cards
+- เพิ่ม HP/MH routes/menu โดย parameterize/reuse TWD Dashboard components และ API contract; ซ่อน Stock On Order และใช้ label Stock Value (Source) สำหรับ HP/MH
+- เพิ่มเมนูและ route `รายงาน > HomePro (HP)` และ `รายงาน > MegaHome (MH)` โดย parameterize หน้า Performance เดิมแทนการคัดลอก component ทั้งหน้า
+- สร้าง Metric capability จาก API ต่อ MT: TWD ใช้ความสามารถเดิม; HP/MH Sales แสดง Amount Ex.VAT/Qty และ Inventory แสดง Stock On Hand/Stock Value (Source) โดยไม่แสดง Stock On Order ที่ไม่มี Source
+- แยก source-field adapter (`Sales.QTY`, `Sales.VALUE`, `Inventory.QTY`, `Inventory.AMT`) ออกจาก report contract เพื่อรองรับ field ใหม่ภายหลังโดยไม่เปลี่ยน URL/UI contract หรือ Fact metric เดิม
+- เพิ่ม loading/error/empty/progress/superseded/reimport states และ record counts แยก MT โดยไม่เปลี่ยน TWD presentation/behavior
+
+## Tests และ Rollout
+
+- Parser tests จาก fixture ย่อส่วนที่สะท้อน ZIP จริง: metadata/date, S/M split, negative rows, totals, zero sparse, malformed/missing/mismatched pair
+- Service tests: atomic rollback, per-day continuation, latest pair selection, rename duplicate, corrected replacement, interest isolation, mapping pending และ incremental window
+- API/UI tests: shared schedule/run, child counters, HP/MH routes/metrics, Telegram sections และ TWD regression
+- Run Alembic upgrade/downgrade rehearsal, backend full suite + Ruff, frontend tests + ESLint + production build
+- Deploy ไป WA-MTPULSE-TEST หลัง commit/push และ backup DB; smoke connection/preview ก่อน Initial Scan จริง และ Rollback application/migration หาก reconciliation ไม่ผ่าน
+
+## Implementation Order
+
+1. Migration/models + parser fixtures/tests
+2. Pairing, fingerprint, atomic import และ summaries
+3. Worker/API/scheduler/Telegram
+4. Settings UI + HP/MH report pages
+5. HP/MH dashboards
+6. Full regression, migration rehearsal, commit/push/deploy และ server smoke test
+# Settings Control Plane Standard — Implementation Plan
+
+## Goals และ Non-goals
+
+- สร้างหน้า Settings หน้าเดียวที่มี Scope tabs `Global / TWD / HP / MH / GH / SCG / HH / TA`
+- ย้ายการจัดวาง UI ให้ตรงตาม ownership ของค่า โดยคง API และ business behavior เดิมเท่าที่ทำได้
+- สร้าง reusable Settings template สำหรับ Section, status, disabled capability และ save feedback
+- ไม่แก้หน้าอื่น, ไม่เพิ่ม Window Asia และไม่เปิด capability ที่ backend ยังไม่รองรับ
+
+## Visual Direction
+
+- คง `Operations Ledger` จาก `design-system/mt-pulse/MASTER.md`: สุขุม, dense, เน้นข้อมูลและสถานะมากกว่างานตกแต่ง
+- Signature element คือ `Scope Rail Tabs` แนวนอนใต้ Page intro: Global แยกจากกลุ่ม Modern Trade อย่างชัดเจน พร้อม readiness badge และ shared-source marker
+- ใช้ Palette/Type/Radius/Shadow เดิมทั้ง Application ไม่สร้างสีประจำแบรนด์ต่อ MT; ความแตกต่างเกิดจาก label, code และสถานะเท่านั้น
+- Layout desktop: Scope tabs → scope summary strip → standardized sections → sticky save bar
+- Layout narrow: tabs scroll แนวนอน, section header/actions wrap เป็นลำดับ, control grid ลดเหลือหนึ่ง column โดยไม่ซ่อน Function
+
+```text
+┌ Settings / scope explanation ──────────────────────────────────────┐
+├ Global │ TWD │ HP · shared │ MH · shared │ GH │ SCG │ HH │ TA ───┤
+├ Scope summary: ownership · source · readiness · last updated ─────┤
+├ 01 Data Source & Automation ───────── status ───── contextual action┤
+│  controls / disabled capability message                            │
+├ 02 Data Mapping & Governance ──────── status ───── contextual action┤
+├ 03 Historical Data & Coverage ─────── status ───── contextual action┤
+├ 04 Report Configuration ───────────── status ───── contextual action┤
+└ dirty summary ───────────────────────────────────── Save changes ──┘
+```
+
+## Component Plan
+
+- `SettingsPage.tsx`: เป็น Scope controller, tab semantics, dirty-state aggregation และ focus routing
+- เพิ่ม config registry สำหรับ label/capability ของ Global และแต่ละ MT; ห้ามกระจายเงื่อนไข MT ซ้ำใน JSX
+- เพิ่ม reusable `SettingsScopeTabs`, `SettingsSection` และ `UnavailableCapability` โดยใช้ semantic HTML และ existing design tokens
+- แยก Global content จาก `SystemSettingsPage`: Data Connection, Notifications, System Health & Alerting
+- parameterize MT settings shell จาก `TwdSettingsPage` ให้รับ MT code/capability โดย TWD ใช้ Function เดิมครบ
+- refactor `FileShareSettingsCard` ให้ Global แสดงเฉพาะ Base UNC/AD credential และแต่ละ MT Tab แสดง profile Subfolder/Automation/Run status
+- HP/MH ใช้ shared source/schedule object เดิม แก้จาก Tab ใดเรียก save path เดียวกันและ invalidate/refetch ทั้งสอง view
+- GH/SCG/HH/TA แสดง Section template ครบพร้อม Disabled state โดยไม่เรียก endpoint ที่ไม่มี
+
+## State และ Save Contract
+
+- เก็บ draft แยกตาม scope แต่รวม dirty fields ที่ Page controller
+- `Save changes` บันทึกเฉพาะ endpoint/field ที่เปลี่ยน และแสดงผลสำเร็จหรือผิดพลาดแยกตาม Scope โดยไม่ล้าง draft ส่วนที่บันทึกไม่สำเร็จ
+- Immediate actions ไม่ถือเป็น dirty setting และคง loading/disabled/result feedback ของเดิม
+- สลับ Tab ไม่ทิ้ง draft; ออกจากหน้าเมื่อมี unsaved changes ต้องแจ้งเตือนตาม pattern ที่ระบบรองรับ
+- Deep-link/focus จาก Monitoring ไป Data Coverage ต้องเปิด TWD Tab และ focus Section เป้าหมาย
+
+## Implementation Phases
+
+1. เพิ่ม Settings capability/config model และ reusable visual primitives พร้อม tests
+2. สร้าง Global tab และย้าย Data Connection/Telegram/Technical Health โดยคง handlers/API เดิม
+3. สร้าง TWD tab จาก Function เดิมและเชื่อม dirty/save orchestration
+4. สร้าง HP/MH tabs พร้อม shared-source/shared-schedule indicator และ synchronized state
+5. เพิ่ม GH/SCG/HH/TA template แบบ Disabled พร้อม readiness explanation
+6. Responsive/accessibility polish, browser QA และ full regression
+
+## Verification Plan
+
+- Component tests: keyboard tabs, active/current semantics, consistent section order และ disabled capability
+- Save tests: changed-only requests, multi-scope dirty state, partial failure, retry และ tab switching ไม่ทำ draft หาย
+- HP/MH tests: edit schedule จาก HP แล้ว MH สะท้อนค่าเดียวกัน, run result แยก MT, ไม่สร้าง duplicate schedule
+- Navigation test: Monitoring → Data Coverage เปิด Settings/TWD/target section ถูกต้อง
+- Regression: FileShare test/save, Telegram, Technical Health, TWD mapping/backfill/coverage/report setting และ automatic run เดิม
+- Run frontend full test, ESLint, production build, backend full test/Ruff และตรวจ desktop 1440/1024 กับ narrow 768/375
+
+## Deployment และ Rollback
+
+- Phase นี้ควรเป็น frontend-first; backend เปลี่ยนเฉพาะเมื่อ API ปัจจุบันไม่สามารถแยก global/profile payload โดยไม่แตะ business logic
+- Deploy หลัง screenshot review และ Product Owner ยืนยัน Global/TWD/HP/MH อย่างน้อย
+- Rollback ด้วย application version เดิม; ไม่มี migration/data transformation ใน scope ที่วางแผนไว้
+
+## Open Decisions
+
+- ไม่มี Business Rule ค้าง; รอ Product Owner ยืนยัน PRD และ Implementation Plan ก่อนเริ่มแก้โค้ด
+
+# TWD Settings Parity for HP/MH — Implementation Plan
+
+## Architecture Direction
+
+- เปลี่ยน `TwdSettingsPage` เป็น reusable `ModernTradeSettingsPage` ที่รับ `mtCode` และ `mtName`; TWD ใช้ Component เดียวกันด้วย props `TWD` เพื่อรักษา Reference Logic
+- เปลี่ยน client API ที่ hardcode TWD ให้รับ `mtCode` ทุกคำสั่ง รวมทั้ง Settings, Mapping exchange, Coverage และ SKU Backfill
+- เพิ่ม generic backend routes ภายใต้ Modern Trade scope และคง TWD legacy routes/response contract ไว้ระหว่าง refactor เพื่อลด regression risk
+- จำกัด allowlist ของ Function ชุดนี้ที่ `TWD`, `HP`, `MH`; MT อื่นห้าม fallback ไป TWD
+
+## Backend Work
+
+1. Generalize TWD settings service ให้ lookup ModernTrade จาก code และคำนวณ Mapping attention/report setting ต่อ MT
+2. Generalize Mapping export/import service ให้รับ ModernTrade ที่ resolve แล้ว แทนการ query TWD ภายใน service; filename, audit actor และข้อความ conflict ใช้ code ปัจจุบัน
+3. ใช้ Data Coverage endpointเดิมที่รองรับ `mt_code` และเพิ่ม availability response ใน Settings summary เพื่อแยก no-data จาก count zero
+4. เปิด Backfill API สำหรับ HP/MH ด้วย strategy ตาม source group:
+   - TWD ใช้ downloader/parser/append path เดิมโดยไม่แก้ behavior
+   - HP/MH อ่าน shared Inventory/Sales ZIP pair แต่ filter และ append เฉพาะ prefix/SKU ของ MT เป้าหมาย
+   - Run, progress, result, stop/resume, audit และ notification ผูก MT เป้าหมาย ไม่ใช้ sibling MT เป็น owner ของ SKU Backfill
+5. เพิ่ม transaction and isolation tests เพื่อพิสูจน์ว่า HP action ไม่แก้ MH และกลับกัน
+
+## Frontend Work
+
+1. สร้าง MT Settings Template กลางจาก markup และ interaction ของ TWD โดยคง section order และ styles เดิม
+2. ส่ง `mtCode` เข้า Mapping export/import, Unmatched settings, Report page size, Coverage download และ Backfill ทุกครั้ง
+3. เปลี่ยน copy ที่ระบุ “ไทวัสดุ” ให้ใช้ชื่อ MT ปัจจุบัน โดยข้อความและ action name อื่นคงมาตรฐานเดียวกัน
+4. ใช้ availability metadata แสดง `ยังไม่มีข้อมูล` โดยไม่แสดงตัวเลขเมื่อยังไม่มี source data; Loading, Error และ true-zero แสดงคนละ state
+5. แทน Disabled capability cards ใน HP/MH ด้วย Function จริงชุดเดียวกับ TWD; GH/SCG/HH/TA ยังไม่เรียก API
+
+## Verification
+
+- Backend tests: generic settings lookup, per-MT mapping export/import, empty vs zero, HP/MH backfill isolation, authorization และ legacy TWD contract
+- Frontend tests: TWD/HP/MH API URLs, Section parity, MT-specific copy, empty/loading/error, keyboard tabs และ cross-tab state
+- Regression: TWD mapping workbook, TWD backfill, report settings, coverage download และ unmatched logic ต้องให้ผลเดิม
+- Run Ruff/backend suite, ESLint/frontend suite และ production build ก่อน deploy
+
+## Delivery Gate
+
+- Phase 1 เริ่มจาก generic Settings/Mapping contract และ Template UI
+- Phase 2 เปิด HP/MH SKU Backfill strategy พร้อม isolation tests
+- ยังไม่ deploy จนกว่า Product Owner ตรวจหน้า Local และอนุมัติ
+
+## Open Decision
+
+- ไม่มี Business Rule ค้างหลังยืนยันขอบเขต TWD/HP/MH, per-MT ownership และข้อความ `ยังไม่มีข้อมูล`
+# TWD Performance Multi-Range and Inventory Turnover Prototype — Implementation Plan
+
+## Project Summary
+
+ขยาย TWD Matrix Performance ให้รองรับ Date ranges สูงสุด 12 ช่วงแบบไม่ทับกัน แก้คอลัมน์ขวาสุดที่ถูก Scrollbar บัง และเพิ่ม TOM/TOD พร้อมค่าเฉลี่ยใน Inventory โดยให้ App/API/Excel ใช้ Filter และสูตรเดียวกัน รอบนี้ทำเฉพาะ TWD Prototype และไม่เปลี่ยน Logic เดิมนอก Scope
+
+## Goals And Non-Goals
+
+### Goals
+
+- Date range editor ที่ตรวจ Conflict ทันทีและใช้ Keyboard ได้
+- Canonical range union ที่ทุก Performance query และ Export ใช้ร่วมกัน
+- TOM/TOD แบบ Decimal ROUND_HALF_UP ตรงตาม Business Rule
+- Sticky identity + TOM/TOD และ right-end scroll clearance ที่อ่านตัวเลขได้ครบ
+- Header average คำนวณจาก Filtered SKU universe ก่อน Pagination
+- Automated tests ครอบคลุม Single/multi range, turnover edge cases, export parity และ UI regression
+
+### Non-Goals
+
+- ไม่ rollout ไป HP/MH/MT อื่นใน Phase นี้
+- ไม่เปลี่ยน Month selector, Mapping, Detail workflow, Pagination policy หรือ metric definitions เดิม
+- ไม่เพิ่มตารางฐานข้อมูลหรือ migration หาก Query จาก summaries/facts เดิมทำได้ตาม performance target
+
+## Technical Architecture
+
+### Frontend
+
+- เปลี่ยน view state จาก `dateFrom/dateTo` เดี่ยวเป็น canonical `dateRanges[]` พร้อม migration จาก Local Storage shape เดิม
+- Date picker เก็บ draft rows, normalize เมื่อ Apply และแสดง row-level/cross-row error แบบ `aria-live`
+- API client serialize ranges ด้วย contract เดียวสำหรับ Performance, Item detail และ Excel export
+- Matrix รับ `tom`, `tod`, `averageTom`, `averageTod`; render เฉพาะ Inventory และคำนวณ Sticky offsets ตาม Description state
+
+### Backend
+
+- เพิ่ม query parser สำหรับ Date range list สูงสุด 12 ช่วง และรองรับ `date_from/date_to` เดิมระหว่าง compatibility window
+- Normalize และ sort ranges; reject incomplete/invalid/overlapping ranges ด้วย HTTP 422 ที่บอกช่วง Conflict
+- สร้าง shared SQL date-union predicate และใช้กับ row selection, summary, column total, pagination scope, item detail และ export
+- Turnover service ใช้ Reference Date, positive Sales Qty lookback 3 เดือน และ Decimal `ROUND_HALF_UP`; ไม่คำนวณจากค่าที่ Frontend aggregate เอง
+- Inventory response เพิ่ม per-item turnover และ global turnover summary; Sales response เดิมไม่เปลี่ยน
+
+## File And Module Plan
+
+### Frontend Files
+
+- `src/features/performance/types.ts`: เพิ่ม `DateRange` และ turnover response types
+- `src/features/performance/DateRangePicker.tsx`: multi-row editor สูงสุด 12 ช่วง, add/remove, immediate validation
+- `src/features/performance/PerformanceToolbar.tsx`: เปลี่ยน DateRangePicker contract เฉพาะตำแหน่งเดิม
+- `src/features/performance/PerformancePage.tsx`: state migration, canonical ranges, summary wiring และ export/detail parity
+- `src/features/performance/performanceApi.ts`: serialize ranges ให้ทุก request path
+- `src/features/performance/PerformanceMatrix.tsx`: TOM/TOD/AVG columns และ semantic labels
+- `src/features/performance/performanceMath.ts`: เฉพาะ display/range helpers ที่ไม่ทำ Business calculation
+- `src/styles/app.css`: multi-range layout, inline error, sticky offsets และ scrollbar/end gutter
+- Tests คู่กับ component/API/math filesข้างต้น
+
+### Backend Files
+
+- `backend/app/api/performance.py`: parse/validate ranges, shared predicate wiring และ turnover response
+- เพิ่ม utility/service เฉพาะ range/turnover หาก route file ใหญ่เกินกว่าจะรักษาความชัดเจน
+- `backend/app/services/performance_export.py`: ใช้ query/filter/turnover contract เดียวกับ App
+- `backend/tests/test_performance.py`: ranges, pagination, summary และ turnover cases
+- `backend/tests/test_performance_export.py`: workbook parity และ TOM/TOD
+
+### Documentation
+
+- `README.md`: อัปเดต Performance API example หลัง contract คงที่
+- `HANDOFF.md`: บันทึก formula, rollout boundary และผล verification หลังเสร็จ
+- `design-system/mt-pulse/pages/twd-performance.md`: เพิ่มเฉพาะ page override สำหรับ multi-range/sticky columns โดยไม่แก้ Master tokens
+
+## Data Model Draft
+
+- ไม่มี migration ในแผนเริ่มต้น
+- ใช้ `DailySkuSummary` สำหรับ positive Sales Qty lookback และ inventory snapshot เมื่อ coverage ถูกต้อง
+- ใช้ Fact fallback ตามกลไกเดิมเมื่อ summary coverage ไม่ครบ
+- หาก profiling พบ bottleneck จึงเสนอ index เพิ่มเป็นงานแยกพร้อม `EXPLAIN ANALYZE`; ห้ามเพิ่ม index โดยไม่มีหลักฐาน
+
+## API And Integration Plan
+
+- เพิ่ม query parameter แบบ repeated value เช่น `date_range=YYYY-MM-DD,YYYY-MM-DD` สูงสุด 12 ค่า หรือรูปแบบเทียบเท่าที่ผ่าน test ก่อนยืนยัน contract ใน Code
+- Compatibility: request ที่มี `date_from/date_to` เดิมต้องแปลงเป็น range เดียวและให้ผลเดิม
+- ถ้าส่ง contract ใหม่และเก่าพร้อมกัน ให้ Server reject อย่างชัดเจนเพื่อไม่ให้เกิด Filter ambiguity
+- Response Inventory item เพิ่ม `tom: number | null`, `tod: number | null`
+- Response Inventory summary เพิ่ม `averageTom: number | null`, `averageTod: number | null`, `turnoverSkuCount`
+- Export endpoint รับ Filter contract เดียวกับ Performance endpoint
+- Error payload ต้องระบุ index ของช่วงที่ผิด/ทับกันเพื่อ map กลับไปยัง UI row
+
+## Phased Implementation
+
+### Phase 1: Reproduction And Contract Tests
+
+1. เพิ่ม failing frontend test สำหรับ overlap, boundary-touch overlap, max 12 และ Apply disabled
+2. เพิ่ม deterministic layout assertion/end-clearance regression สำหรับคอลัมน์ขวาสุด
+3. เพิ่ม backend failing tests สำหรับ date union และสูตร TOM/TOD ทุก edge case
+4. เพิ่ม export parity test ก่อนแก้ implementation
+
+### Phase 2: Backend Range And Turnover
+
+1. Implement range parser/normalizer/validator
+2. Refactor date predicates ให้ใช้ shared union filter โดยรักษา legacy single range
+3. Implement reference-date and 3-full-month turnover query
+4. Add filtered-universe averages before pagination
+5. Extend export ด้วย filter/turnover values เดียวกัน
+
+### Phase 3: Frontend Multi-Range
+
+1. เพิ่ม `dateRanges` state และ migrate Local Storage เดิมแบบ non-destructive
+2. Implement 1–12 range rows พร้อม immediate validation และ accessible feedback
+3. Wire Performance, detail และ download requests ให้ใช้ ranges เดียวกัน
+4. แสดง selected-range summary แบบกระชับโดยไม่ทำ Toolbar ขยายผิดปกติ
+
+### Phase 4: Matrix TOM/TOD And Scroll Fix
+
+1. Render TOM/TOD หลัง WA Description หรือหลัง WA Item เมื่อซ่อน Description
+2. Render AVG TOM/TOD จาก Server summary ใน Inventory header
+3. เพิ่ม sticky offsets/dividers/z-index สำหรับทุก Description state
+4. เพิ่ม right-end clearance และ sync top/bottom scrollbar width โดยไม่มีข้อมูลหลอก
+
+### Phase 5: Verification And Documentation
+
+1. Backend full tests + Ruff
+2. Frontend full tests + ESLint + production build
+3. Visual checks: Description on/off × Branch/Date/Month × Sales/Inventory × 1/12 ranges
+4. Verify keyboard, focus, `aria-live`, 1024/1440 desktop และ classic Windows scrollbar
+5. Compare App กับ Excel ด้วย fixture เดียวกันและตัวอย่างสูตร `5/3 → 1.67; 10/1.67 → 5.99; 5.99×30 → 179.70`
+6. อัปเดต README/HANDOFF และเตรียม screenshot ให้ Product Owner ตรวจ
+
+## Dependencies
+
+- ใช้ React 19.2.8, TypeScript 6.0.3, FastAPI/SQLAlchemy/Decimal และ Excel library ที่โครงการใช้อยู่
+- ไม่เพิ่ม Frontend date-picker หรือ calculation package ในแผนเริ่มต้น
+
+## Security And Error Handling
+
+- Server validate จำนวนช่วง, ISO date, from/to และ overlap ซ้ำทุก request
+- จำกัด input lengths/count เพื่อป้องกัน query amplification
+- Invalid ranges ไม่รัน report query และคืนข้อความที่ระบุจุดแก้ได้
+- Export ต้องใช้ authorization/filter boundary เดียวกับ report เดิม
+
+## Test And Verification Plan
+
+- Range unit tests: 1, 12, 13 ranges; same-day; adjacent; contained; partial; reversed; unsorted; duplicated
+- Query integration: gap exclusion ใน rows/dates/summary/columns/pagination/detail/export
+- Turnover: normal, zero month, all-zero sales, missing reference-date stock, negative stock, zero stock, returns only, Branch/SKU filters, rounding half-up
+- Average: all filtered SKUs across pages, exclude null turnover, remain stable on page change
+- UI: immediate error, conflict labels, add/remove limits, Apply disabled, Local Storage migration
+- Matrix: sticky order Description on/off, all Inventory views, last column readable at max scroll
+- Regression: legacy single range and all existing Performance tests
+
+## Deployment Or Release Checklist
+
+- รอบนี้พัฒนาและตรวจ Local ก่อน
+- Product Owner ตรวจ Prototype และ Excel parity ก่อนอนุมัติ rollout/deploy
+- Commit แยก Feature จาก dirty worktree เดิมเท่าที่ทำได้ และไม่รวมไฟล์ชั่วคราว
+- ก่อน deploy ต้อง backup, run migrations เฉพาะถ้ามี (คาดว่าไม่มี), smoke API/UI/export และมี rollback revision
+- ยังไม่ push/deploy จนกว่าผู้ใช้สั่งชัดเจน
+
+## Open Decisions
+
+- ไม่มี Business Rule ค้าง; API serialization exact shape เลือกระหว่าง implementation โดยต้องรักษา compatibility และ testability ตามแผน
+
+# TWD Sho/Pro SKU Attention Flags — Implementation Plan
+
+## Project Summary
+
+เพิ่ม Shared Sho/Pro metadata สำหรับ TWD SKU ใน Matrix และ Excel โดยเก็บใน PostgreSQL แยกจากข้อมูล Fact/Mapping, บันทึกทันที และใช้ Filter ฝั่ง Server ก่อน Summary/Pagination ทั้งหมด
+
+## Goals And Non-Goals
+
+### Goals
+
+- Sticky Sho/Pro checkbox columns ก่อน TWD SKU ในทุก Mode/View
+- Shared state ข้าม User profile ด้วย key `TWD + Source SKU`
+- Instant partial update พร้อม optimistic UI, pending state, rollback และ Error feedback
+- Flag filter ครบ 5 ค่าและใช้ Scope เดียวกับ KPI/SUM/AVG/Pagination/Export
+- Excel แสดง Sho/Pro และสีตรงตาม Screen
+
+### Non-Goals
+
+- ไม่เปลี่ยน Fact, Mapping, Import, Sales/Inventory/TOM/TOD formulas
+- ไม่เปลี่ยน default SKU ordering
+- ไม่เพิ่ม Bulk edit, Auto-tag หรือ Admin permission
+- ไม่ rollout HP/MH ใน Phase แรก
+
+## Technical Architecture
+
+### Database
+
+- Migration ใหม่ต่อจาก Alembic head ปัจจุบัน เพิ่ม `sku_analysis_flags`
+- Columns: id, modern_trade_id FK, source_sku, is_showroom, is_promotion, updated_at และ actor field ตาม convention ที่ระบบรองรับ
+- Unique constraint `(modern_trade_id, source_sku)` และ index `(modern_trade_id, is_showroom, is_promotion, source_sku)` สำหรับ Filter
+- Row อยู่ต่อเมื่อ Mapping/SKU ถูก Inactive และไม่ถูกกระทบจาก Import
+
+### Backend API
+
+- เพิ่ม enum query `sku_flag=all|sho|pro|both|none` ใน `GET /api/performance` และ `/api/performance/export`
+- Join/exists Flag predicate ใน Candidate SKU query ก่อน total SKU, active Branch, totals, column totals, TOM/TOD และ pagination
+- Item projection ส่ง `isSho`, `isPro`; Missing row ตีความเป็น false/false
+- เพิ่ม PATCH endpoint แบบ partial updateสำหรับ `isSho` หรือ `isPro` ทีละ Field; upsert ด้วย unique key และสร้าง AuditEvent
+- Update response ส่ง canonical state กลับให้ Frontend; endpoint ต้อง validate MT/SKU และไม่แก้ Mapping/Interest
+- Export เรียก Performance contract เดิมพร้อม `sku_flag` เพื่อหลีกเลี่ยง Logic ซ้ำ
+
+### Frontend
+
+- `types.ts`: เพิ่ม `SkuFlagFilter`, `isSho`, `isPro`
+- `performanceApi.ts`: serialize filter และเพิ่ม mutation function สำหรับ partial flag update
+- `PerformancePage.tsx`: state/filter persistence, mutation state, optimistic patch และ refetch เมื่อ Active Flag filter ทำให้ Scope เปลี่ยน
+- `PerformanceToolbar.tsx`: เพิ่ม Filter `ทั้งหมด/Sho/Pro/Sho + Pro/ยังไม่กำหนดสถานะ`
+- `PerformanceMatrix.tsx`: เพิ่ม Sticky Sho/Pro ก่อน Source SKU, accessible labels และ pending/disabled state เฉพาะ checkbox ที่กำลังบันทึก
+- `app.css`/TWD visual layer: explicit sticky offsets และ row overlay statesที่อยู่ร่วมกับ Heatmap/Selected/negative values
+- Detail Drawer แสดง Sho/Pro ของ SKU เดียวกันแบบ read-only status เพื่อรักษาบริบททุก View
+
+### Excel
+
+- `performance_export.py`: เพิ่ม Sho/Pro columns ก่อน Source SKU, text `SHO`/`PRO`, column widths, freeze pane offset และ filter metadata
+- ใส่ translucent-equivalent fills/accent สำหรับ Sho only, Pro only และ Both โดยรักษา Heatmap conditional formatting และ number formats
+- Export ทุก Row ที่ผ่าน Filter ไม่ขึ้นกับหน้าปัจจุบัน และ Summary ใช้ชุดข้อมูลเดียวกับ App
+
+## Phased Implementation
+
+### Phase 1 — Contract, Migration And Failing Tests
+
+1. เพิ่ม model/migration และ backend tests สำหรับ unique scope, persistence หลัง Mapping change และ partial update
+2. เพิ่ม API/query contract tests สำหรับ 5 filters, summary/pagination และ TWD-only scope
+3. เพิ่ม Frontend type/API tests และ Matrix interaction tests ก่อนแก้ implementation
+
+### Phase 2 — Backend State And Filtering
+
+1. Implement repository/service สำหรับ read/upsert Flag และ Audit
+2. Wire Item projection และ Flag predicate เข้า shared Performance filter builder
+3. ยืนยัน KPI/SUM/AVG TOM/TOD/Branch/SKU counts ตรงกับ filtered SKU set
+4. Wire Export endpoint ด้วย query contract เดียวกัน
+
+### Phase 3 — TWD Matrix And Filter UI
+
+1. เพิ่ม Filter control และ Local Storage migration ที่ backward compatible
+2. เพิ่ม Sho/Pro sticky columns, optimistic interaction, pending indicator และ rollback on failure
+3. เพิ่ม four row states: none, Sho, Pro, Both โดยคง Heatmap/Selected/Return semantics
+4. ตรวจ Description on/off, TOM/TOD offsets และ horizontal scroll end clearance
+
+### Phase 4 — Excel Parity
+
+1. เพิ่ม status columns/text/colors และ filter metadata
+2. ตรวจ Workbook ด้วย openpyxl และเปิดด้วย Microsoft Excel ว่าไม่เกิด Repair warning
+3. Compare Screen/Excel สำหรับทั้ง 5 filters, Sales/Inventory และทุก View
+
+### Phase 5 — Performance And Regression
+
+1. Benchmark API all/sho/pro/both/none บนข้อมูล TWD จริง; เปรียบเทียบ baseline ล่าสุด
+2. ตรวจ Toggle latency และไม่ rerender numeric matrix โดยไม่จำเป็น
+3. รัน Backend full suite + Ruff, Frontend full suite + ESLint + production build
+4. Browser QA keyboard/focus/contrast และความชัดของ Row states บน Heatmap on/off
+
+## Test Matrix
+
+- State: none, Sho, Pro, Both; check/uncheck; refresh; Browser/Profile อื่น; Mapping inactive/reactivate
+- Concurrent: User A เปลี่ยน Sho ขณะ User B เปลี่ยน Pro โดยค่าหนึ่งไม่ทับอีกค่า
+- Filters: all/sho/pro/both/none ก่อน pagination พร้อม KPI/SUM/AVG/Branch counts
+- Views: Sales/Inventory × Branch/Date/Month × Description on/off × Heatmap on/off
+- Visual: selected + flag, negative/return + flag, trial/unmatched + flag, loading/error rollback
+- Excel: columns, text, colors, totals, formulas, auto-filter, freeze panes, no repair warning และ page-independent export
+- Regression: date ranges, TOM/TOD, report page size, SKU/Branch filters, detail drawer และ performance fast paths
+
+## Deployment And Rollback
+
+- พัฒนาและตรวจ TWD Local ก่อน; ยังไม่ Push/Deploy จน Product Owner อนุมัติ
+- ก่อน Server migration สำรอง PostgreSQL และตรวจ backup archive
+- Deploy migration + API + Web; smoke shared persistence ด้วยสอง Browser sessions และ Excel export
+- Rollback application revision ได้โดยเก็บตาราง Flag ไว้; downgrade migration ลบเฉพาะ `sku_analysis_flags` และห้ามแตะ Fact/Batch/Mapping
+
+## Confirmation Gate
+
+- Phase แรกสร้างเฉพาะ TWD Prototype
+- Sho/Pro เป็น Shared metadata ไม่มีผลต่อสูตร แต่ Filter มีผลต่อ Scope ของ Summary/Excel เหมือน Filter อื่น
+- รอ Product Owner ยืนยัน PRD และแผนนี้ก่อนเริ่ม Phase 1 implementation
+
+## Implementation Status — 9 September 2026
+
+- Phase 1 complete: model, Alembic migration, TWD-only partial PATCH endpoint, AuditEvent, frontend types/query/mutation contract และ automated contract tests พร้อมแล้ว
+- Phase 2 complete: `sku_flag=all|sho|pro|both|none` ทำงานจริงใน Performance และ Export API โดยกรอง candidate SKU ก่อน summary, pagination, branch count, column totals และ TOM/TOD
+- Performance item projection ส่ง `isSho`/`isPro` สำหรับ TWD และตีความ SKU ที่ไม่มี Flag row เป็น false/false
+- Daily/Monthly summary fast paths ใช้ Flag predicate เดียวกับ Fact path; Export ส่ง filter เข้า Performance contract เดิมโดยไม่สร้าง Query logic ซ้ำ
+- Phase 3 complete: TWD Matrix มี Sticky `Sho`/`Pro`, Filter 5 ค่า, Optimistic save, per-field pending/rollback, Error feedback และ read-only status ใน Detail Drawer
+- Row state แยก none/Sho/Pro/Both ด้วยข้อความ Checkbox + Amber/Violet/Dual overlay โดยคง Heatmap, negative typography และ Blue selected boundary
+- Filter ถูกเก็บใน TWD view preference แบบ backward compatible; HP/MH ไม่แสดง control และไม่เปลี่ยน behavior
+- Frontend full suite 80 tests, Backend full suite 127 tests, ESLint, production build และ Ruff เฉพาะ Sho/Pro backend paths ผ่าน
+- ยังไม่เปลี่ยน summary/calculation, TOM/TOD, Excel layout หรือ rollout ไป HP/MH
+- ยังไม่ Push/Deploy ตาม Deployment Gate; ขั้นต่อไปคือ Phase 4 Excel Parity เมื่อ Product Owner สั่งเริ่ม

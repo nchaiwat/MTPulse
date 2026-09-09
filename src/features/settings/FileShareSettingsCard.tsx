@@ -110,7 +110,18 @@ function settingsSnapshot(input: {
 export const FileShareSettingsCard = forwardRef<FileShareSettingsHandle, {
   disabled?: boolean
   onBusyChange?: (busy: boolean) => void
-}>(function FileShareSettingsCard({ disabled = false, onBusyChange }, ref) {
+  onDirtyChange?: (dirty: boolean) => void
+  profileCode?: string
+  showSaveAction?: boolean
+  view?: 'all' | 'connection' | 'profile'
+}>(function FileShareSettingsCard({
+  disabled = false,
+  onBusyChange,
+  onDirtyChange,
+  profileCode,
+  showSaveAction = false,
+  view = 'all',
+}, ref) {
   const [baseUnc, setBaseUnc] = useState('')
   const [domain, setDomain] = useState('')
   const [username, setUsername] = useState('')
@@ -124,6 +135,7 @@ export const FileShareSettingsCard = forwardRef<FileShareSettingsHandle, {
   const [busy, setBusy] = useState<string | null>(null)
   const [message, setMessage] = useState<SettingsMessage | null>(null)
   const [savedSnapshot, setSavedSnapshot] = useState('')
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
   const [confirmProfile, setConfirmProfile] = useState<FileShareProfile | null>(null)
 
   useEffect(() => {
@@ -139,6 +151,7 @@ export const FileShareSettingsCard = forwardRef<FileShareSettingsHandle, {
         setLastTestStatus(settings.lastTestStatus ?? null)
         setResults(settings.lastTestResults ?? [])
         setSavedSnapshot(settingsSnapshot(settings))
+        setSettingsLoaded(true)
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) {
@@ -154,6 +167,15 @@ export const FileShareSettingsCard = forwardRef<FileShareSettingsHandle, {
   useEffect(() => {
     onBusyChange?.(busy !== null)
   }, [busy, onBusyChange])
+
+  const isDirty = settingsLoaded && Boolean(
+    password.trim()
+    || settingsSnapshot({ baseUnc, domain, username, profiles }) !== savedSnapshot
+  )
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty)
+  }, [isDirty, onDirtyChange])
 
   useEffect(() => {
     const hasActiveRun = profiles.some((profile) => (
@@ -265,9 +287,15 @@ export const FileShareSettingsCard = forwardRef<FileShareSettingsHandle, {
   }
 
   const updateProfile = (code: string, update: Partial<FileShareProfile>) => {
-    setProfiles((current) => current.map((profile) => (
-      profile.code === code ? { ...profile, ...update } : profile
-    )))
+    setProfiles((current) => {
+      const selected = current.find((profile) => profile.code === code)
+      return current.map((profile) => (
+        profile.code === code
+        || selected?.sourceGroup === 'HP_MH' && profile.sourceGroup === 'HP_MH'
+          ? { ...profile, ...update }
+          : profile
+      ))
+    })
   }
 
   const runNow = async (profile: FileShareProfile) => {
@@ -299,17 +327,19 @@ export const FileShareSettingsCard = forwardRef<FileShareSettingsHandle, {
         <div>
           <span className="setting-icon"><Database size={19} aria-hidden="true" /></span>
           <div>
-            <span className="eyebrow">Data connection</span>
-            <h3 id="fileshare-heading">FileShare</h3>
-            <p>กำหนด UNC และ Account กลางสำหรับอ่านไฟล์ของทุก Modern Trade</p>
+            <span className="eyebrow">{view === 'profile' ? 'Data source & automation' : 'Global data connection'}</span>
+            <h3 id="fileshare-heading">{view === 'profile' ? `FileShare · ${profileCode}` : 'FileShare'}</h3>
+            <p>{view === 'profile' ? 'กำหนด Source, Schedule และ Run ที่มีผลกับ Modern Trade นี้' : 'กำหนด UNC และ Account กลางสำหรับอ่านไฟล์ของทุก Modern Trade'}</p>
           </div>
         </div>
-        <button className="secondary-action" type="button" disabled={disabled || busy !== null || !baseUnc.trim() || !username.trim()} onClick={() => void test()}>
-          <PlugZap size={15} />{busy === 'test' ? 'กำลังทดสอบ…' : 'ทดสอบการเชื่อมต่อ'}
-        </button>
+        {view !== 'profile' && (
+          <button className="secondary-action" type="button" disabled={disabled || busy !== null || !baseUnc.trim() || !username.trim()} onClick={() => void test()}>
+            <PlugZap size={15} />{busy === 'test' ? 'กำลังทดสอบ…' : 'ทดสอบการเชื่อมต่อ'}
+          </button>
+        )}
       </header>
 
-      <div className="fileshare-form">
+      {view !== 'profile' && <div className="fileshare-form">
         <label className="fileshare-base">
           Base UNC
           <input type="text" value={baseUnc} onChange={(event) => setBaseUnc(event.target.value)} placeholder={defaultBaseUnc} />
@@ -326,14 +356,18 @@ export const FileShareSettingsCard = forwardRef<FileShareSettingsHandle, {
             </button>
           </span>
         </label>
-      </div>
+      </div>}
 
-      <div className="fileshare-profiles">
+      {view !== 'connection' && <div className="fileshare-profiles">
         <div className="fileshare-profile-heading">
           <div><strong>โฟลเดอร์ของ Modern Trade</strong><small>ระบบจะต่อ Subfolder กับ Base UNC อัตโนมัติ</small></div>
           {lastTestAt && <span data-status={lastTestStatus ?? undefined}>ทดสอบล่าสุด {formatTestTime(lastTestAt)}</span>}
         </div>
-        {profiles.length === 0 ? <p className="empty-fileshare-profile">ยังไม่มี Modern Trade ในระบบ</p> : profiles.map((profile) => {
+        {profiles.length === 0 ? <p className="empty-fileshare-profile">ยังไม่มี Modern Trade ในระบบ</p> : profiles.filter((profile) => (
+          view === 'profile'
+            ? profile.code === profileCode
+            : profile.sharedProfileOwner !== false
+        )).map((profile) => {
           const result = results.find((item) => item.code === profile.code)
           const fullPath = baseUnc && profile.subfolder
             ? baseUnc.replace(/[\\/]+$/, '') + '\\' + profile.subfolder.replace(/^[\\/]+/, '')
@@ -349,12 +383,12 @@ export const FileShareSettingsCard = forwardRef<FileShareSettingsHandle, {
           const displayedRunTone = progressView?.isStale
             ? 'warning'
             : currentRunStatus.tone
-          const hasUnsavedSettings = Boolean(
-            password.trim()
-            || settingsSnapshot({ baseUnc, domain, username, profiles }) !== savedSnapshot
-          )
+          const hasUnsavedSettings = isDirty
+          const sharedMembers = profile.sourceGroup === 'HP_MH'
+            ? profiles.filter((item) => item.sourceGroup === 'HP_MH')
+            : []
           return (
-            <article key={profile.code}>
+            <article key={profile.code} data-source-group={profile.sourceGroup ?? undefined}>
               <div className="fileshare-profile-source">
                 <label className="fileshare-profile-toggle">
                   <input type="checkbox" checked={profile.enabled} onChange={(event) => updateProfile(profile.code, { enabled: event.target.checked })} />
@@ -367,13 +401,42 @@ export const FileShareSettingsCard = forwardRef<FileShareSettingsHandle, {
                   <span>{result?.message ?? (profile.enabled ? 'ยังไม่ได้ทดสอบ' : 'ปิดใช้งาน')}</span>
                 </div>
               </div>
+              {sharedMembers.length > 0 && (
+                <div className="shared-source-members" aria-label="ผลลัพธ์แยกตาม Modern Trade">
+                  <div className="shared-source-title">
+                    <strong>HomePro Group — Shared Source</strong>
+                    <small>Path, Schedule และ Run ใช้ร่วมกัน</small>
+                  </div>
+                  {sharedMembers.map((member) => {
+                    const memberRows = profile.lastRun?.results.reduce(
+                      (total, item) => total + (item.mt?.[member.code]?.rows ?? 0),
+                      0,
+                    ) ?? 0
+                    const memberNewSkus = profile.lastRun?.results.reduce(
+                      (total, item) => total + (item.mt?.[member.code]?.newPendingSkus ?? 0),
+                      0,
+                    ) ?? 0
+                    return (
+                      <div className="shared-source-member" data-mt={member.code} key={member.code}>
+                        <span><strong>{member.name}</strong><small>{member.code}</small></span>
+                        {profile.lastRun
+                          ? <>
+                              <span><strong>{memberRows.toLocaleString()}</strong><small>Records รอบล่าสุด</small></span>
+                              <span><strong>{memberNewSkus.toLocaleString()}</strong><small>SKU ใหม่</small></span>
+                            </>
+                          : <span><strong>ยังไม่มีข้อมูล</strong><small>ผลการทำงานล่าสุด</small></span>}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
               <div className="fileshare-profile-automation">
                 <div className="schedule-control">
                   <label className="schedule-toggle">
                     <input
                       type="checkbox"
                       checked={profile.scheduleEnabled}
-                      disabled={!profile.enabled || profile.code !== 'TWD'}
+                      disabled={!profile.enabled || !['TWD', 'HP', 'MH'].includes(profile.code)}
                       onChange={(event) => updateProfile(profile.code, {
                         scheduleEnabled: event.target.checked,
                       })}
@@ -386,7 +449,7 @@ export const FileShareSettingsCard = forwardRef<FileShareSettingsHandle, {
                       aria-label={`เวลา Schedule ${profile.code}`}
                       type="time"
                       value={profile.scheduleTime ?? ''}
-                      disabled={!profile.enabled || !profile.scheduleEnabled || profile.code !== 'TWD'}
+                      disabled={!profile.enabled || !profile.scheduleEnabled || !['TWD', 'HP', 'MH'].includes(profile.code)}
                       onChange={(event) => updateProfile(profile.code, {
                         scheduleTime: event.target.value || null,
                       })}
@@ -424,8 +487,8 @@ export const FileShareSettingsCard = forwardRef<FileShareSettingsHandle, {
                         <span>{progressView.phaseLabel}</span>
                         <strong>
                           {progress?.total
-                            ? `${progress.processed.toLocaleString()} / ${progress.total.toLocaleString()} ไฟล์`
-                            : 'กำลังนับไฟล์…'}
+                            ? `${progress.processed.toLocaleString()} / ${progress.total.toLocaleString()} ${profile.sourceGroup === 'HP_MH' ? 'คู่ไฟล์' : 'ไฟล์'}`
+                            : `กำลังนับ${profile.sourceGroup === 'HP_MH' ? 'คู่ไฟล์' : 'ไฟล์'}…`}
                         </strong>
                       </div>
                       <div
@@ -437,7 +500,7 @@ export const FileShareSettingsCard = forwardRef<FileShareSettingsHandle, {
                         aria-valuemax={progress?.total || undefined}
                         aria-valuenow={progress?.total ? progress.processed : undefined}
                         aria-valuetext={progress?.total
-                          ? `${progress.percent}% · ${progress.processed} จาก ${progress.total} ไฟล์`
+                          ? `${progress.percent}% · ${progress.processed} จาก ${progress.total} ${profile.sourceGroup === 'HP_MH' ? 'คู่ไฟล์' : 'ไฟล์'}`
                           : 'กำลังสำรวจรายการไฟล์'}
                       >
                         <span
@@ -502,7 +565,7 @@ export const FileShareSettingsCard = forwardRef<FileShareSettingsHandle, {
                       disabled
                       || busy !== null
                       || !profile.enabled
-                      || profile.code !== 'TWD'
+                      || !['TWD', 'HP', 'MH'].includes(profile.code)
                       || isRunActive
                       || hasUnsavedSettings
                     }
@@ -517,9 +580,16 @@ export const FileShareSettingsCard = forwardRef<FileShareSettingsHandle, {
             </article>
           )
         })}
-      </div>
+      </div>}
 
       {message && <div className="settings-message" data-tone={message.tone} role={message.tone === 'error' ? 'alert' : 'status'}>{message.text}</div>}
+      {showSaveAction && (
+        <footer>
+          <button className="primary-action" type="button" disabled={disabled || busy !== null || !isDirty} onClick={() => void saveIfChanged()}>
+            {busy === 'save' ? 'กำลังบันทึก…' : 'Save changes'}
+          </button>
+        </footer>
+      )}
       {confirmProfile && (
         <div className="run-confirm-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget) setConfirmProfile(null)

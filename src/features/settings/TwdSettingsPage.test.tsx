@@ -108,4 +108,26 @@ describe('TwdSettingsPage', () => {
       expect.objectContaining({ body: JSON.stringify({ report_page_size: 0 }) }),
     )
   })
+
+  it('uses the selected MT API and shows an empty state without zero counts', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({
+        showUnmatchedItems: false,
+        showUnmatchedBranches: false,
+        mappingAttentionItems: 0,
+        mappingAttentionBranches: 0,
+        reportPageSize: 25,
+        hasData: false,
+      }), { status: 200 }),
+    )
+
+    render(<TwdSettingsPage embedded mtCode="HP" mtName="HomePro" />)
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/settings/modern-trades/HP/unmatched-visibility'),
+      expect.any(Object),
+    ))
+    expect(screen.getByLabelText('รายการ Mapping ที่ต้องตรวจ')).toHaveTextContent('ยังไม่มีข้อมูล')
+    expect(screen.getByLabelText('รายการ Mapping ที่ต้องตรวจ')).not.toHaveTextContent('0 Item')
+  })
 })

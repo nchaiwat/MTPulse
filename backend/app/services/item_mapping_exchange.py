@@ -19,13 +19,13 @@ from app.services.sku_interest import activate_mapped_sku_interest
 
 
 def export_filename(
-    date_from: date, date_to: date, current_time: datetime | None = None
+    date_from: date,
+    date_to: date,
+    current_time: datetime | None = None,
+    mt_code: str = "TWD",
 ) -> str:
     timestamp = as_bangkok(current_time or bangkok_now()).strftime("%H%M%S")
-    return (
-        f"TWD_Item_Mapping_{date_from.isoformat()}_{date_to.isoformat()}_"
-        f"{timestamp}.xlsx"
-    )
+    return f"{mt_code}_Item_Mapping_{date_from.isoformat()}_{date_to.isoformat()}_{timestamp}.xlsx"
 
 
 SHEET_NAME = "Item Mapping"
@@ -193,12 +193,16 @@ def _style_mapping_sheet(sheet, row_count: int, table_name: str, widths: tuple[i
 
 
 def build_item_mapping_workbook(
-    items: list[ExportItem], branches: list[ExportBranch] | None = None
+    items: list[ExportItem],
+    branches: list[ExportBranch] | None = None,
+    mt_code: str = "TWD",
 ) -> bytes:
     workbook = openpyxl.Workbook()
     sheet = workbook.active
     sheet.title = SHEET_NAME
-    sheet.append(HEADERS)
+    item_headers = (f"{mt_code} SKU", f"{mt_code} Description", *HEADERS[2:])
+    branch_headers = (f"{mt_code} Branch", f"{mt_code} Branch Description", *BRANCH_HEADERS[2:])
+    sheet.append(item_headers)
 
     for row_number, item in enumerate(items, start=2):
         values = (
@@ -216,12 +220,10 @@ def build_item_mapping_workbook(
         for column, value in enumerate(values, start=1):
             _set_text(sheet.cell(row=row_number, column=column), value)
 
-    _style_mapping_sheet(
-        sheet, len(items), "TWDItemMapping", (16, 48, 22, 48, 18, 15, 17, 52)
-    )
+    _style_mapping_sheet(sheet, len(items), "TWDItemMapping", (16, 48, 22, 48, 18, 15, 17, 52))
 
     branch_sheet = workbook.create_sheet(BRANCH_SHEET_NAME)
-    branch_sheet.append(BRANCH_HEADERS)
+    branch_sheet.append(branch_headers)
     for row_number, branch in enumerate(branches or [], start=2):
         values = (
             branch.source_branch_code,
@@ -263,7 +265,7 @@ def build_item_mapping_workbook(
     return output.getvalue()
 
 
-def parse_item_mapping_workbook(content: bytes) -> ParsedItemWorkbook:
+def parse_item_mapping_workbook(content: bytes, mt_code: str = "TWD") -> ParsedItemWorkbook:
     try:
         workbook = openpyxl.load_workbook(BytesIO(content), read_only=True, data_only=True)
     except Exception as exc:
@@ -275,7 +277,9 @@ def parse_item_mapping_workbook(content: bytes) -> ParsedItemWorkbook:
         sheet = workbook[SHEET_NAME]
         first_row = next(sheet.iter_rows(min_row=1, max_row=1, values_only=True), ())
         header_map = {_text(value): index for index, value in enumerate(first_row)}
-        required = ("TWD SKU", "WA Item")
+        source_sku_header = f"{mt_code} SKU"
+        source_description_header = f"{mt_code} Description"
+        required = (source_sku_header, "WA Item")
         missing = [header for header in required if header not in header_map]
         if missing:
             raise ValueError(f"ไม่พบ Column ที่จำเป็น: {', '.join(missing)}")
@@ -284,7 +288,7 @@ def parse_item_mapping_workbook(content: bytes) -> ParsedItemWorkbook:
         errors: list[str] = []
         row_count = skipped_blank = 0
         description_index = header_map.get("WA Description")
-        source_description_index = header_map.get("TWD Description")
+        source_description_index = header_map.get(source_description_header)
         status_index = header_map.get("Mapping Status")
         item_type_index = header_map.get("Item Type")
         report_status_index = header_map.get("Report Status")
@@ -292,7 +296,7 @@ def parse_item_mapping_workbook(content: bytes) -> ParsedItemWorkbook:
             if not any(value not in (None, "") for value in row):
                 continue
             row_count += 1
-            sku = _identifier(row[header_map["TWD SKU"]], 9)
+            sku = _identifier(row[header_map[source_sku_header]], 9)
             wa_item = _text(row[header_map["WA Item"]])
             source_description = (
                 _text(row[source_description_index])
@@ -305,9 +309,7 @@ def parse_item_mapping_workbook(content: bytes) -> ParsedItemWorkbook:
                 else ""
             )
             status = _import_status(
-                row[status_index]
-                if status_index is not None and status_index < len(row)
-                else None
+                row[status_index] if status_index is not None and status_index < len(row) else None
             )
             item_type = _metadata_value(
                 row[item_type_index]
@@ -361,18 +363,16 @@ def parse_item_mapping_workbook(content: bytes) -> ParsedItemWorkbook:
             branch_first_row = next(
                 branch_sheet.iter_rows(min_row=1, max_row=1, values_only=True), ()
             )
-            branch_headers = {
-                _text(value): index for index, value in enumerate(branch_first_row)
-            }
-            branch_required = ("TWD Branch", "WA Branch")
-            branch_missing = [
-                header for header in branch_required if header not in branch_headers
-            ]
+            branch_headers = {_text(value): index for index, value in enumerate(branch_first_row)}
+            source_branch_header = f"{mt_code} Branch"
+            source_branch_description_header = f"{mt_code} Branch Description"
+            branch_required = (source_branch_header, "WA Branch")
+            branch_missing = [header for header in branch_required if header not in branch_headers]
             if branch_missing:
                 raise ValueError(
                     f"Sheet '{BRANCH_SHEET_NAME}' ไม่พบ Column: {', '.join(branch_missing)}"
                 )
-            source_name_index = branch_headers.get("TWD Branch Description")
+            source_name_index = branch_headers.get(source_branch_description_header)
             wa_name_index = branch_headers.get("WA Branch Description")
             branch_status_index = branch_headers.get("Mapping Status")
             for excel_row, row in enumerate(
@@ -381,7 +381,7 @@ def parse_item_mapping_workbook(content: bytes) -> ParsedItemWorkbook:
                 if not any(value not in (None, "") for value in row):
                     continue
                 branch_row_count += 1
-                source_code = _identifier(row[branch_headers["TWD Branch"]], 5)
+                source_code = _identifier(row[branch_headers[source_branch_header]], 5)
                 wa_code = _text(row[branch_headers["WA Branch"]])
                 source_name = (
                     _text(row[source_name_index])
@@ -395,8 +395,7 @@ def parse_item_mapping_workbook(content: bytes) -> ParsedItemWorkbook:
                 )
                 status = _import_status(
                     row[branch_status_index]
-                    if branch_status_index is not None
-                    and branch_status_index < len(row)
+                    if branch_status_index is not None and branch_status_index < len(row)
                     else None
                 )
                 if not source_code:
@@ -440,11 +439,12 @@ def import_item_mapping_workbook(
     content: bytes,
     effective_from: date,
     filename: str,
+    modern_trade_code: str = "TWD",
 ) -> ItemImportReport:
-    parsed = parse_item_mapping_workbook(content)
-    modern_trade = session.scalar(select(ModernTrade).where(ModernTrade.code == "TWD"))
+    parsed = parse_item_mapping_workbook(content, modern_trade_code)
+    modern_trade = session.scalar(select(ModernTrade).where(ModernTrade.code == modern_trade_code))
     if modern_trade is None:
-        raise ValueError("ยังไม่มี Modern Trade รหัส TWD ในฐานข้อมูล")
+        raise ValueError(f"ยังไม่มี Modern Trade รหัส {modern_trade_code} ในฐานข้อมูล")
 
     source_skus = set(
         session.scalars(
@@ -475,16 +475,11 @@ def import_item_mapping_workbook(
         .where(
             BranchMapping.modern_trade_id == modern_trade.id,
             BranchMapping.effective_from <= effective_from,
-            (
-                BranchMapping.effective_to.is_(None)
-                | (BranchMapping.effective_to >= effective_from)
-            ),
+            (BranchMapping.effective_to.is_(None) | (BranchMapping.effective_to >= effective_from)),
         )
         .order_by(BranchMapping.effective_from)
     ).all()
-    existing_branches = {
-        mapping.source_branch_code: mapping for mapping in active_branch_mappings
-    }
+    existing_branches = {mapping.source_branch_code: mapping for mapping in active_branch_mappings}
     actor = f"excel-import:{filename[:160]}"
     inserted = unchanged = new_source_skus = existing_conflicts = 0
     errors = list(parsed.errors)
@@ -544,8 +539,7 @@ def import_item_mapping_workbook(
                         modern_trade_id=modern_trade.id,
                         source_sku=candidate.source_sku,
                         source_description=(
-                            candidate.source_description
-                            or current.source_description
+                            candidate.source_description or current.source_description
                         ),
                         effective_from=current.effective_from,
                         actor=actor,
@@ -553,7 +547,8 @@ def import_item_mapping_workbook(
             else:
                 existing_conflicts += 1
                 errors.append(
-                    f"TWD SKU {candidate.source_sku} มี Mapping เดิม {current.wa_item_code}; ไม่ได้แก้ทับ"
+                    f"{modern_trade.code} SKU {candidate.source_sku} มี Mapping เดิม "
+                    f"{current.wa_item_code}; ไม่ได้แก้ทับ"
                 )
             continue
 
@@ -604,17 +599,12 @@ def import_item_mapping_workbook(
         if current:
             if current.wa_branch_code == candidate.wa_branch_code:
                 next_source_description = (
-                    candidate.source_branch_description
-                    or current.source_branch_description
+                    candidate.source_branch_description or current.source_branch_description
                 )
                 next_wa_description = (
                     candidate.wa_branch_description or current.wa_branch_description
                 )
-                next_status = (
-                    "confirmed"
-                    if candidate.status == "confirmed"
-                    else current.status
-                )
+                next_status = "confirmed" if candidate.status == "confirmed" else current.status
                 if (
                     next_source_description != current.source_branch_description
                     or next_wa_description != current.wa_branch_description
@@ -645,7 +635,7 @@ def import_item_mapping_workbook(
             else:
                 branch_existing_conflicts += 1
                 errors.append(
-                    f"TWD Branch {candidate.source_branch_code} มี Mapping เดิม "
+                    f"{modern_trade.code} Branch {candidate.source_branch_code} มี Mapping เดิม "
                     f"{current.wa_branch_code}; ไม่ได้แก้ทับ"
                 )
             continue

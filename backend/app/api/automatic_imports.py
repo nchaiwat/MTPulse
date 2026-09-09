@@ -43,9 +43,7 @@ class SkuBackfillConfirmRequest(SkuBackfillRequest):
 
 
 def _modern_trade(session: Session, code: str) -> ModernTrade:
-    mt = session.scalar(
-        select(ModernTrade).where(ModernTrade.code == code.strip().upper())
-    )
+    mt = session.scalar(select(ModernTrade).where(ModernTrade.code == code.strip().upper()))
     if mt is None:
         raise HTTPException(status_code=404, detail=f"ไม่พบ Modern Trade {code}")
     return mt
@@ -61,18 +59,22 @@ def run_now(
     if not request.confirmed:
         raise HTTPException(status_code=400, detail="กรุณายืนยัน Run ก่อนเริ่มงาน")
     mt = _modern_trade(session, code)
-    if mt.code != "TWD":
+    if mt.code not in {"TWD", "HP", "MH"}:
         raise HTTPException(
             status_code=409,
-            detail="Automatic Import Phase นี้รองรับเฉพาะ TWD",
+            detail="Automatic Import รองรับเฉพาะ TWD, HP และ MH",
         )
-    if not mt.source_enabled:
-        raise HTTPException(status_code=409, detail=f"{mt.code} ปิดใช้งาน FileShare")
+    run_owner = _modern_trade(session, "HP") if mt.source_group_code == "HP_MH" else mt
+    if not run_owner.source_enabled:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{run_owner.code} ปิดใช้งาน FileShare",
+        )
     try:
-        run = create_run(session, mt, trigger="manual", actor=actor)
+        run = create_run(session, run_owner, trigger="manual", actor=actor)
     except ActiveRunError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return run_payload(run, mt, session=session)
+    return run_payload(run, run_owner, session=session)
 
 
 @router.get("/modern-trades/{code}/sku-backfills/options")
@@ -81,8 +83,8 @@ def sku_backfill_options(
     session: Annotated[Session, Depends(get_session)],
 ) -> dict:
     mt = _modern_trade(session, code)
-    if mt.code != "TWD":
-        raise HTTPException(status_code=409, detail="Backfill Phase นี้รองรับเฉพาะ TWD")
+    if mt.code not in {"TWD", "HP", "MH"}:
+        raise HTTPException(status_code=409, detail="Backfill รองรับเฉพาะ TWD, HP และ MH")
     return backfill_options(session, mt)
 
 
@@ -96,21 +98,22 @@ def refresh_source_registry(
     if not request.confirmed:
         raise HTTPException(status_code=400, detail="กรุณายืนยันก่อนอัปเดต File Registry")
     mt = _modern_trade(session, code)
-    if mt.code != "TWD":
-        raise HTTPException(status_code=409, detail="Phase นี้รองรับเฉพาะ TWD")
+    if mt.code not in {"TWD", "HP", "MH"}:
+        raise HTTPException(status_code=409, detail="รองรับเฉพาะ TWD, HP และ MH")
     if not mt.source_enabled:
-        raise HTTPException(status_code=409, detail="TWD ปิดใช้งาน FileShare")
+        raise HTTPException(status_code=409, detail=f"{mt.code} ปิดใช้งาน FileShare")
+    run_owner = _modern_trade(session, "HP") if mt.source_group_code == "HP_MH" else mt
     try:
         run = create_run(
             session,
-            mt,
+            run_owner,
             trigger="manual",
             actor=actor,
             mode="registry",
         )
     except ActiveRunError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return run_payload(run, mt, session=session)
+    return run_payload(run, run_owner, session=session)
 
 
 @router.post("/modern-trades/{code}/sku-backfills/preview")
@@ -120,8 +123,8 @@ def preview_backfill(
     session: Annotated[Session, Depends(get_session)],
 ) -> dict:
     mt = _modern_trade(session, code)
-    if mt.code != "TWD":
-        raise HTTPException(status_code=409, detail="Backfill Phase นี้รองรับเฉพาะ TWD")
+    if mt.code not in {"TWD", "HP", "MH"}:
+        raise HTTPException(status_code=409, detail="Backfill รองรับเฉพาะ TWD, HP และ MH")
     try:
         return preview_sku_backfill(
             session,
@@ -143,10 +146,10 @@ def start_backfill(
     if not request.confirmed:
         raise HTTPException(status_code=400, detail="กรุณายืนยัน Backfill ก่อนเริ่มงาน")
     mt = _modern_trade(session, code)
-    if mt.code != "TWD":
-        raise HTTPException(status_code=409, detail="Backfill Phase นี้รองรับเฉพาะ TWD")
+    if mt.code not in {"TWD", "HP", "MH"}:
+        raise HTTPException(status_code=409, detail="Backfill รองรับเฉพาะ TWD, HP และ MH")
     if not mt.source_enabled:
-        raise HTTPException(status_code=409, detail="TWD ปิดใช้งาน FileShare")
+        raise HTTPException(status_code=409, detail=f"{mt.code} ปิดใช้งาน FileShare")
     try:
         run = create_sku_backfill_run(
             session,
@@ -250,9 +253,7 @@ def import_runs(
     if mt_code:
         statement = statement.where(ModernTrade.code == mt_code.strip().upper())
     rows = session.execute(statement).all()
-    return {
-        "runs": [run_payload(run, mt, session=session) for run, mt in rows]
-    }
+    return {"runs": [run_payload(run, mt, session=session) for run, mt in rows]}
 
 
 @router.get("/import-runs/{run_id}")

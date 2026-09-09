@@ -1,14 +1,21 @@
 from calendar import monthrange
 from datetime import date
 from decimal import Decimal
+from io import BytesIO
 from typing import Annotated, Literal
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import case, distinct, func, select
 from sqlalchemy.orm import Session
+from starlette.responses import StreamingResponse
 
 from app.database import get_session
 from app.models import BranchMapping, ImportBatch, ModernTrade, MonthlySalesSummary
+from app.services.dashboard_export import (
+    build_dashboard_workbook,
+    dashboard_export_filename,
+)
 
 router = APIRouter(prefix="/api/dashboards", tags=["dashboards"])
 AVAILABLE_STATUSES = ("imported", "imported_with_warnings")
@@ -37,19 +44,19 @@ def _period_months(period: Period, selected_year: int, latest_date: date) -> lis
     return list(range(start, end + 1)) if end >= start else []
 
 
-@router.get("/twd")
-def twd_dashboard(
+def _dashboard(
+    code: str,
     session: Annotated[Session, Depends(get_session)],
     year: Annotated[int | None, Query(ge=2025, le=9999)] = None,
     period: Annotated[Period, Query()] = "ytd",
 ) -> dict:
     modern_trade = session.execute(
         select(ModernTrade.id, ModernTrade.code, ModernTrade.name).where(
-            ModernTrade.code == "TWD"
+            ModernTrade.code == code
         )
     ).one_or_none()
     if modern_trade is None:
-        raise HTTPException(status_code=404, detail="ไม่พบ Modern Trade รหัส TWD")
+        raise HTTPException(status_code=404, detail=f"ไม่พบ Modern Trade รหัส {code}")
 
     batch_filter = (
         ImportBatch.modern_trade_id == modern_trade.id,
@@ -88,7 +95,7 @@ def twd_dashboard(
     ]
     selected_year = year or latest_date.year
     if selected_year not in available_years:
-        raise HTTPException(status_code=422, detail="ปีที่เลือกยังไม่มีข้อมูล TWD")
+        raise HTTPException(status_code=422, detail=f"ปีที่เลือกยังไม่มีข้อมูล {code}")
 
     months = _period_months(period, selected_year, latest_date)
     previous_year = selected_year - 1
@@ -310,3 +317,54 @@ def twd_dashboard(
         "topBranches": top_branches,
         "topSkus": top_skus,
     }
+
+
+@router.get("/twd")
+def twd_dashboard(
+    session: Annotated[Session, Depends(get_session)],
+    year: Annotated[int | None, Query(ge=2025, le=9999)] = None,
+    period: Annotated[Period, Query()] = "ytd",
+) -> dict:
+    return _dashboard("TWD", session, year, period)
+
+
+@router.get("/{code}")
+def modern_trade_dashboard(
+    code: str,
+    session: Annotated[Session, Depends(get_session)],
+    year: Annotated[int | None, Query(ge=2025, le=9999)] = None,
+    period: Annotated[Period, Query()] = "ytd",
+) -> dict:
+    normalized = code.strip().upper()
+    if normalized not in {"HP", "MH"}:
+        raise HTTPException(status_code=404, detail=f"ไม่รองรับ Dashboard {normalized}")
+    return _dashboard(normalized, session, year, period)
+
+
+@router.get("/{code}/export")
+def export_modern_trade_dashboard(
+    code: str,
+    session: Annotated[Session, Depends(get_session)],
+    year: Annotated[int | None, Query(ge=2025, le=9999)] = None,
+    period: Annotated[Period, Query()] = "ytd",
+    metric: Annotated[Literal["amount", "qty"], Query()] = "amount",
+) -> StreamingResponse:
+    normalized = code.strip().upper()
+    if normalized not in {"TWD", "HP", "MH"}:
+        raise HTTPException(status_code=404, detail=f"ไม่รองรับ Dashboard {normalized}")
+    report = _dashboard(normalized, session, year, period)
+    selected_year = report["meta"]["year"]
+    if selected_year is None:
+        raise HTTPException(status_code=422, detail=f"ยังไม่มีข้อมูล Dashboard {normalized}")
+    content = build_dashboard_workbook(report, metric=metric)
+    filename = dashboard_export_filename(
+        normalized,
+        selected_year,
+        period,
+        metric,
+    )
+    return StreamingResponse(
+        BytesIO(content),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+    )

@@ -1,10 +1,18 @@
 export type Mode = 'sales' | 'inventory'
 export type SalesBasis = 'net' | 'gross'
-export type Metric = 'amount' | 'qty' | 'stockOh' | 'stockOnOrder'
+export type Metric = 'amount' | 'qty' | 'stockOh' | 'stockOnOrder' | 'stockValue'
+export type ModernTradeCode = 'TWD' | 'HP' | 'MH'
 export type Dimension = 'branch' | 'day' | 'month'
 export type BranchPeriod = 'month' | 'day'
 export type MappingStatus = 'confirmed' | 'pending' | 'unmatched'
 export type ItemType = 'normal' | 'trial'
+export type SkuFlagFilter = 'all' | 'flagged' | 'sho' | 'pro' | 'both' | 'none'
+export type SkuAnalysisFlagName = 'sho' | 'pro'
+
+export interface DateRange {
+  from: string
+  to: string
+}
 
 export interface Branch {
   id: string
@@ -18,6 +26,7 @@ export interface DataPoint {
   qty: number
   stockOh: number
   stockOnOrder: number
+  stockValue?: number
 }
 
 export interface PerformanceItem {
@@ -27,7 +36,19 @@ export interface PerformanceItem {
   waDescription: string | null
   mappingStatus: MappingStatus
   itemType?: ItemType
+  isSho?: boolean
+  isPro?: boolean
+  tom?: number | null
+  tod?: number | null
   points: DataPoint[]
+}
+
+export interface SkuAnalysisFlagResponse {
+  mtCode: ModernTradeCode
+  sku: string
+  isSho: boolean
+  isPro: boolean
+  updatedAt: string
 }
 
 export interface SkuOption {
@@ -43,6 +64,12 @@ export interface SelectedCell {
 }
 
 export interface PerformanceResponse {
+  mtCode?: ModernTradeCode
+  mtName?: string
+  metricCapabilities?: {
+    sales: Metric[]
+    inventory: Metric[]
+  }
   branches: Branch[]
   dates: string[]
   availableDates?: string[]
@@ -61,6 +88,15 @@ export interface PerformanceResponse {
     amount: number
     qty: number
     mappingAttention: number
+  }
+  inventorySummary?: {
+    stockOh: number
+    stockOnOrder: number
+    stockValue: number
+    averageTom?: number | null
+    averageTod?: number | null
+    turnoverSkuCount?: number
+    turnoverReferenceDate?: string | null
   }
   latestImport: {
     dataDate: string

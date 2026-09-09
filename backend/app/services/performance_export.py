@@ -12,10 +12,17 @@ METRIC_LABELS = {
     "qty": "Qty",
     "stockOh": "Stock On Hand",
     "stockOnOrder": "Stock On Order",
+    "stockValue": "Stock Value (Source)",
 }
 
 def _display_date(value: str) -> str:
     return datetime.fromisoformat(value).strftime("%d/%m/%Y")
+
+
+def _display_period(value: str) -> str:
+    if len(value) == 7:
+        return datetime.strptime(value, "%Y-%m").strftime("%b %Y")
+    return _display_date(value)
 
 
 
@@ -25,6 +32,7 @@ def performance_export_filename(
     grain: str,
     current_time: datetime | None = None,
     sales_basis: str = "net",
+    mt_code: str = "TWD",
 ) -> str:
     timestamp = as_bangkok(current_time or bangkok_now()).strftime("%Y%m%d_%H%M%S")
     view = (
@@ -36,7 +44,7 @@ def performance_export_filename(
     )
     basis = "_Gross" if mode == "sales" and sales_basis == "gross" else ""
     metric_label = METRIC_LABELS[metric].replace(" ", "")
-    return f"TWD_{mode.title()}{basis}_{metric_label}_{view}_{timestamp}.xlsx"
+    return f"{mt_code}_{mode.title()}{basis}_{metric_label}_{view}_{timestamp}.xlsx"
 
 
 def build_performance_workbook(
@@ -49,6 +57,7 @@ def build_performance_workbook(
     branch_id: str | None = None,
     branch_ids: list[str] | None = None,
     sales_basis: str = "net",
+    mt_code: str = "TWD",
 ) -> bytes:
     dimension = (
         "branch"
@@ -77,12 +86,15 @@ def build_performance_workbook(
     sheet.title = "Report"
     sheet.sheet_view.showGridLines = False
 
-    identity_headers = ["TWD SKU"]
+    identity_headers = [f"{mt_code} SKU"]
     if show_descriptions:
-        identity_headers.append("TWD Description")
+        identity_headers.append(f"{mt_code} Description")
     identity_headers.append("WA Item")
     if show_descriptions:
         identity_headers.append("WA Description")
+    show_turnover = mode == "inventory" and mt_code == "TWD"
+    if show_turnover:
+        identity_headers.extend(["TOM", "TOD"])
     headers = (
         identity_headers
         + ["TOTAL"]
@@ -107,20 +119,32 @@ def build_performance_workbook(
     sheet.cell(
         1,
         1,
-        f"TWD {mode.title()}{title_basis} by {dimension.title()} — {METRIC_LABELS[metric]}",
+        f"{mt_code} {mode.title()}{title_basis} by {dimension.title()} — {METRIC_LABELS[metric]}",
     )
+    selected_ranges = report.get("selectedDateRanges") or []
     period = report.get("selectedMonth") or (
-        " – ".join(_display_date(value) for value in selected_dates)
+        ", ".join(
+            _display_date(value["from"])
+            if value["from"] == value["to"]
+            else f"{_display_date(value['from'])} – {_display_date(value['to'])}"
+            for value in selected_ranges
+        )
+        if selected_ranges
+        else " – ".join(_display_period(value) for value in selected_dates)
         if selected_dates
         else "ไม่มีข้อมูล"
     )
     sheet.merge_cells(start_row=2, start_column=1, end_row=2, end_column=len(headers))
     sheet.cell(2, 1, f"ช่วงข้อมูล: {period} | Export: {bangkok_now():%d/%m/%Y %H:%M:%S}")
-    sheet.cell(4, 1, "SUM")
+    sheet.cell(4, 1, "AVG" if show_turnover else "SUM")
     for column, header in enumerate(headers, start=1):
         sheet.cell(5, column, header)
 
-    number_format = '#,##0.00;[Red]-#,##0.00;-""' if metric == "amount" else '#,##0;[Red]-#,##0;-""'
+    number_format = (
+        '#,##0.00;[Red]-#,##0.00;-""'
+        if metric in {"amount", "stockValue"}
+        else '#,##0;[Red]-#,##0;-""'
+    )
     for row_number, item in enumerate(report["items"], start=data_start_row):
         values = [item["sku"]]
         if show_descriptions:
@@ -128,11 +152,17 @@ def build_performance_workbook(
         values.append(item["waItem"] or "")
         if show_descriptions:
             values.append(item["waDescription"] or "")
+        if show_turnover:
+            values.extend([item.get("tom"), item.get("tod")])
         for column, value in enumerate(values, start=1):
             cell = sheet.cell(row_number, column, value)
             if column in {1, 3 if show_descriptions else 2}:
                 cell.data_type = "s"
                 cell.number_format = "@"
+        if show_turnover:
+            turnover_start = len(identity_headers) - 1
+            sheet.cell(row_number, turnover_start).number_format = '#,##0.00;[Red]-#,##0.00;-""'
+            sheet.cell(row_number, turnover_start + 1).number_format = '#,##0.00;[Red]-#,##0.00;-""'
 
         points = [
             point
@@ -172,6 +202,13 @@ def build_performance_workbook(
             cell.number_format = number_format
     else:
         sheet.cell(4, total_column, 0).number_format = number_format
+    if show_turnover:
+        turnover_start = len(identity_headers) - 1
+        inventory_summary = report.get("inventorySummary") or {}
+        sheet.cell(4, turnover_start, inventory_summary.get("averageTom"))
+        sheet.cell(4, turnover_start + 1, inventory_summary.get("averageTod"))
+        sheet.cell(4, turnover_start).number_format = '#,##0.00;[Red]-#,##0.00;-""'
+        sheet.cell(4, turnover_start + 1).number_format = '#,##0.00;[Red]-#,##0.00;-""'
 
     title_fill = PatternFill("solid", fgColor="102A43")
     header_fill = PatternFill("solid", fgColor="0B756E")
@@ -200,6 +237,8 @@ def build_performance_workbook(
     widths.append(24)
     if show_descriptions:
         widths.append(48)
+    if show_turnover:
+        widths.extend([12, 12])
     widths.extend([16] + [15] * len(dimension_keys))
     for column, width in enumerate(widths, start=1):
         sheet.column_dimensions[openpyxl.utils.get_column_letter(column)].width = width

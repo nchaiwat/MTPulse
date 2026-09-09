@@ -113,7 +113,7 @@ describe('MonitoringPage', () => {
         pendingFiles: [],
         pendingSkus: [{
           skuInterestId: 1,
-          mtCode: 'TWD',
+          mtCode: 'HP',
           sku: 'NEW-001',
           description: 'สินค้าใหม่',
           status: 'pending',
@@ -137,11 +137,12 @@ describe('MonitoringPage', () => {
     render(<MonitoringPage />)
 
     expect(await screen.findByText('NEW-001')).toBeInTheDocument()
+    expect(screen.getByText('Modern Trade · HP')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Accept' }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      expect.stringContaining('/api/admin/modern-trades/TWD/sku-interests/NEW-001'),
+      expect.stringContaining('/api/admin/modern-trades/HP/sku-interests/NEW-001'),
       expect.objectContaining({
         method: 'PATCH',
         body: JSON.stringify({ decision: 'accept' }),

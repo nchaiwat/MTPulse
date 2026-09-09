@@ -229,6 +229,7 @@ def _build_facts(
             sales_qty=row.sales_qty,
             stock_on_hand=row.stock_on_hand,
             stock_on_order=row.stock_on_order,
+            stock_value=0,
             last_sold_date=row.last_sold_date,
             last_receive_date=row.last_receive_date,
         )

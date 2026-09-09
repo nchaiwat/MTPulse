@@ -3,7 +3,7 @@ from datetime import date
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.api.performance import performance
+from app.api.performance import performance, sku_options
 from app.database import Base
 from app.models import (
     BranchMapping,
@@ -115,3 +115,83 @@ def test_monthly_report_does_not_mix_modern_trades() -> None:
     assert report["columnTotals"] == {
         "SHARED-BRANCH": {"amount": 100.0, "qty": 1.0}
     }
+
+
+def test_hp_report_exposes_stock_value_without_twd_data() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add_all(
+            [
+                ModernTrade(id=1, code="TWD", name="Thai Watsadu"),
+                ModernTrade(id=2, code="HP", name="HomePro"),
+                _batch(1, 1, "a"),
+                _batch(2, 2, "b"),
+                ItemMapping(
+                    id=1,
+                    modern_trade_id=2,
+                    source_sku="1165985",
+                    source_description="HP item",
+                    wa_item_code="WA-HP",
+                    status="confirmed",
+                    effective_from=date(2026, 8, 1),
+                    changed_by="test",
+                ),
+                BranchMapping(
+                    id=1,
+                    modern_trade_id=2,
+                    source_branch_code="S880",
+                    source_branch_description="HomePro branch",
+                    wa_branch_code="WA-S880",
+                    status="confirmed",
+                    effective_from=date(2026, 8, 1),
+                    changed_by="test",
+                ),
+                SalesInventoryFact(
+                    id=1,
+                    modern_trade_id=1,
+                    batch_id=1,
+                    data_date=date(2026, 8, 17),
+                    source_branch_code="60920",
+                    source_branch_name="TWD branch",
+                    source_sku="TWD-SKU",
+                    source_description="TWD item",
+                    source_amount=900,
+                    amount=900,
+                    sales_qty=9,
+                    stock_on_hand=90,
+                    stock_on_order=9,
+                    stock_value=9000,
+                ),
+                SalesInventoryFact(
+                    id=2,
+                    modern_trade_id=2,
+                    batch_id=2,
+                    data_date=date(2026, 8, 17),
+                    source_branch_code="S880",
+                    source_branch_name="HomePro branch",
+                    source_sku="1165985",
+                    source_description="HP item",
+                    source_amount=100,
+                    amount=100,
+                    sales_qty=1,
+                    stock_on_hand=5,
+                    stock_on_order=0,
+                    stock_value=1250,
+                ),
+            ]
+        )
+        session.commit()
+
+        report = performance(session=session, mt_code="HP", latest_only=True)
+        options = sku_options(session=session, mt_code="HP")
+
+    assert report["mtCode"] == "HP"
+    assert report["metricCapabilities"]["inventory"] == ["stockOh", "stockValue"]
+    assert report["inventorySummary"] == {
+        "stockOh": 5.0,
+        "stockOnOrder": 0.0,
+        "stockValue": 1250.0,
+    }
+    assert report["items"][0]["points"][0]["stockValue"] == 1250.0
+    assert [item["sku"] for item in options["items"]] == ["1165985"]

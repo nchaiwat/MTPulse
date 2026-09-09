@@ -1,13 +1,13 @@
 from calendar import monthrange
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from io import BytesIO
 from typing import Annotated, Literal
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import Integer, case, cast, distinct, func, or_, select
+from sqlalchemy import Integer, case, cast, distinct, func, literal, or_, select
 from sqlalchemy.orm import Session
 
 from app.database import get_session
@@ -20,6 +20,7 @@ from app.models import (
     ModernTrade,
     MonthlySalesSummary,
     SalesInventoryFact,
+    SkuAnalysisFlag,
 )
 from app.services.performance_export import (
     build_performance_workbook,
@@ -27,6 +28,18 @@ from app.services.performance_export import (
 )
 
 router = APIRouter(prefix="/api", tags=["performance"])
+SkuFlagFilter = Literal["all", "flagged", "sho", "pro", "both", "none"]
+
+
+def _metric_capabilities(mt_code: str) -> dict[str, list[str]]:
+    return {
+        "sales": ["amount", "qty"],
+        "inventory": (
+            ["stockOh", "stockOnOrder"]
+            if mt_code == "TWD"
+            else ["stockOh", "stockValue"]
+        ),
+    }
 
 
 def _number(value: Decimal) -> float:
@@ -36,6 +49,90 @@ def _number(value: Decimal) -> float:
 def _month_bounds(month_key: str) -> tuple[date, date]:
     year, month = (int(part) for part in month_key.split("-"))
     return date(year, month, 1), date(year, month, monthrange(year, month)[1])
+
+
+def _normalized_date_ranges(
+    date_ranges: list[str] | None,
+    date_from: date | None,
+    date_to: date | None,
+) -> list[tuple[date, date]]:
+    if not date_ranges:
+        return []
+    if date_from is not None or date_to is not None:
+        raise HTTPException(
+            status_code=422,
+            detail="date_range cannot be combined with date_from or date_to",
+        )
+    if len(date_ranges) > 12:
+        raise HTTPException(status_code=422, detail="เลือกช่วงวันที่ได้สูงสุด 12 ช่วง")
+
+    parsed: list[tuple[date, date]] = []
+    for index, raw_range in enumerate(date_ranges, start=1):
+        parts = [part.strip() for part in raw_range.split(",")]
+        if len(parts) != 2 or not all(parts):
+            raise HTTPException(
+                status_code=422,
+                detail=f"ช่วงวันที่ {index} ต้องใช้รูปแบบ YYYY-MM-DD,YYYY-MM-DD",
+            )
+        try:
+            start, end = (date.fromisoformat(part) for part in parts)
+        except ValueError as error:
+            raise HTTPException(
+                status_code=422,
+                detail=f"ช่วงวันที่ {index} ต้องใช้รูปแบบ YYYY-MM-DD,YYYY-MM-DD",
+            ) from error
+        if start > end:
+            raise HTTPException(
+                status_code=422,
+                detail=f"ช่วงวันที่ {index} วันที่เริ่มต้นต้องไม่เกินวันที่สิ้นสุด",
+            )
+        parsed.append((start, end))
+
+    parsed.sort(key=lambda value: (value[0], value[1]))
+    for index in range(1, len(parsed)):
+        if parsed[index][0] <= parsed[index - 1][1]:
+            raise HTTPException(
+                status_code=422,
+                detail=f"ช่วงวันที่ {index} ทับกับช่วงวันที่ {index + 1}",
+            )
+    return parsed
+
+
+def _date_in_ranges(value: date, ranges: list[tuple[date, date]]) -> bool:
+    return any(start <= value <= end for start, end in ranges)
+
+
+def _date_range_filter(column, ranges: list[tuple[date, date]]):
+    return or_(*(column.between(start, end) for start, end in ranges))
+
+
+def _previous_three_month_bounds(reference_date: date) -> tuple[date, date]:
+    reference_month_index = reference_date.year * 12 + reference_date.month - 1
+    first_month_index = reference_month_index - 3
+    first_year, first_month_zero = divmod(first_month_index, 12)
+    last_month_index = reference_month_index - 1
+    last_year, last_month_zero = divmod(last_month_index, 12)
+    last_month = last_month_zero + 1
+    return (
+        date(first_year, first_month_zero + 1, 1),
+        date(last_year, last_month, monthrange(last_year, last_month)[1]),
+    )
+
+
+def _turnover_values(stock_on_hand: Decimal, positive_sales_qty: Decimal):
+    if stock_on_hand < 0:
+        return None
+    two_places = Decimal("0.01")
+    average_sales = (positive_sales_qty / Decimal("3")).quantize(
+        two_places, rounding=ROUND_HALF_UP
+    )
+    if average_sales == 0:
+        return None
+    tom = (stock_on_hand / average_sales).quantize(
+        two_places, rounding=ROUND_HALF_UP
+    )
+    tod = (tom * Decimal("30")).quantize(two_places, rounding=ROUND_HALF_UP)
+    return tom, tod
 
 
 def _selected_branch_ids(branch_id: str | None, branch_ids: str | None) -> list[str]:
@@ -57,6 +154,45 @@ def _selected_sku_ids(sku_ids: str | None) -> list[str]:
     return selected
 
 
+def _sku_flag_predicate(source_sku, modern_trade_id: int, sku_flag: SkuFlagFilter):
+    if sku_flag == "all":
+        return None
+    matching_flags = select(SkuAnalysisFlag.source_sku).where(
+        SkuAnalysisFlag.modern_trade_id == modern_trade_id
+    )
+    if sku_flag == "flagged":
+        return source_sku.in_(
+            matching_flags.where(
+                or_(
+                    SkuAnalysisFlag.is_showroom.is_(True),
+                    SkuAnalysisFlag.is_promotion.is_(True),
+                )
+            )
+        )
+    if sku_flag == "sho":
+        return source_sku.in_(
+            matching_flags.where(SkuAnalysisFlag.is_showroom.is_(True))
+        )
+    if sku_flag == "pro":
+        return source_sku.in_(
+            matching_flags.where(SkuAnalysisFlag.is_promotion.is_(True))
+        )
+    if sku_flag == "both":
+        return source_sku.in_(
+            matching_flags.where(
+                SkuAnalysisFlag.is_showroom.is_(True),
+                SkuAnalysisFlag.is_promotion.is_(True),
+            )
+        )
+    flagged_skus = matching_flags.where(
+        or_(
+            SkuAnalysisFlag.is_showroom.is_(True),
+            SkuAnalysisFlag.is_promotion.is_(True),
+        )
+    )
+    return ~source_sku.in_(flagged_skus)
+
+
 def _daily_summary_covers_dates(
     session: Session,
     modern_trade_id: int,
@@ -75,13 +211,16 @@ def _daily_summary_covers_dates(
 @router.get("/performance")
 def performance(
     session: Annotated[Session, Depends(get_session)],
+    mt_code: Annotated[Literal["TWD", "HP", "MH"], Query()] = "TWD",
     date_from: Annotated[date | None, Query()] = None,
     date_to: Annotated[date | None, Query()] = None,
+    date_range: Annotated[list[str] | None, Query()] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int | None, Query(ge=1, le=1_000_000)] = None,
     branch_id: Annotated[str | None, Query(max_length=30)] = None,
     branch_ids: Annotated[str | None, Query(max_length=3000)] = None,
     sku_ids: Annotated[str | None, Query(max_length=10000)] = None,
+    sku_flag: Annotated[SkuFlagFilter, Query()] = "all",
     mapping_status: Annotated[Literal["confirmed", "pending", "unmatched"] | None, Query()] = None,
     hide_unmapped: Annotated[bool, Query()] = False,
     search: Annotated[str | None, Query(max_length=200)] = None,
@@ -92,11 +231,18 @@ def performance(
     period_month: Annotated[str | None, Query(max_length=7)] = None,
     latest_only: Annotated[bool, Query()] = False,
     sales_basis: Annotated[Literal["net", "gross"], Query()] = "net",
+    include_turnover: Annotated[bool, Query()] = False,
+    report_mode: Annotated[Literal["sales", "inventory"], Query()] = "sales",
 ) -> dict:
-    modern_trade = session.scalar(select(ModernTrade).where(ModernTrade.code == "TWD"))
+    modern_trade = session.scalar(select(ModernTrade).where(ModernTrade.code == mt_code))
     if modern_trade is None:
-        raise HTTPException(status_code=404, detail="ไม่พบ Modern Trade รหัส TWD")
-    twd_id = modern_trade.id
+        raise HTTPException(status_code=404, detail=f"ไม่พบ Modern Trade รหัส {mt_code}")
+    if sku_flag != "all" and mt_code != "TWD":
+        raise HTTPException(
+            status_code=422,
+            detail="Sho/Pro Prototype รองรับเฉพาะ TWD ใน Phase นี้",
+        )
+    modern_trade_id = modern_trade.id
     all_dates = session.scalars(
         select(ImportBatch.data_date)
         .where(
@@ -108,20 +254,44 @@ def performance(
     available_months = sorted({value.strftime("%Y-%m") for value in all_dates})
     min_date = all_dates[0] if all_dates else None
     max_date = all_dates[-1] if all_dates else None
-    range_from = date_from or min_date or bangkok_today()
-    range_to = date_to or max_date or range_from
+    selected_ranges = _normalized_date_ranges(date_range, date_from, date_to)
+    range_from = (
+        selected_ranges[0][0]
+        if selected_ranges
+        else date_from or min_date or bangkok_today()
+    )
+    range_to = (
+        selected_ranges[-1][1]
+        if selected_ranges
+        else date_to or max_date or range_from
+    )
     selected_snapshot_date = None
     if latest_only:
         eligible_dates = [
             value
             for value in all_dates
-            if (date_from is None or value >= date_from)
-            and (date_to is None or value <= date_to)
+            if (
+                _date_in_ranges(value, selected_ranges)
+                if selected_ranges
+                else (date_from is None or value >= date_from)
+                and (date_to is None or value <= date_to)
+            )
         ]
         selected_snapshot_date = eligible_dates[-1] if eligible_dates else None
         if selected_snapshot_date is not None:
             range_from = selected_snapshot_date
             range_to = selected_snapshot_date
+    inventory_month_snapshot_dates: list[date] = []
+    if report_mode == "inventory" and grain == "month":
+        latest_date_by_month: dict[str, date] = {}
+        for value in all_dates:
+            if selected_ranges:
+                if not _date_in_ranges(value, selected_ranges):
+                    continue
+            elif (date_from and value < date_from) or (date_to and value > date_to):
+                continue
+            latest_date_by_month[value.strftime("%Y-%m")] = value
+        inventory_month_snapshot_dates = list(latest_date_by_month.values())
     selected_month = None
     if grain == "branch_month":
         selected_month = (
@@ -139,7 +309,7 @@ def performance(
     requested_page_size = page_size if page_size is not None else modern_trade.report_page_size
     mapping_reference_date = max_date or range_to
     active_mapping_filters = (
-        ItemMapping.modern_trade_id == twd_id,
+        ItemMapping.modern_trade_id == modern_trade_id,
         ItemMapping.effective_from <= mapping_reference_date,
         (
             ItemMapping.effective_to.is_(None)
@@ -147,7 +317,7 @@ def performance(
         ),
     )
     active_branch_mapping_filters = (
-        BranchMapping.modern_trade_id == twd_id,
+        BranchMapping.modern_trade_id == modern_trade_id,
         BranchMapping.effective_from <= mapping_reference_date,
         (
             BranchMapping.effective_to.is_(None)
@@ -168,15 +338,17 @@ def performance(
         and not latest_only
         and date_from is None
         and date_to is None
+        and not selected_ranges
         and not selected_branch_ids
         and not selected_sku_ids
         and mapping_status is None
         and not hide_unmapped
         and not normalized_search
         and not modern_trade.show_unmatched_branches
-        and _daily_summary_covers_dates(session, twd_id, all_dates)
+        and _daily_summary_covers_dates(session, modern_trade_id, all_dates)
     )
-    use_monthly_summary = grain in ("month", "branch_month")
+    inventory_month_snapshot = report_mode == "inventory" and grain == "month"
+    use_monthly_summary = grain in ("month", "branch_month") and not inventory_month_snapshot
     report_model = (
         MonthlySalesSummary
         if use_monthly_summary
@@ -200,14 +372,28 @@ def performance(
     else:
         report_amount = report_model.amount
         report_qty = report_model.sales_qty
-    filters = [report_model.modern_trade_id == twd_id]
+    report_stock_oh = getattr(report_model, "stock_on_hand", literal(0))
+    report_stock_on_order = getattr(report_model, "stock_on_order", literal(0))
+    report_stock_value = getattr(report_model, "stock_value", literal(0))
+    filters = [report_model.modern_trade_id == modern_trade_id]
+    report_sku_flag_predicate = _sku_flag_predicate(
+        report_model.source_sku,
+        modern_trade_id,
+        sku_flag,
+    )
+    if report_sku_flag_predicate is not None:
+        filters.append(report_sku_flag_predicate)
     filters.append(~report_model.source_sku.in_(inactive_mapped_skus))
-    if latest_only:
+    if inventory_month_snapshot:
+        filters.append(report_date.in_(inventory_month_snapshot_dates))
+    elif latest_only:
         filters.append(
             report_date == selected_snapshot_date
             if selected_snapshot_date is not None
             else report_date.is_(None)
         )
+    elif selected_ranges:
+        filters.append(_date_range_filter(report_date, selected_ranges))
     else:
         if date_from or grain == "branch_month":
             filters.append(report_date >= range_from)
@@ -251,6 +437,13 @@ def performance(
         *active_mapping_filters,
         ItemMapping.report_status == "active",
     ]
+    mapping_sku_flag_predicate = _sku_flag_predicate(
+        ItemMapping.source_sku,
+        modern_trade_id,
+        sku_flag,
+    )
+    if mapping_sku_flag_predicate is not None:
+        mapping_candidate_filters.append(mapping_sku_flag_predicate)
     if selected_sku_ids:
         mapping_candidate_filters.append(ItemMapping.source_sku.in_(selected_sku_ids))
     if mapping_status and mapping_status != "unmatched":
@@ -282,18 +475,34 @@ def performance(
         candidate_skus = fact_skus.union(mapping_skus).subquery()
     total_skus = session.scalar(select(func.count()).select_from(candidate_skus)) or 0
     resolved_page_size = max(total_skus, 1) if requested_page_size == 0 else requested_page_size
-    total_amount, total_qty = session.execute(
+    (
+        total_amount,
+        total_qty,
+        total_stock_oh,
+        total_stock_on_order,
+        total_stock_value,
+    ) = session.execute(
         select(
             func.coalesce(func.sum(report_amount), 0),
             func.coalesce(func.sum(report_qty), 0),
+            func.coalesce(func.sum(report_stock_oh), 0),
+            func.coalesce(func.sum(report_stock_on_order), 0),
+            func.coalesce(func.sum(report_stock_value), 0),
         ).where(*filters)
     ).one()
     active_branch_count = 0
     if use_daily_summary:
         active_branch_filters = [
-            MonthlySalesSummary.modern_trade_id == twd_id,
+            MonthlySalesSummary.modern_trade_id == modern_trade_id,
             ~MonthlySalesSummary.source_sku.in_(inactive_mapped_skus),
         ]
+        monthly_sku_flag_predicate = _sku_flag_predicate(
+            MonthlySalesSummary.source_sku,
+            modern_trade_id,
+            sku_flag,
+        )
+        if monthly_sku_flag_predicate is not None:
+            active_branch_filters.append(monthly_sku_flag_predicate)
         if not modern_trade.show_unmatched_items:
             active_branch_filters.append(
                 MonthlySalesSummary.source_sku.in_(reportable_mapped_skus)
@@ -386,6 +595,101 @@ def performance(
         .offset((page - 1) * resolved_page_size)
         .limit(resolved_page_size)
     ).all()
+    turnover_by_sku: dict[str, tuple[Decimal, Decimal]] = {}
+    average_tom = None
+    average_tod = None
+    turnover_reference_date = None
+    if include_turnover and mt_code == "TWD":
+        eligible_reference_dates = [
+            value
+            for value in all_dates
+            if (
+                _date_in_ranges(value, selected_ranges)
+                if selected_ranges
+                else (date_from is None or value >= date_from)
+                and (date_to is None or value <= date_to)
+            )
+        ]
+        turnover_reference_date = (
+            eligible_reference_dates[-1] if eligible_reference_dates else None
+        )
+        if turnover_reference_date is not None:
+            turnover_skus = select(candidate_skus.c.source_sku)
+            sales_from, sales_to = _previous_three_month_bounds(
+                turnover_reference_date
+            )
+            use_turnover_summary = (
+                not selected_branch_ids
+                and _daily_summary_covers_dates(session, modern_trade_id, all_dates)
+            )
+            turnover_model = (
+                DailySkuSummary if use_turnover_summary else SalesInventoryFact
+            )
+            stock_filters = [
+                turnover_model.modern_trade_id == modern_trade_id,
+                turnover_model.data_date == turnover_reference_date,
+                turnover_model.source_sku.in_(turnover_skus),
+            ]
+            sales_filters = [
+                turnover_model.modern_trade_id == modern_trade_id,
+                turnover_model.data_date.between(sales_from, sales_to),
+                turnover_model.source_sku.in_(turnover_skus),
+            ]
+            sales_qty = (
+                DailySkuSummary.gross_sales_qty
+                if use_turnover_summary
+                else SalesInventoryFact.sales_qty
+            )
+            if not use_turnover_summary:
+                sales_filters.append(SalesInventoryFact.sales_qty > 0)
+            if not use_turnover_summary and not modern_trade.show_unmatched_branches:
+                stock_filters.append(
+                    SalesInventoryFact.source_branch_code.in_(mapped_branches)
+                )
+                sales_filters.append(
+                    SalesInventoryFact.source_branch_code.in_(mapped_branches)
+                )
+            if not use_turnover_summary and selected_branch_ids:
+                stock_filters.append(
+                    SalesInventoryFact.source_branch_code.in_(selected_branch_ids)
+                )
+                sales_filters.append(
+                    SalesInventoryFact.source_branch_code.in_(selected_branch_ids)
+                )
+            stock_rows = session.execute(
+                select(
+                    turnover_model.source_sku,
+                    func.sum(turnover_model.stock_on_hand),
+                )
+                .where(*stock_filters)
+                .group_by(turnover_model.source_sku)
+            ).all()
+            sales_rows = session.execute(
+                select(
+                    turnover_model.source_sku,
+                    func.sum(sales_qty),
+                )
+                .where(*sales_filters)
+                .group_by(turnover_model.source_sku)
+            ).all()
+            sales_by_sku = {sku: qty for sku, qty in sales_rows}
+            for sku, stock_on_hand in stock_rows:
+                values = _turnover_values(
+                    stock_on_hand,
+                    sales_by_sku.get(sku, Decimal("0")),
+                )
+                if values is not None:
+                    turnover_by_sku[sku] = values
+            if turnover_by_sku:
+                two_places = Decimal("0.01")
+                average_tom = (
+                    sum(value[0] for value in turnover_by_sku.values())
+                    / Decimal(len(turnover_by_sku))
+                ).quantize(two_places, rounding=ROUND_HALF_UP)
+                average_tod = (
+                    sum(value[1] for value in turnover_by_sku.values())
+                    / Decimal(len(turnover_by_sku))
+                ).quantize(two_places, rounding=ROUND_HALF_UP)
     facts = []
     daily_rows = []
     monthly_rows = []
@@ -401,6 +705,7 @@ def performance(
                 func.sum(report_qty),
                 func.sum(report_model.stock_on_hand),
                 func.sum(report_model.stock_on_order),
+                func.sum(report_model.stock_value),
             )
             .where(*filters, report_model.source_sku.in_(skus))
             .group_by(report_model.source_sku, report_date)
@@ -417,6 +722,9 @@ def performance(
                 month_part,
                 func.sum(report_amount),
                 func.sum(report_qty),
+                func.sum(report_stock_oh),
+                func.sum(report_stock_on_order),
+                func.sum(report_stock_value),
             )
             .where(*filters, report_model.source_sku.in_(skus))
             .group_by(report_model.source_sku, year_part, month_part)
@@ -458,20 +766,45 @@ def performance(
                 SalesInventoryFact.source_branch_code,
             )
         ).all()
-    branch_report_model = MonthlySalesSummary if use_daily_summary else SalesInventoryFact
-    branch_query = select(
-        branch_report_model.source_branch_code,
-        func.min(branch_report_model.source_branch_name),
-    ).where(branch_report_model.modern_trade_id == twd_id)
-    if not modern_trade.show_unmatched_branches:
-        branch_query = branch_query.where(
-            branch_report_model.source_branch_code.in_(mapped_branches)
+    if modern_trade.show_unmatched_branches:
+        branch_report_model = (
+            MonthlySalesSummary if use_daily_summary else SalesInventoryFact
         )
-    branch_rows = session.execute(
-        branch_query.group_by(branch_report_model.source_branch_code).order_by(
-            branch_report_model.source_branch_code
-        )
-    ).all()
+        branch_query = select(
+            branch_report_model.source_branch_code,
+            func.min(branch_report_model.source_branch_name),
+        ).where(branch_report_model.modern_trade_id == modern_trade_id)
+        branch_rows = session.execute(
+            branch_query.group_by(branch_report_model.source_branch_code).order_by(
+                branch_report_model.source_branch_code
+            )
+        ).all()
+    else:
+        branch_rows = session.execute(
+            select(
+                MonthlySalesSummary.source_branch_code,
+                func.min(MonthlySalesSummary.source_branch_name),
+            )
+            .where(
+                MonthlySalesSummary.modern_trade_id == modern_trade_id,
+                MonthlySalesSummary.source_branch_code.in_(mapped_branches),
+            )
+            .group_by(MonthlySalesSummary.source_branch_code)
+            .order_by(MonthlySalesSummary.source_branch_code)
+        ).all()
+        if not branch_rows:
+            branch_rows = session.execute(
+                select(
+                    SalesInventoryFact.source_branch_code,
+                    func.min(SalesInventoryFact.source_branch_name),
+                )
+                .where(
+                    SalesInventoryFact.modern_trade_id == modern_trade_id,
+                    SalesInventoryFact.source_branch_code.in_(mapped_branches),
+                )
+                .group_by(SalesInventoryFact.source_branch_code)
+                .order_by(SalesInventoryFact.source_branch_code)
+            ).all()
     branch_mappings = session.scalars(
         select(BranchMapping)
         .where(*active_branch_mapping_filters)
@@ -498,6 +831,18 @@ def performance(
         .order_by(ItemMapping.effective_from)
     ).all()
     mapping_by_sku = {mapping.source_sku: mapping for mapping in mappings}
+    analysis_flags_by_sku = {}
+    if mt_code == "TWD" and skus:
+        analysis_flags = session.scalars(
+            select(SkuAnalysisFlag).where(
+                SkuAnalysisFlag.modern_trade_id == modern_trade_id,
+                SkuAnalysisFlag.source_sku.in_(skus),
+            )
+        ).all()
+        analysis_flags_by_sku = {
+            analysis_flag.source_sku: analysis_flag
+            for analysis_flag in analysis_flags
+        }
 
     items: dict[str, dict] = {}
 
@@ -509,13 +854,32 @@ def performance(
                 "sku": source_sku,
                 "twdDescription": source_description
                 or (mapping.source_description if mapping else None)
-                or "ไม่มีรายละเอียด TWD",
+                or f"ไม่มีรายละเอียด {mt_code}",
                 "waItem": mapping.wa_item_code if mapping else None,
                 "waDescription": mapping.wa_item_description if mapping else None,
                 "mappingStatus": mapping.status if mapping else "unmatched",
                 "itemType": mapping.item_type if mapping else "normal",
                 "points": [],
             }
+            if mt_code == "TWD":
+                analysis_flag = analysis_flags_by_sku.get(source_sku)
+                item["isSho"] = bool(
+                    analysis_flag and analysis_flag.is_showroom
+                )
+                item["isPro"] = bool(
+                    analysis_flag and analysis_flag.is_promotion
+                )
+            if include_turnover and mt_code == "TWD":
+                item["tom"] = (
+                    _number(turnover_by_sku[source_sku][0])
+                    if source_sku in turnover_by_sku
+                    else None
+                )
+                item["tod"] = (
+                    _number(turnover_by_sku[source_sku][1])
+                    if source_sku in turnover_by_sku
+                    else None
+                )
             items[source_sku] = item
         elif source_description:
             item["twdDescription"] = source_description
@@ -542,6 +906,7 @@ def performance(
                 ),
                 "stockOh": _number(fact.stock_on_hand),
                 "stockOnOrder": _number(fact.stock_on_order),
+                "stockValue": _number(fact.stock_value),
             }
         )
 
@@ -554,6 +919,7 @@ def performance(
         qty,
         stock_oh,
         stock_on_order,
+        stock_value,
     ) in daily_rows:
         item = item_for(source_sku, source_description)
         item["points"].append(
@@ -564,10 +930,21 @@ def performance(
                 "qty": _number(qty),
                 "stockOh": _number(stock_oh),
                 "stockOnOrder": _number(stock_on_order),
+                "stockValue": _number(stock_value),
             }
         )
 
-    for source_sku, source_description, year, month, amount, qty in monthly_rows:
+    for (
+        source_sku,
+        source_description,
+        year,
+        month,
+        amount,
+        qty,
+        stock_oh,
+        stock_on_order,
+        stock_value,
+    ) in monthly_rows:
         item = item_for(source_sku, source_description)
         item["points"].append(
             {
@@ -575,8 +952,9 @@ def performance(
                 "branchId": "all",
                 "amount": _number(amount),
                 "qty": _number(qty),
-                "stockOh": 0,
-                "stockOnOrder": 0,
+                "stockOh": _number(stock_oh),
+                "stockOnOrder": _number(stock_on_order),
+                "stockValue": _number(stock_value),
             }
         )
 
@@ -590,6 +968,7 @@ def performance(
                 "qty": _number(qty),
                 "stockOh": 0,
                 "stockOnOrder": 0,
+                "stockValue": 0,
             }
         )
 
@@ -603,16 +982,20 @@ def performance(
                 "qty": _number(qty),
                 "stockOh": 0,
                 "stockOnOrder": 0,
+                "stockValue": 0,
             }
         )
 
     latest_import = session.scalar(
         select(ImportBatch)
-        .where(ImportBatch.modern_trade_id == twd_id)
+        .where(ImportBatch.modern_trade_id == modern_trade_id)
         .order_by(ImportBatch.data_date.desc(), ImportBatch.id.desc())
         .limit(1)
     )
     return {
+        "mtCode": mt_code,
+        "mtName": modern_trade.name,
+        "metricCapabilities": _metric_capabilities(mt_code),
         "branches": [
             {
                 "id": code,
@@ -637,6 +1020,10 @@ def performance(
         "months": available_months,
         "availableDates": [value.isoformat() for value in all_dates],
         "selectedMonth": selected_month,
+        "selectedDateRanges": [
+            {"from": start.isoformat(), "to": end.isoformat()}
+            for start, end in selected_ranges
+        ],
         "columnTotals": column_totals,
         "items": list(items.values()),
         "meta": {
@@ -650,6 +1037,27 @@ def performance(
             "amount": _number(total_amount),
             "qty": _number(total_qty),
             "mappingAttention": mapping_attention,
+        },
+        "inventorySummary": {
+            "stockOh": _number(total_stock_oh),
+            "stockOnOrder": _number(total_stock_on_order),
+            "stockValue": _number(total_stock_value),
+            **(
+                {
+                    "averageTom": _number(average_tom)
+                    if average_tom is not None
+                    else None,
+                    "averageTod": _number(average_tod)
+                    if average_tod is not None
+                    else None,
+                    "turnoverSkuCount": len(turnover_by_sku),
+                    "turnoverReferenceDate": turnover_reference_date.isoformat()
+                    if turnover_reference_date
+                    else None,
+                }
+                if include_turnover and mt_code == "TWD"
+                else {}
+            ),
         },
         "latestImport": (
             {
@@ -668,10 +1076,11 @@ def performance(
 @router.get("/performance/sku-options")
 def sku_options(
     session: Annotated[Session, Depends(get_session)],
+    mt_code: Annotated[Literal["TWD", "HP", "MH"], Query()] = "TWD",
 ) -> dict:
-    modern_trade = session.scalar(select(ModernTrade).where(ModernTrade.code == "TWD"))
+    modern_trade = session.scalar(select(ModernTrade).where(ModernTrade.code == mt_code))
     if modern_trade is None:
-        raise HTTPException(status_code=404, detail="ไม่พบ Modern Trade รหัส TWD")
+        raise HTTPException(status_code=404, detail=f"ไม่พบ Modern Trade รหัส {mt_code}")
 
     mapping_reference_date = session.scalar(
         select(func.max(ImportBatch.data_date)).where(
@@ -740,7 +1149,7 @@ def sku_options(
                 "sku": sku,
                 "twdDescription": source_by_sku.get(sku)
                 or (mapping_by_sku[sku].source_description if sku in mapping_by_sku else None)
-                or "ไม่มีรายละเอียด TWD",
+                or f"ไม่มีรายละเอียด {mt_code}",
                 "waItem": mapping_by_sku[sku].wa_item_code if sku in mapping_by_sku else None,
                 "waDescription": mapping_by_sku[sku].wa_item_description
                 if sku in mapping_by_sku
@@ -756,11 +1165,14 @@ def sku_options(
 @router.get("/performance/export")
 def export_performance(
     session: Annotated[Session, Depends(get_session)],
+    mt_code: Annotated[Literal["TWD", "HP", "MH"], Query()] = "TWD",
     date_from: Annotated[date | None, Query()] = None,
     date_to: Annotated[date | None, Query()] = None,
+    date_range: Annotated[list[str] | None, Query()] = None,
     branch_id: Annotated[str | None, Query(max_length=30)] = None,
     branch_ids: Annotated[str | None, Query(max_length=3000)] = None,
     sku_ids: Annotated[str | None, Query(max_length=10000)] = None,
+    sku_flag: Annotated[SkuFlagFilter, Query()] = "all",
     mapping_status: Annotated[
         Literal["confirmed", "pending", "unmatched"] | None, Query()
     ] = None,
@@ -771,21 +1183,29 @@ def export_performance(
     period_month: Annotated[str | None, Query(max_length=7)] = None,
     mode: Annotated[Literal["sales", "inventory"], Query()] = "sales",
     metric: Annotated[
-        Literal["amount", "qty", "stockOh", "stockOnOrder"], Query()
+        Literal["amount", "qty", "stockOh", "stockOnOrder", "stockValue"], Query()
     ] = "amount",
     show_descriptions: Annotated[bool, Query()] = True,
     latest_only: Annotated[bool, Query()] = False,
     sales_basis: Annotated[Literal["net", "gross"], Query()] = "net",
 ) -> StreamingResponse:
+    if metric not in _metric_capabilities(mt_code)[mode]:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Metric {metric} ไม่มีในข้อมูล {mt_code} สำหรับโหมด {mode}",
+        )
     report = performance(
         session=session,
+        mt_code=mt_code,
         date_from=date_from,
         date_to=date_to,
+        date_range=date_range,
         page=1,
         page_size=1_000_000,
         branch_id=branch_id,
         branch_ids=branch_ids,
         sku_ids=sku_ids,
+        sku_flag=sku_flag,
         mapping_status=mapping_status,
         hide_unmapped=False,
         search=search,
@@ -793,6 +1213,8 @@ def export_performance(
         period_month=period_month,
         latest_only=latest_only,
         sales_basis=sales_basis,
+        include_turnover=mode == "inventory",
+        report_mode=mode,
     )
     content = build_performance_workbook(
         report,
@@ -803,9 +1225,10 @@ def export_performance(
         branch_id=branch_id,
         branch_ids=_selected_branch_ids(branch_id, branch_ids),
         sales_basis=sales_basis,
+        mt_code=mt_code,
     )
     filename = performance_export_filename(
-        mode, metric, grain, sales_basis=sales_basis
+        mode, metric, grain, sales_basis=sales_basis, mt_code=mt_code
     )
     return StreamingResponse(
         BytesIO(content),

@@ -120,6 +120,14 @@ def _live_run_progress(session: Session, run: ImportRun) -> dict[str, object] | 
             "recentIssues": [],
         }
 
+    source_group = session.scalar(
+        select(ModernTrade.source_group_code).where(
+            ModernTrade.id == run.modern_trade_id
+        )
+    )
+    if source_group == "HP_MH":
+        return _live_hp_mh_progress(session, run)
+
     status_rows = session.execute(
         select(SourceFile.status, func.count(SourceFile.id))
         .where(SourceFile.last_seen_run_id == run.id)
@@ -166,6 +174,79 @@ def _live_run_progress(session: Session, run: ImportRun) -> dict[str, object] | 
         "processed": processed,
         "total": total,
         "percent": round(processed * 100 / total, 1) if total else 0,
+        "lastProcessedFile": latest.source_filename if latest else None,
+        "lastProcessedPath": latest.source_path if latest else None,
+        "lastActivityAt": latest.last_seen_at.isoformat() if latest else None,
+        "counts": counts,
+        "recentIssues": [
+            {
+                "filename": issue.source_filename,
+                "status": issue.status,
+                "message": issue.error_message,
+            }
+            for issue in issues
+        ],
+    }
+
+
+def _live_hp_mh_progress(session: Session, run: ImportRun) -> dict[str, object]:
+    rows = list(
+        session.scalars(
+            select(SourceFile)
+            .where(SourceFile.last_seen_run_id == run.id)
+            .order_by(SourceFile.last_seen_at.desc(), SourceFile.id.desc())
+        )
+    )
+    grouped: dict[str, list[SourceFile]] = {}
+    for row in rows:
+        grouped.setdefault(row.pair_key or row.source_path, []).append(row)
+
+    precedence = (
+        "failed",
+        "pending_review",
+        "missing",
+        "ready",
+        "imported",
+        "duplicate",
+        "superseded",
+        "discovered",
+    )
+    pair_statuses = []
+    for pair_rows in grouped.values():
+        statuses = {row.status for row in pair_rows}
+        pair_statuses.append(
+            next((status for status in precedence if status in statuses), "discovered")
+        )
+
+    processed = len(pair_statuses)
+    total = run.found_count
+    counts = {
+        "found": total,
+        "imported": pair_statuses.count("imported"),
+        "ready": pair_statuses.count("ready"),
+        "pending": pair_statuses.count("pending_review") + pair_statuses.count("missing"),
+        "failed": pair_statuses.count("failed"),
+    }
+    counts["skipped"] = processed - sum(
+        counts[key] for key in ("imported", "ready", "pending", "failed")
+    )
+    latest = rows[0] if rows else None
+    issues = [
+        row
+        for row in rows
+        if row.status in {"failed", "pending_review", "missing"}
+    ][:3]
+    return {
+        "phase": (
+            "queued"
+            if run.status == "queued"
+            else "discovering"
+            if total == 0
+            else "processing_pairs"
+        ),
+        "processed": processed,
+        "total": total,
+        "percent": round(min(processed, total) * 100 / total, 1) if total else 0,
         "lastProcessedFile": latest.source_filename if latest else None,
         "lastProcessedPath": latest.source_path if latest else None,
         "lastActivityAt": latest.last_seen_at.isoformat() if latest else None,
@@ -774,6 +855,11 @@ def process_run(session: Session, run_id: int) -> None:
     mt = session.get(ModernTrade, run.modern_trade_id)
     if mt is None:
         raise AutomaticImportError("ไม่พบ Modern Trade ของ Run")
+    if mt.source_group_code == "HP_MH":
+        from app.services.hp_mh_automatic_import import process_hp_mh_run
+
+        process_hp_mh_run(session, run_id)
+        return
     try:
         root, username, password = _credentials(session, mt)
         candidates = list_twd_source_files(root, username=username, password=password)

@@ -17,12 +17,21 @@ const defaultSettings: UnmatchedVisibility = {
   mappingAttentionItems: 0,
   mappingAttentionBranches: 0,
   reportPageSize: 25,
+  hasData: false,
 }
 
 const currentYear = new Date().getFullYear()
 const coverageYears = Array.from({ length: currentYear - 2025 + 1 }, (_, index) => currentYear - index)
 
-export function TwdSettingsPage({ embedded = false }: { embedded?: boolean }) {
+export function TwdSettingsPage({
+  embedded = false,
+  mtCode = 'TWD',
+  mtName = 'ไทวัสดุ',
+}: {
+  embedded?: boolean
+  mtCode?: 'TWD' | 'HP' | 'MH'
+  mtName?: string
+}) {
   const [settings, setSettings] = useState(defaultSettings)
   const [isLoading, setIsLoading] = useState(true)
   const [updating, setUpdating] = useState<'item' | 'branch' | null>(null)
@@ -39,8 +48,12 @@ export function TwdSettingsPage({ embedded = false }: { embedded?: boolean }) {
 
   useEffect(() => {
     const controller = new AbortController()
-    fetchUnmatchedVisibility(controller.signal)
-      .then((loaded) => setSettings({ ...defaultSettings, ...loaded }))
+    fetchUnmatchedVisibility(mtCode, controller.signal)
+      .then((loaded) => setSettings({
+        ...defaultSettings,
+        ...loaded,
+        hasData: loaded.hasData ?? true,
+      }))
       .catch((error: unknown) => {
         if (!controller.signal.aborted) {
           setMessage(error instanceof Error ? error.message : 'โหลดการตั้งค่าไม่สำเร็จ')
@@ -48,7 +61,7 @@ export function TwdSettingsPage({ embedded = false }: { embedded?: boolean }) {
       })
       .finally(() => { if (!controller.signal.aborted) setIsLoading(false) })
     return () => controller.abort()
-  }, [])
+  }, [mtCode])
 
   const changeSetting = async (
     target: 'item' | 'branch',
@@ -61,7 +74,7 @@ export function TwdSettingsPage({ embedded = false }: { embedded?: boolean }) {
     setUpdating(target)
     setMessage(null)
     try {
-      const saved = await updateUnmatchedVisibility(nextSettings)
+      const saved = await updateUnmatchedVisibility(nextSettings, mtCode)
       setSettings(saved)
       setMessage(
         nextValue
@@ -79,7 +92,7 @@ export function TwdSettingsPage({ embedded = false }: { embedded?: boolean }) {
     setIsExporting(true)
     setMappingMessage(null)
     try {
-      const { blob, filename } = await exportItemMappings()
+      const { blob, filename } = await exportItemMappings(mtCode)
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = url
@@ -100,7 +113,7 @@ export function TwdSettingsPage({ embedded = false }: { embedded?: boolean }) {
     setIsImporting(true)
     setMappingMessage(null)
     try {
-      const report = await importItemMappings(file)
+      const report = await importItemMappings(file, mtCode)
       const details = [`Item ใหม่ ${report.inserted_pending}`, `Item เดิม ${report.unchanged}`]
       if (report.conflicts) details.push(`ขัดแย้ง ${report.conflicts}`)
       details.push(`Branch ใหม่ ${report.branch_inserted_pending}`, `Branch อัปเดต ${report.branch_updated}`, `Branch เดิม ${report.branch_unchanged}`)
@@ -119,7 +132,7 @@ export function TwdSettingsPage({ embedded = false }: { embedded?: boolean }) {
     setIsPageSizeUpdating(true)
     setMessage(null)
     try {
-      const saved = await updateReportPageSize(reportPageSize)
+      const saved = await updateReportPageSize(reportPageSize, mtCode)
       setSettings((current) => ({
         ...current,
         reportPageSize: saved.reportPageSize,
@@ -135,7 +148,7 @@ export function TwdSettingsPage({ embedded = false }: { embedded?: boolean }) {
     setIsCoverageDownloading(true)
     setCoverageMessage(null)
     try {
-      const { blob, filename } = await downloadDataCoverage('TWD', coverageYear)
+      const { blob, filename } = await downloadDataCoverage(mtCode, coverageYear)
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = url
@@ -156,8 +169,8 @@ export function TwdSettingsPage({ embedded = false }: { embedded?: boolean }) {
     <div className={embedded ? 'settings-page settings-page-embedded' : 'settings-page page-content'}>
       {!embedded && <div className="settings-intro">
         <div>
-          <span className="eyebrow">การตั้งค่า / ไทวัสดุ</span>
-          <h2>การตั้งค่าไทวัสดุ</h2>
+          <span className="eyebrow">การตั้งค่า / {mtCode}</span>
+          <h2>การตั้งค่า{mtName}</h2>
           <p>Mapping ที่ยืนยันจากไฟล์ Excel จะแสดงในรายงานโดยอัตโนมัติ</p>
         </div>
         <div className="scope-rule">
@@ -166,13 +179,13 @@ export function TwdSettingsPage({ embedded = false }: { embedded?: boolean }) {
         </div>
       </div>
 }
-      <section id="twd-item-mapping" className="mapping-settings" aria-labelledby="mapping-exchange-heading">
+      <section id={`${mtCode.toLowerCase()}-item-mapping`} className="mapping-settings" aria-labelledby="mapping-exchange-heading">
         <header>
           <span className="setting-icon"><FileSpreadsheet size={19} aria-hidden="true" /></span>
           <div>
             <span className="eyebrow">Mapping Excel</span>
             <h3 id="mapping-exchange-heading">Item และ Branch Mapping</h3>
-            <p>Export ไปตรวจสอบหรือแก้ไขใน Excel แล้ว Import กลับเข้าการตั้งค่าไทวัสดุ</p>
+            <p>Export ไปตรวจสอบหรือแก้ไขใน Excel แล้ว Import กลับเข้าการตั้งค่า {mtName}</p>
           </div>
           <div className="mapping-settings-actions">
             <button id="mapping-export-button" className="secondary-action" type="button" disabled={isExporting || isImporting} onClick={() => void handleExport()}><Download size={15} />{isExporting ? 'กำลัง Export…' : 'Export Mapping'}</button>
@@ -181,13 +194,19 @@ export function TwdSettingsPage({ embedded = false }: { embedded?: boolean }) {
           </div>
         </header>
         <div className="mapping-attention-summary" aria-label="รายการ Mapping ที่ต้องตรวจ">
-          <span><PackageSearch size={15} aria-hidden="true" /><strong>{settings.mappingAttentionItems.toLocaleString('en-US')}</strong> Item</span>
-          <span><Building2 size={15} aria-hidden="true" /><strong>{settings.mappingAttentionBranches.toLocaleString('en-US')}</strong> Branch</span>
-          <small>ตรวจสอบโดย Export Mapping แก้ไขใน Excel แล้ว Import กลับ</small>
+          {isLoading
+            ? <span><PackageSearch size={15} aria-hidden="true" /><strong>กำลังโหลดข้อมูล…</strong></span>
+            : settings.hasData === false
+            ? <span><PackageSearch size={15} aria-hidden="true" /><strong>ยังไม่มีข้อมูล</strong></span>
+            : <>
+                <span><PackageSearch size={15} aria-hidden="true" /><strong>{settings.mappingAttentionItems.toLocaleString('en-US')}</strong> Item</span>
+                <span><Building2 size={15} aria-hidden="true" /><strong>{settings.mappingAttentionBranches.toLocaleString('en-US')}</strong> Branch</span>
+                <small>ตรวจสอบโดย Export Mapping แก้ไขใน Excel แล้ว Import กลับ</small>
+              </>}
         </div>
         {mappingMessage && <div className="settings-message" data-tone={mappingMessage.tone === 'error' ? 'error' : undefined} role="status">{mappingMessage.text}</div>}
       </section>
-      <SkuBackfillPanel key={mappingRevision} />
+      <SkuBackfillPanel key={mappingRevision} mtCode={mtCode} />
       <section className="report-display-settings" aria-labelledby="report-display-heading">
         <header>
           <span className="setting-icon"><Rows3 size={19} aria-hidden="true" /></span>

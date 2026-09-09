@@ -196,12 +196,12 @@ Backup เป็นแผน Production ยังไม่ได้ Implement �
 ## 7. Test Server ปัจจุบัน
 
 - Hostname: `wa-mtpulse-test`
-- IP: `192.168.68.129`
+- IP: `192.168.10.20` (DHCP Reservation)
 - Ubuntu 24.04.4 LTS
 - CPU: Intel Core i7-1255U
 - RAM: ประมาณ 15 GiB
 - Source: `/opt/mtpulse`
-- URL: `http://192.168.68.129`
+- URL: `http://192.168.10.20`
 - Docker Engine/PostgreSQL 17/API/Web ทำงานอยู่
 - ใช้ `compose.server.yaml`
 

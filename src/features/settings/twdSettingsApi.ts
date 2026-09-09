@@ -6,6 +6,13 @@ export interface UnmatchedVisibility {
   mappingAttentionItems: number
   mappingAttentionBranches: number
   reportPageSize: number
+  hasData?: boolean
+}
+
+function settingsPath(mtCode: string, suffix: string) {
+  return mtCode === 'TWD'
+    ? `/api/settings/twd/${suffix}`
+    : `/api/settings/modern-trades/${encodeURIComponent(mtCode)}/${suffix}`
 }
 
 export interface ItemMappingImportReport {
@@ -35,10 +42,11 @@ async function apiError(response: Response, fallback: string) {
 }
 
 export async function fetchUnmatchedVisibility(
+  mtCode = 'TWD',
   signal?: AbortSignal,
 ): Promise<UnmatchedVisibility> {
   const response = await fetch(
-    `${apiBaseUrl}/api/settings/twd/unmatched-visibility`,
+    `${apiBaseUrl}${settingsPath(mtCode, 'unmatched-visibility')}`,
     { signal },
   )
   if (!response.ok) throw new Error(`Settings API ตอบกลับ ${response.status}`)
@@ -47,9 +55,10 @@ export async function fetchUnmatchedVisibility(
 
 export async function updateUnmatchedVisibility(
   settings: UnmatchedVisibility,
+  mtCode = 'TWD',
 ): Promise<UnmatchedVisibility> {
   const response = await fetch(
-    `${apiBaseUrl}/api/settings/twd/unmatched-visibility`,
+    `${apiBaseUrl}${settingsPath(mtCode, 'unmatched-visibility')}`,
     {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -63,20 +72,22 @@ export async function updateUnmatchedVisibility(
   return response.json() as Promise<UnmatchedVisibility>
 }
 
-export async function exportItemMappings(): Promise<{ blob: Blob, filename: string }> {
-  const response = await fetch(`${apiBaseUrl}/api/item-mappings/export`)
+export async function exportItemMappings(mtCode = 'TWD'): Promise<{ blob: Blob, filename: string }> {
+  const query = mtCode === 'TWD' ? '' : `?mt_code=${encodeURIComponent(mtCode)}`
+  const response = await fetch(`${apiBaseUrl}/api/item-mappings/export${query}`)
   if (!response.ok) throw new Error(await apiError(response, `Export API ตอบกลับ ${response.status}`))
   const disposition = response.headers.get('Content-Disposition') ?? ''
   const encodedFilename = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
   return {
     blob: await response.blob(),
-    filename: encodedFilename ? decodeURIComponent(encodedFilename) : 'TWD_Item_Mapping.xlsx',
+    filename: encodedFilename ? decodeURIComponent(encodedFilename) : `${mtCode}_Item_Mapping.xlsx`,
   }
 }
 
-export async function importItemMappings(file: File): Promise<ItemMappingImportReport> {
+export async function importItemMappings(file: File, mtCode = 'TWD'): Promise<ItemMappingImportReport> {
   const body = new FormData()
   body.set('file', file)
+  if (mtCode !== 'TWD') body.set('mt_code', mtCode)
   const response = await fetch(`${apiBaseUrl}/api/item-mappings/import`, { method: 'POST', body })
   if (!response.ok) throw new Error(await apiError(response, `Import API ตอบกลับ ${response.status}`))
   return response.json() as Promise<ItemMappingImportReport>
@@ -99,9 +110,10 @@ export async function downloadDataCoverage(
 
 export async function updateReportPageSize(
   reportPageSize: number,
+  mtCode = 'TWD',
 ): Promise<{ reportPageSize: number }> {
   const response = await fetch(
-    `${apiBaseUrl}/api/settings/twd/report-page-size`,
+    `${apiBaseUrl}${settingsPath(mtCode, 'report-page-size')}`,
     {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },

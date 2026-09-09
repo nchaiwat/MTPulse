@@ -11,8 +11,10 @@ from app.api.imports import router as imports_router
 from app.api.item_mappings import router as item_mappings_router
 from app.api.monitoring import router as monitoring_router
 from app.api.performance import router as performance_router
+from app.api.sku_analysis_flags import router as sku_analysis_flags_router
 from app.api.sku_interests import router as sku_interests_router
 from app.api.system_settings import router as system_settings_router
+from app.api.twd_settings import modern_trade_router
 from app.api.twd_settings import router as twd_settings_router
 from app.config import get_settings
 
@@ -35,8 +37,10 @@ app.include_router(imports_router)
 app.include_router(import_correctives_router)
 app.include_router(system_settings_router)
 app.include_router(twd_settings_router)
+app.include_router(modern_trade_router)
 app.include_router(fileshare_settings_router)
 app.include_router(sku_interests_router)
+app.include_router(sku_analysis_flags_router)
 app.include_router(monitoring_router)
 
 

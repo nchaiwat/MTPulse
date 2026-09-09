@@ -27,19 +27,21 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 @router.get("/export")
 def export_item_mappings(
     session: Annotated[Session, Depends(get_session)],
+    mt_code: Annotated[str, Query(min_length=1, max_length=20)] = "TWD",
     date_from: Annotated[date | None, Query()] = None,
     date_to: Annotated[date | None, Query()] = None,
 ) -> StreamingResponse:
-    modern_trade = session.scalar(select(ModernTrade).where(ModernTrade.code == "TWD"))
+    normalized_code = mt_code.strip().upper()
+    if normalized_code not in {"TWD", "HP", "MH"}:
+        raise HTTPException(status_code=404, detail=f"ไม่รองรับ Modern Trade รหัส {normalized_code}")
+    modern_trade = session.scalar(select(ModernTrade).where(ModernTrade.code == normalized_code))
     if modern_trade is None:
-        raise HTTPException(status_code=404, detail="ไม่พบ Modern Trade รหัส TWD")
+        raise HTTPException(status_code=404, detail=f"ไม่พบ Modern Trade รหัส {normalized_code}")
 
     min_date, max_date = session.execute(
         select(
             func.min(SalesInventoryFact.data_date), func.max(SalesInventoryFact.data_date)
-        ).where(
-            SalesInventoryFact.modern_trade_id == modern_trade.id
-        )
+        ).where(SalesInventoryFact.modern_trade_id == modern_trade.id)
     ).one()
     range_from = date_from or min_date or bangkok_today()
     range_to = date_to or max_date or range_from
@@ -100,19 +102,12 @@ def export_item_mappings(
         .where(
             BranchMapping.modern_trade_id == modern_trade.id,
             BranchMapping.effective_from <= range_to,
-            (
-                BranchMapping.effective_to.is_(None)
-                | (BranchMapping.effective_to >= range_from)
-            ),
+            (BranchMapping.effective_to.is_(None) | (BranchMapping.effective_to >= range_from)),
         )
         .order_by(BranchMapping.effective_from)
     ).all()
-    source_branch_by_code = {
-        code: description or "" for code, description in source_branch_rows
-    }
-    branch_mapping_by_code = {
-        mapping.source_branch_code: mapping for mapping in branch_mappings
-    }
+    source_branch_by_code = {code: description or "" for code, description in source_branch_rows}
+    branch_mapping_by_code = {mapping.source_branch_code: mapping for mapping in branch_mappings}
     branches = []
     for code in sorted(set(source_branch_by_code) | set(branch_mapping_by_code)):
         mapping = branch_mapping_by_code.get(code)
@@ -127,8 +122,8 @@ def export_item_mappings(
             )
         )
 
-    content = build_item_mapping_workbook(items, branches)
-    filename = export_filename(range_from, range_to)
+    content = build_item_mapping_workbook(items, branches, mt_code=modern_trade.code)
+    filename = export_filename(range_from, range_to, mt_code=modern_trade.code)
     return StreamingResponse(
         BytesIO(content),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -141,6 +136,7 @@ async def import_item_mappings(
     session: Annotated[Session, Depends(get_session)],
     file: Annotated[UploadFile, File()],
     effective_from: Annotated[date | None, Form()] = None,
+    mt_code: Annotated[str, Form()] = "TWD",
 ) -> dict:
     filename = file.filename or "item-mapping.xlsx"
     if not filename.lower().endswith(".xlsx"):
@@ -148,14 +144,25 @@ async def import_item_mappings(
     content = await file.read(MAX_UPLOAD_BYTES + 1)
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="ไฟล์มีขนาดเกิน 10 MB")
-    mapping_date = effective_from or session.scalar(
-        select(func.max(SalesInventoryFact.data_date)).where(
-            SalesInventoryFact.modern_trade_id
-            == select(ModernTrade.id).where(ModernTrade.code == "TWD").scalar_subquery()
+    normalized_code = mt_code.strip().upper()
+    if normalized_code not in {"TWD", "HP", "MH"}:
+        raise HTTPException(status_code=404, detail=f"ไม่รองรับ Modern Trade รหัส {normalized_code}")
+    modern_trade = session.scalar(select(ModernTrade).where(ModernTrade.code == normalized_code))
+    if modern_trade is None:
+        raise HTTPException(status_code=404, detail=f"ไม่พบ Modern Trade รหัส {normalized_code}")
+    mapping_date = (
+        effective_from
+        or session.scalar(
+            select(func.max(SalesInventoryFact.data_date)).where(
+                SalesInventoryFact.modern_trade_id == modern_trade.id
+            )
         )
-    ) or bangkok_today()
+        or bangkok_today()
+    )
     try:
-        report = import_item_mapping_workbook(session, content, mapping_date, filename)
+        report = import_item_mapping_workbook(
+            session, content, mapping_date, filename, modern_trade_code=normalized_code
+        )
     except ValueError as exc:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(exc)) from exc

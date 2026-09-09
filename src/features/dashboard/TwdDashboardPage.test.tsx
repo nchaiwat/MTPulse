@@ -68,6 +68,13 @@ describe('TwdDashboardPage', () => {
     )
     render(<TwdDashboardPage onOpenReport={vi.fn()} />)
 
+    const pageHeading = await screen.findByRole('heading', { name: 'ภาพรวม Performance ของ TWD' })
+    const pageHeader = pageHeading.closest('header')
+    expect(pageHeader).not.toBeNull()
+    expect(within(pageHeader!).getByText('ข้อมูลล่าสุด')).toBeInTheDocument()
+    expect(within(pageHeader!).getByText('31 ม.ค. 2569')).toBeInTheDocument()
+    expect(within(pageHeader!).getByRole('button', { name: 'Download Excel' })).toBeEnabled()
+
     const branchHeading = await screen.findByRole('heading', { name: 'Top 10 สาขา' })
     const branchSection = branchHeading.closest('section')
     expect(branchSection).not.toBeNull()

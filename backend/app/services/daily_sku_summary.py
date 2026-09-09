@@ -69,6 +69,7 @@ def _insert_daily_sku_summaries(
             ),
             func.sum(SalesInventoryFact.stock_on_hand),
             func.sum(SalesInventoryFact.stock_on_order),
+            func.sum(SalesInventoryFact.stock_value),
         )
         .where(*fact_filters)
         .group_by(
@@ -90,6 +91,7 @@ def _insert_daily_sku_summaries(
                 "gross_sales_qty",
                 "stock_on_hand",
                 "stock_on_order",
+                "stock_value",
             ],
             aggregate,
         )

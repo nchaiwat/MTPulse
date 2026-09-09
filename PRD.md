@@ -762,3 +762,350 @@ Discovery สำหรับ Frontend UX Milestone ได้รับอนุ�
 - Mapping ใหม่แบบ confirmed/active เปิด SKU Interest และมีผลย้อนหลังจากวันเริ่มที่ User ยืนยัน
 - Telegram Backfill มีหนึ่งข้อความต่อ Run และไม่รวม Event เก่า
 - Full backend/frontend regression, Ruff, ESLint, production build, migration rehearsal และ Server smoke test ผ่านก่อนปิดงาน
+
+## Requirement เพิ่มเติม: Shared HP/MH FileShare Import และ Dashboard — 7 กันยายน 2026
+
+### Objective และ Source Contract
+
+- เพิ่ม Modern Trade `HP` (HomePro) และ `MH` (MegaHome) เป็นคนละ MT และมี Dashboard แยก โดยอิง Layout, Metric, Mapping และ Interaction ของ TWD
+- HP/MH ใช้ Shared Source Profile เดียว (`HP_MH`) ซึ่งมี Base UNC/Subfolder/Schedule/Run เดียว และประมวลผลพร้อมกัน
+- ในแต่ละ Data Date ต้องพบ ZIP คู่กันหนึ่งชุด: `InventoryData` และ `SalesData`; อ่าน CSV ภายใน ZIP และยึดวันที่ภายในไฟล์เป็น Data Date ไม่ใช้วันที่ Folder/ชื่อไฟล์
+- แยกข้อมูล HP ด้วย Branch prefix `S` และ MH ด้วย prefix `M`; Branch อื่นเก็บเป็น source diagnostic แต่ไม่ Import เข้า HP/MH
+- Inventory และ Sales ภายในคู่ต้องมี Data Date เดียวกัน หากขาด เสีย หรือวันที่ไม่ตรง ให้วันนั้นล้มเหลวทั้งคู่
+
+### Atomicity, Duplicate และ Corrected Files
+
+- หนึ่ง Data Date เป็น transaction ร่วมของ HP/MH: สำเร็จทั้งคู่จึง Commit; หากฝั่งใดผิดพลาดให้ Rollback ทั้งคู่และแสดง diagnostic แยก MT
+- Initial Scan เดินหน้าทีละวัน วันที่เสียถูก Skip/Failed โดยไม่ Rollback วันที่สำเร็จ และสามารถ Retry เฉพาะวันที่ได้
+- หากมีหลายไฟล์ชนิดเดียวกันในวันเดียว ให้เลือกไฟล์ timestamp ล่าสุดตามชื่อและทำเครื่องหมายชุดเก่า `superseded`
+- ใช้ Business Fingerprint ที่ไม่รวมชื่อไฟล์เพื่อตรวจซ้ำ: เนื้อหาสำคัญเหมือนเดิมให้ Skip; เนื้อหาเปลี่ยนให้ Replace ข้อมูลวันนั้นของทั้ง HP/MH แบบ Atomic พร้อม Audit/Reimport history
+- Schedule และ Run ทันทีเป็น Incremental โดยตรวจวันใหม่ วันล้มเหลว และไฟล์ที่เปลี่ยนใน 7 วันล่าสุด; Initial Scan อ่านทั้งหมด และ Re-scan ระบุช่วงวันที่ได้
+
+### SKU, Mapping และ Metrics
+
+- เริ่มต้นด้วย Interest SKU 77 รายการต่อ MT จาก KPI Manual แต่สถานะ Accept/Ignore แยก HP และ MH
+- แจ้ง SKU ใหม่จาก Sale Out เท่านั้น; Inventory-only SKU นอก Interest ให้ตรวจพบแต่ไม่แจ้งซ้ำทุกวัน
+- เมื่อ Accept SKU ใหม่ ให้ติดตามทั้ง Sales และ Inventory ของ MT นั้น และรองรับ Historical Backfill ภายหลัง
+- Branch ใหม่ไม่ Block Import; ใช้ source branch code/name และสถานะ `รอ Mapping`
+- Sales เก็บ Gross และ Ex.VAT โดยใช้กติกา VAT เดียวกับ TWD และรักษา Return/ค่าติดลบ
+- Inventory รองรับ Stock On Hand Qty และ `Stock Value (Source)` โดยไม่หาร VAT; ไม่แสดง Stock On Order เพราะ Source ไม่มี Metric นี้
+- Inventory เก็บแบบ Sparse เฉพาะ Qty หรือ Amount ที่ไม่เป็นศูนย์ พร้อม Coverage Metadata เพื่อแยกศูนย์จริงออกจากไม่มีข้อมูล
+
+### UI, Status และ Notification
+
+- Navigation มี Dashboard `HomePro (HP)` และ `MegaHome (MH)` แยกจาก TWD
+- Navigation ส่วน `รายงาน` ต้องมี `HomePro (HP)` และ `MegaHome (MH)` แยกกันก่อนเริ่มสร้าง Dashboard ภาพรวมทุก MT
+- หน้ารายงาน HP/MH ใช้โครงสร้าง Filter, Sales/Inventory Mode, Branch/Date View, Matrix, Export และ Interaction เดียวกับรายงาน TWD โดยรับ Modern Trade เป็น parameter และไม่เปลี่ยน Logic ของ TWD
+- Mapping Metric ต้องแยกชื่อกลางของระบบออกจากชื่อคอลัมน์ต้นทาง เพื่อรองรับการเปลี่ยนหรือเพิ่ม Source field ภายหลังโดยไม่ต้องเปลี่ยนข้อมูล Fact เดิม
+- สำหรับ Source ปัจจุบันของ HP/MH: Sales `QTY` = Sales Qty, Sales `VALUE` = Gross Sales และคำนวณ Ex.VAT ตาม VAT policy; Inventory `QTY` = Stock On Hand และ Inventory `AMT` = `Stock Value (Source)`
+- Inventory ของ HP/MH แสดง `Stock On Hand` และ `Stock Value (Source)`; ไม่แสดงหรือสร้างค่า `Stock On Order` เป็นศูนย์ เพราะ Source ปัจจุบันไม่มีข้อมูลนี้ หากได้คำจำกัดความ/คอลัมน์เพิ่มภายหลังให้เพิ่มผ่าน Metric Mapping โดยไม่กระทบ Metric เดิม
+- System Setting แสดงกลุ่ม `HomePro Group — Shared Source` หนึ่งกรอบ พร้อม Shared Path/Schedule/Run และ child status cards HP/MH ที่แยกสี/ตัวเลขชัดเจน
+- Progress และผลลัพธ์แสดงขั้นตอน Discover, Pair, Download, Parse, Split, Validate, Import, Summary พร้อม current date/file และ counts แยก HP/MH
+- Record summary แยก source rows, accepted rows, interest SKU, new SKU, returns, new branch, mapping pending, imported/skipped/failed ของแต่ละ MT
+- Telegram ส่งหนึ่งข้อความต่อ Shared Run ด้วย Bot เดิม โดยแยก section HP/MH และนับเฉพาะ Event ของรอบนั้น
+
+### Success Criteria
+
+- Parser อ่าน ZIP ตัวอย่าง Inventory/Sales ได้ครบและ reconcile source totals; S/M split ถูกต้องและคงค่าติดลบ
+- วันใด HP หรือ MH fail ต้องไม่มี Fact/Batch ของทั้งคู่จากวันนั้น; วันอื่นใน Initial Scan เดินหน้าต่อได้
+- Rename ไฟล์ข้อมูลเดิมไม่ Import ซ้ำ; corrected content replace วันเดิมแบบ Atomic และ trace ได้
+- Schedule เดียวไม่สร้าง Run ซ้ำต่อ MT และ Incremental scan ไม่ไล่ประวัติทั้งหมดทุกวัน
+- Dashboard/Settings/API แยก HP/MH ถูกต้อง ขณะที่ TWD behavior และ regression tests เดิมผ่านทั้งหมด
+- รายงาน HP/MH เปิดได้จากเมนูรายงาน แยกข้อมูลด้วย MT และ Branch prefix ถูกต้อง; Sales/Inventory totals ตรงกับ Source และไม่มี Stock On Order ที่ระบบสร้างขึ้นเอง
+# Settings Control Plane Standard — 8 กันยายน 2026
+
+## Objective
+
+- ปรับเฉพาะหน้า `Settings` ให้เป็น Control Plane ที่เป็นมืออาชีพ อ่าน Scope ของค่าได้ทันที และใช้ Template เดียวกันสำหรับทุก Modern Trade
+- แยกค่าที่มีผลกับทุก MT ออกจากค่าที่มีผลเฉพาะ MT โดยไม่เปลี่ยน Import, Mapping, Schedule, Notification หรือ Report business logic เดิม
+- วางมาตรฐาน Component/คำศัพท์ของ Settings ให้ใช้ซ้ำได้เมื่อเพิ่ม MT หรือ Function ใหม่ โดยรอบนี้ยังไม่เปลี่ยนหน้าส่วนอื่นของ Application
+
+## Scope Model และคำศัพท์มาตรฐาน
+
+- ใช้คำว่า `Global Settings` สำหรับค่าที่ทุก MT ใช้ร่วมกันเท่านั้น
+- ใช้คำว่า `MT Settings` สำหรับค่าที่มีผลเฉพาะ TWD, HP, MH, GH, SCG, HH หรือ TA
+- หน้า Settings เป็นหน้าเดียว มี Scope tabs: `Global`, `TWD`, `HP`, `MH`, `GH`, `SCG`, `HH`, `TA`
+- รอบนี้ไม่เพิ่ม `Window Asia`; จะเพิ่มเป็น Scope ใหม่ภายหลังโดยใช้ Template เดียวกัน
+- Base UNC และ AD Account เป็น Global Data Connection; Subfolder, Automation, Mapping, Historical Data และ Report Configuration เป็น MT scope
+- `HP` และ `MH` มี Tab แยก แต่ใช้ Source Folder และ Schedule ร่วมกัน การแก้ Schedule จาก Tab ใดต้องสะท้อนไปอีก Tab และแสดงป้าย `Shared schedule · HP + MH`
+- HP/MH ประมวลผลพร้อมกันหนึ่ง Run แต่แสดงผลลัพธ์ Record, Warning, Approval และ Status แยกตาม MT
+
+## Settings Information Architecture
+
+### Global
+
+1. `Data Connection` — Base UNC, Domain/AD account, User, Password และ Test connection
+2. `Notifications` — Telegram destination, Bot credential และ Event policy ส่วนกลาง
+3. `System Health & Alerting` — Daily health schedule, Critical/Recovery policy, Threshold และ Check now
+
+### ทุก MT Tab
+
+1. `Data Source & Automation` — Subfolder, Source identity, Schedule, Run now และสถานะล่าสุด
+2. `Data Mapping & Governance` — Item/Branch Mapping, Mapping attention และ Unmatched policy
+3. `Historical Data & Coverage` — Registry, Historical backfill และ Data coverage
+4. `Report Configuration` — จำนวนแถวและพฤติกรรมการแสดงผลที่มีผลเฉพาะ MT
+
+## Consistent Settings Template
+
+- ทุก Scope ใช้ Header, Tab, Section header, Control grid, Status badge, Action placement, Validation, Loading, Error และ Empty state ชุดเดียวกัน
+- Tab ที่ยังไม่มี Function ต้องคง Section ไว้ในตำแหน่งเดียวกัน แสดง Disabled state พร้อมข้อความ `Not available for this MT` และคำอธิบายสั้น ห้ามซ่อนจนผู้ใช้เข้าใจว่าโครงสร้างไม่เหมือนกัน
+- Active tab ใช้ Primary Blue, ส่วน Status ใช้ semantic tokens เดิม และห้ามสร้าง Theme สีคนละชุดต่อ MT
+- ใช้ Lucide icons, Aptos/Segoe UI และ Cascadia Mono สำหรับรหัส/ตัวเลขตาม Design System ปัจจุบัน
+- Action ที่ทำงานทันที เช่น Test connection, Run now, Import/Export, Download และ Check now ต้องแยกจากการบันทึกค่าอย่างชัดเจน
+- ใช้ปุ่ม `Save changes` หนึ่งปุ่มสำหรับค่าที่แก้ไขทั้งหมด โดยบันทึกเฉพาะ Scope/Field ที่เปลี่ยน; ค่าไม่เปลี่ยนต้องไม่ถูกเขียนซ้ำ
+- เมื่อสลับ Tab ต้องรักษาค่าที่แก้แต่ยังไม่บันทึกและแสดง Dirty indicator; ห้ามทำข้อมูลที่กรอกหายโดยไม่มีคำเตือน
+
+## Protected Boundaries และ Non-scope
+
+- ห้ามเปลี่ยน parser, reconciliation, duplicate protection, transaction, fact data, mapping semantics, schedule execution หรือ report calculation
+- ห้ามสร้าง configuration ปลอมให้ MT ที่ backend ยังไม่รองรับ; UI ต้องแสดงสถานะไม่พร้อมอย่างตรงไปตรงมา
+- ไม่ redesign Dashboard, Report, Import หรือ Monitoring ใน Phase นี้
+- ไม่เพิ่ม Window Asia และไม่เปิด Function ใหม่ของ GH, SCG, HH หรือ TA
+
+## Success Criteria
+
+- ผู้ใช้ระบุได้ทันทีว่าค่าใดเป็น Global และค่าใดมีผลเฉพาะ MT
+- ทุก MT Tab มีโครงสร้างและลำดับ Section เหมือนกัน รวมถึง Disabled/Empty/Error/Loading states
+- HP/MH แยกบริบทชัดเจน แต่ Source/Schedule ที่ใช้ร่วมกันไม่สร้างค่าซ้ำหรือขัดแย้งกัน
+- ทุกค่าที่มีอยู่เดิมโหลด บันทึก และทำงานเหมือนเดิมหลังย้ายตำแหน่ง UI
+- Keyboard สามารถเปลี่ยน Tab และเข้าถึง Control ได้, Focus ชัดเจน, ข้อความไม่ใช้สีเป็นตัวสื่อความหมายเพียงอย่างเดียว
+- Existing backend/frontend regression, ESLint, Ruff และ production build ผ่านก่อน deploy
+
+## Amendment: TWD Settings Parity for HP/MH — 8 กันยายน 2026
+
+### Product Decision
+
+- ใช้หน้าและลำดับการทำงานของ `TWD Settings` เป็น Master Template สำหรับ Modern Trade ทุกเจ้า โดยรอบนี้เปิดใช้งานจริงเฉพาะ `TWD`, `HP` และ `MH`
+- Logic ปัจจุบันของ TWD เป็น protected reference ห้ามเปลี่ยน business behavior, calculation, workflow หรือผลลัพธ์เดิมโดยไม่ได้รับคำสั่งจาก Product Owner
+- HP และ MH เป็นคนละ Modern Trade: Mapping workbook, Mapping counts, Unmatched visibility, Report page size, Data Coverage, SKU Backfill, Run status และ Audit ต้องแยกตาม `mtCode` เสมอ
+- HP/MH ใช้ร่วมกันเฉพาะ FileShare source, Schedule และการอ่าน source pair ของ Automatic Import; Shared source ห้ามทำให้ configuration หรือข้อมูลผลลัพธ์เฉพาะ MT ปะปนกัน
+
+### Required Settings Sections
+
+แท็บ TWD, HP และ MH ต้องแสดง Template เดียวกันตามลำดับ:
+
+1. Data Source & Automation
+2. Item and Branch Mapping
+3. Historical Backfill by SKU
+4. Report Display
+5. Data Coverage
+6. Unmatched Data
+
+### Data and Empty-state Rules
+
+- ทุก API และ action ของ Section ข้างต้นต้องระบุ `mtCode` และอ่าน/เขียนเฉพาะ Modern Trade ที่เลือก
+- Export/Import Mapping ของ HP และ MH ต้องเป็นคนละชุดและมีผลเฉพาะ Tab ที่สั่งงาน
+- Historical Backfill ของ HP/MH ต้องเติมเฉพาะ SKU และ Modern Trade ที่เลือก แม้ source ZIP จะเป็นไฟล์คู่ที่ใช้ร่วมกัน และต้องไม่แก้ Fact/Mapping ของอีก MT
+- ถ้า Modern Trade หรือ entity นั้นยังไม่มีข้อมูล ห้ามยืมจำนวนจาก MT อื่นและห้ามแสดงเลข `0` แทนการไม่มีข้อมูล ให้แสดง `ยังไม่มีข้อมูล` เพื่อแยกจาก Loading และ Error
+- ถ้ามีข้อมูลจริงและผลนับเป็นศูนย์ สามารถแสดง `0` ได้; Backend ต้องส่ง availability metadata เพื่อแยกสองกรณีนี้อย่างชัดเจน
+- GH, SCG, HH และ TA ยังไม่เปิด Function จริงในรอบนี้ และต้องไม่เรียก API ของ TWD เป็น fallback
+
+### Acceptance Criteria
+
+- TWD ให้ผลเหมือนก่อน refactor ทุก action และ regression test เดิมผ่าน
+- เปิดแท็บ HP หรือ MH แล้วเห็น Section และ Interaction ชุดเดียวกับ TWD โดยข้อความอ้างชื่อ MT ปัจจุบัน
+- Export, Import, Toggle, Page size, Coverage และ Backfill ไม่อ่านหรือแก้ข้อมูลข้าม MT
+- HP Backfill ไม่เพิ่ม/ลบ/แก้ Fact หรือ Mapping ของ MH และ MH Backfill ไม่กระทบ HP
+- ไม่มีข้อมูลแสดง `ยังไม่มีข้อมูล`; Loading และ Error มีสถานะแยกและไม่ถูกนำเสนอเป็น Empty state
+# TWD Performance Multi-Range and Inventory Turnover Prototype — PRD (8 September 2026)
+
+## Objective
+
+ยกระดับหน้า Matrix Performance ของ TWD ให้เลือกช่วงวันที่แบบไม่ต่อเนื่องได้สูงสุด 12 ช่วง แสดงคอลัมน์สุดท้ายได้ครบแม้มี Scrollbar และเพิ่มตัวชี้วัด Inventory Turnover ราย SKU (`TOM`/`TOD`) โดยรักษา Logic, Filter, Pagination, Mapping และผลลัพธ์เดิมนอกขอบเขตนี้ เพื่อใช้ TWD เป็น Prototype ก่อนขยายไป Modern Trade อื่นในภายหลัง
+
+## Problem
+
+- ตัวเลือกวันที่ปัจจุบันรองรับเพียงช่วงเดียว จึงไม่เหมาะกับการรวมเฉพาะหลายช่วงที่ไม่ต่อเนื่อง
+- Vertical Scrollbar ทับพื้นที่คอลัมน์ขวาสุด ทำให้ตัวเลขอ่านได้ไม่ครบและอาจตีความผิด
+- Inventory Matrix ยังไม่มีตัวชี้วัดว่า Stock ล่าสุดรองรับยอดขายได้อีกกี่เดือนหรือกี่วัน
+- Excel ที่ Download ต้องตรงกับ Filter และข้อมูลที่ผู้ใช้เห็นบนหน้า App เพื่อใช้ทำงานต่อได้โดยไม่ต้องกรองซ้ำ
+
+## Users And Roles
+
+- Business user: เลือกช่วงวันที่, SKU และ Branch; อ่าน Matrix/TOM/TOD; Download Excel ตามผลที่เห็น
+- Admin/Product Owner: ตรวจสอบความถูกต้องของสูตรและใช้ TWD เป็นมาตรฐานสำหรับ MT อื่นในอนาคต
+- รอบนี้ไม่มีการเพิ่มหรือเปลี่ยน Permission
+
+## Goals And Success Criteria
+
+- เพิ่ม/ลบช่วงวันที่ได้ตั้งแต่ 1 ถึง 12 ช่วง และแจ้ง Conflict ทันทีเมื่อช่วงใดทับกัน
+- หน้า App, KPI Summary, Matrix และ Excel ใช้ชุด Filter เดียวกันและไม่รวมวันที่ในช่องว่างระหว่างช่วง
+- ตัวเลขคอลัมน์ขวาสุดมองเห็นครบทุกหลักที่ตำแหน่ง Scroll ขวาสุด
+- Inventory ทุก View แสดง TOM/TOD แบบ Sticky และค่าเฉลี่ยรวมของ SKU ทั้งหมดที่ผ่าน Filter
+- สูตร TOM/TOD และการปัดทศนิยมให้ผลเหมือนกันใน API, UI และ Excel
+- Regression tests ยืนยันว่า Single range และ Logic เดิมยังให้ผลเหมือนก่อนเปลี่ยน
+
+## Scope
+
+### Must Have
+
+1. Multi-range date selector สูงสุด 12 ช่วงในตำแหน่งที่ใช้ `ช่วงวันที่` เดิม
+2. Inline validation ทันทีเมื่อกรอกช่วงครบ ทั้งรูปแบบวันที่, from/to และการทับกัน
+3. Matrix/API/Export รองรับ Union ของช่วงวันที่ และเรียงวันที่จริงโดยไม่สร้างคอลัมน์ใน Gap
+4. Right-side scrollbar gutter หรือพื้นที่ท้ายตารางที่ทำให้คอลัมน์สุดท้ายเห็นครบ
+5. Inventory-only sticky columns `TOM` และ `TOD` ต่อจาก WA Description; เมื่อซ่อน Description ให้ต่อจาก WA Item
+6. Inventory Header แสดง `AVG TOM` และ `AVG TOD` ของ SKU ทั้งหมดที่ผ่าน Filter ไม่จำกัดเฉพาะหน้าปัจจุบัน
+7. Excel ตรงกับ Mode, Metric, View, SKU, Branch และ Date ranges บน App และมี TOM/TOD ใน Inventory
+
+### Non-Scope
+
+- ยังไม่ขยาย Feature นี้ไป HP, MH หรือ MT อื่น
+- ไม่เปลี่ยน Sales Basis, Metric, Mapping, Pagination, Detail Drawer หรือ Business Logic เดิมอื่น
+- ไม่เปลี่ยนตัวเลือกเดือนของ Sales View Branch/Month และ View Month
+- ไม่ใช้ข้อมูล Stock เก่ามาทดแทนเมื่อ SKU ไม่มี Stock ในวันอ้างอิง
+
+## Core Workflows
+
+### Multi-range Selection
+
+1. เปิดตัวเลือกช่วงวันที่ ซึ่งเริ่มต้นอย่างน้อยหนึ่งแถว
+2. เพิ่มช่วงได้สูงสุด 12 ช่วงและลบช่วงที่ไม่ต้องการได้
+3. เมื่อกรอก From/To ของแต่ละช่วงครบ ระบบตรวจทันทีและชี้ช่วงที่ Conflict โดยตรง
+4. ปุ่ม Apply ใช้งานได้เมื่อทุกช่วงถูกต้องเท่านั้น
+5. เมื่อ Apply ระบบโหลดเฉพาะ Union ของวันที่ในทุกช่วง เรียงจากเก่าไปใหม่ และไม่รวม Gap
+
+### Inventory Turnover
+
+1. หา Reference Date จากวันที่ข้อมูลล่าสุดใน Union ของช่วงที่เลือก
+2. รวม Stock On Hand ของ SKU ใน Reference Date ตาม Branch filter ปัจจุบัน
+3. รวม Positive Sales Qty ของสามเดือนปฏิทินเต็มก่อนเดือน Reference Date โดยใช้ Branch/SKU filter เดียวกัน
+4. คำนวณ TOM/TOD ตามกฎด้านล่างและแสดงใน Sticky columns
+5. Header แสดงค่าเฉลี่ยของทุก SKU ที่ผ่าน Filter และคำนวณค่าได้
+
+### Excel Export
+
+1. ผู้ใช้จัด Filter และ View จนพอใจกับผลบน App
+2. Download Excel ส่ง Filter contract เดียวกับ Matrix
+3. Workbook มีเฉพาะข้อมูลที่ตรงกับ App รวมถึง Union date ranges, TOM และ TOD
+
+## Business Rules And Constraints
+
+- รองรับสูงสุด 12 ช่วง แต่ละช่วงรวมทั้งวันเริ่มต้นและวันสิ้นสุด
+- ช่วงที่ใช้วันเดียวกันแม้เพียงหนึ่งวันถือว่าทับกัน เช่น `1–10` กับ `10–15` ไม่ผ่าน; `1–10` กับ `11–15` ผ่าน
+- Validation ต้องเกิดทันทีหลัง From/To ของช่วงนั้นครบ และต้องระบุคู่ช่วงที่ Conflict
+- ปุ่ม Apply ต้อง Disabled ขณะมีช่วงไม่ครบ, วันที่ไม่ถูกต้อง, From มากกว่า To หรือช่วงทับกัน
+- Reference Date คือวันที่ล่าสุดที่มีข้อมูลจากทุกช่วงรวมกัน
+- Sales lookback คือสามเดือนปฏิทินเต็มก่อนเดือนของ Reference Date; เดือนที่ไม่มียอดนับเป็นศูนย์และยังหารด้วย 3
+- ใช้เฉพาะ Sales Qty ที่มากกว่า 0; ไม่รวม Return และ Adjustment ติดลบ
+- `Average Monthly Sales = ROUND_HALF_UP(Positive Sales Qty 3 เดือน / 3, 2)`
+- `TOM = ROUND_HALF_UP(Stock On Hand / Average Monthly Sales, 2)`
+- `TOD = ROUND_HALF_UP(TOM × 30, 2)`
+- ปัดสองตำแหน่งทุกขั้น ไม่ใช้ค่าทศนิยมเต็มจากขั้นก่อนหน้า
+- ถ้า Average Monthly Sales เป็นศูนย์, ไม่มี Stock row ใน Reference Date หรือ Stock On Hand ติดลบ ให้ TOM/TOD เป็น `—`
+- Stock On Hand เท่ากับศูนย์และ Average Monthly Salesมากกว่าศูนย์ให้ TOM/TOD เท่ากับ `0.00`
+- `AVG TOM` และ `AVG TOD` เป็น Simple arithmetic mean ของ SKU ทั้งหมดที่ผ่าน Filter และมีค่าคำนวณได้; SKU ที่เป็น `—` ไม่นับทั้งเศษและจำนวนตัวหาร
+- TOM/TOD ใช้ Branch filter เดียวกับ Matrix; ทุก Branch หมายถึงรวมทุก Branch ที่อยู่ใน Scope ของรายงาน
+- TOM/TOD แสดงใน Inventory Mode ทุก View และยังแสดงเมื่อปิด Description
+
+## Data And Integration Requirements
+
+- PostgreSQL Fact/Summary เป็น Source of Truth เดิม ไม่เพิ่ม External integration
+- API ต้องรับ Date range collection แบบมีโครงสร้างและ validate จำนวน/รูปแบบ/Overlap ฝั่ง Server ซ้ำ
+- ทุก Query ที่มีผลต่อ rows, dates, totals, pagination และ export ต้องใช้ Date union predicate เดียวกัน
+- Turnover summary ต้องคำนวณจาก SKU scope ทั้งหมดก่อน Pagination เพื่อให้ Header ไม่เปลี่ยนเมื่อเปลี่ยนหน้า
+- ต้องหลีกเลี่ยงการดึงข้อมูล Bounding range แล้วกรอง Gap เฉพาะ Frontend เพราะจะทำให้ Summary/Pagination/Export ผิด
+
+## Architecture Direction
+
+- เพิ่ม shared date-range contract และ normalization/validation utilities ให้ Frontend และ Backend มีพฤติกรรมสอดคล้องกัน
+- Backend สร้าง reusable SQL predicate แบบ OR ของช่วงวันที่ที่ normalize แล้ว และใช้กับ Performance/Detail/Export paths ที่เกี่ยวข้อง
+- เพิ่ม turnover projection ใน Performance response ระดับ Item และ Summary โดยคำนวณเฉพาะ Inventory requests
+- Frontend ขยาย DateRangePicker เป็น multi-row editor ที่มี inline feedback และคง Apply workflow เดิม
+- PerformanceMatrix เพิ่ม Sticky TOM/TOD ด้วย CSS offsets ที่รองรับ Description on/off และแก้ scroll end clearance โดยไม่เพิ่มข้อมูลปลอมใน Matrix
+
+## Risks And Mitigations
+
+- Query ช้าจาก 12 OR ranges: normalize/sort ranges, จำกัด 12 ช่วง, ใช้ date/index predicate และวัด query time กับข้อมูลจริง
+- Summary กับ page rows ไม่ตรงกัน: ใช้ filter builder และ turnover service เดียวกันทุก endpoint
+- Floating-point ต่างกันระหว่าง API/UI/Excel: คำนวณและปัดด้วย Decimal ROUND_HALF_UP ฝั่ง Serverแล้วส่งค่าที่พร้อมแสดง
+- Sticky offsets ผิดเมื่อซ่อน Description: ใช้ explicit column layout variants และ regression tests ทั้งสองสถานะ
+- Scrollbar ต่างกันตาม OS: ทดสอบ overlay/classic scrollbar และเพิ่ม end gutter ที่ไม่ขึ้นกับความกว้าง scrollbarแบบ hardcode เพียงค่าเดียว
+
+## Open Questions
+
+- ไม่มี Business Rule ค้าง ณ วันที่ 8 กันยายน 2026
+
+## Status And Priority
+
+- Status: Phase 2 backend state/filtering complete locally; awaiting Product Owner approval for Phase 3 TWD Matrix and filter UI
+- Priority: (1) contract/tests, (2) multi-range query correctness, (3) TOM/TOD correctness, (4) Matrix scroll/sticky UI, (5) Excel parity, (6) full regression
+
+# TWD Sho/Pro SKU Attention Flags — 9 September 2026
+
+## Objective
+
+เพิ่มสถานะความสนใจพิเศษระดับ SKU ในรายงาน TWD เพื่อให้ผู้ใช้งานทุกคนเห็นตรงกันว่า SKU ใดเป็นสินค้าตัวโชว์ (`Sho`) หรือสินค้าทำ Promotion (`Pro`) โดยไม่เปลี่ยน Sales, Inventory, TOM/TOD หรือ Business Logic เดิม
+
+## Users And Ownership
+
+- User ทุกคนที่ใช้งานหน้า Report สามารถ Check/Uncheck Sho และ Pro ได้
+- สถานะเป็น Shared Application Data ใน PostgreSQL ไม่ใช่ User preference และไม่เก็บใน Browser Local Storage
+- Ownership แยกด้วย `Modern Trade + Source SKU`; SKU รหัสเดียวกันต่าง MT มีสถานะอิสระต่อกัน
+- Phase แรกทำเฉพาะ TWD Prototype; HP/MH และ MT อื่น rollout ภายหลังด้วย Template เดียวกัน
+
+## Functional Requirements
+
+1. Matrix เพิ่ม Sticky checkbox columns ขนาดเล็ก `Sho` และ `Pro` ก่อนคอลัมน์ Source SKU
+2. Sho และ Pro เลือกแยกกันได้ และ SKU หนึ่งรายการเลือกทั้งสองสถานะได้
+3. Check/Uncheck บันทึก Database ทันทีโดยไม่มีปุ่ม Save แยก
+4. หากบันทึกไม่สำเร็จ Frontend คืนค่า Checkbox เดิมและแสดง Error ที่บอกให้ User ลองใหม่
+5. สถานะแสดงในทุก Mode และ View ที่ SKU อยู่ในผลลัพธ์: Sales, Inventory, Branch, Date และ Month
+6. Import ใหม่, เปลี่ยน Mapping, Inactive/Reactivate SKU ต้องไม่ล้างสถานะเดิม
+7. Filter มีค่า `ทั้งหมด`, `Sho`, `Pro`, `Sho + Pro` และ `ยังไม่กำหนดสถานะ`
+8. `Sho` รวมรายการที่เลือก Sho ไม่ว่าจะมี Pro ร่วมด้วยหรือไม่; `Pro` ใช้หลักเดียวกัน; `Sho + Pro` ต้องเป็น true ทั้งคู่; `ยังไม่กำหนดสถานะ` ต้องเป็น false ทั้งคู่
+9. Filter ต้องทำฝั่ง Server ก่อน Summary และ Pagination; KPI, SUM, AVG TOM/TOD, SKU count, Branch count และ Excel คำนวณจาก Scope ที่ผ่าน Filter
+10. Filter `ทั้งหมด` รักษาลำดับ SKU เดิม การเปลี่ยน Flag ไม่ดัน Row ขึ้นด้านบน
+11. Checkbox ไม่มีผลต่อค่าหรือสูตรของ Amount, Qty, Stock, TOM และ TOD
+12. Audit เก็บค่าเดิม/ค่าใหม่, MT, Source SKU, เวลาและ Actor ตามกลไก Audit เดิม โดยไม่เพิ่ม Admin-only permission
+
+## Visual And Interaction Rules
+
+- Sho only: Amber accent `#D97706` กับ translucent row overlay
+- Pro only: Violet accent `#7C3AED` กับ translucent row overlay
+- Sho + Pro: Dual-tone Amber/Violet accent และ overlay ผสมที่แยกจากสองสถานะแรกได้ชัดเจน
+- Checkbox และ Header text ต้องคงอยู่เพื่อไม่สื่อความหมายด้วยสีเพียงอย่างเดียว
+- Row overlay ต้องซ้อนบน Heatmap แบบโปร่งใส ไม่ลบระดับสีข้อมูลเดิม
+- Selected Row ใช้ Blue outline เหนือ Flag styling; Return/negative typography คงสีเตือนเดิม
+- Checkbox แสดง pending feedback ระหว่างบันทึก และมี accessible label ที่ระบุ MT, SKU และสถานะ
+
+## Excel Parity
+
+- Excel เพิ่มคอลัมน์ `Sho` และ `Pro` ก่อน Source SKU
+- ใช้ข้อความ `SHO`/`PRO` ใน Cell ที่เลือกและเว้นว่างเมื่อไม่เลือก เพื่ออ่านได้ชัดและไม่พึ่งสัญลักษณ์ Checkbox
+- Fill/row accent สอดคล้องกับสถานะใน App โดยไม่ทับ Conditional Formatting ของ Heatmap และค่าติดลบ
+- Export ใช้ Filter contract เดียวกับ App และส่งออกทุก Row ที่ผ่าน Filterโดยไม่ขึ้นกับ Pagination
+- Title/metadata ของ Workbook ระบุ Sho/Pro filter ที่ใช้
+
+## Data And Architecture Direction
+
+- เพิ่มตาราง Metadata แยกจาก Fact/Import/Mapping เช่น `sku_analysis_flags`
+- Unique key: `(modern_trade_id, source_sku)` พร้อม Boolean `is_showroom`, `is_promotion`, `updated_at` และ actor reference ตามรูปแบบเดิม
+- Performance response เพิ่ม Sho/Pro ใน Item projection และ SKU options ตามที่จำเป็น
+- เพิ่ม partial update endpoint ที่เปลี่ยนเฉพาะ Field ที่ User กด เพื่อลดโอกาส concurrent update ทับอีก Flag
+- Performance และ Export ใช้ predicate เดียวกันสำหรับ Flag filter; ห้ามกรองเฉพาะ Frontend
+- ไม่แก้หรือลบ Sales/Inventory Fact, ImportBatch, ItemMapping หรือ SkuInterest
+
+## Success Criteria
+
+- User ทุกคนเห็น Sho/Pro ชุดเดียวกันหลัง refresh หรือ login จาก Browser/Profile อื่น
+- Toggle บันทึกทันทีและ Failure ไม่ทำให้ UI แสดงค่าที่ไม่ได้บันทึก
+- ทุก Mode/View แสดง Flag เดิมของ SKU อย่างสม่ำเสมอ
+- KPI/SUM/AVG/Pagination/Excel ตรงกับ Flag filter ที่เลือก
+- Heatmap, Selected state, Return และ Existing filters ยังอ่านได้ชัดและทำงานเหมือนเดิม
+- Query latency ไม่ถดถอยอย่างมีนัยสำคัญจาก TWD performance baseline
+
+## Non-Scope
+
+- ไม่มีผลต่อสูตรหรือยอดข้อมูล
+- ไม่มี Auto-tag จากยอดขายหรือ Promotion date
+- ไม่มี Admin approval, Bulk edit หรือ Flag priority sorting ใน Phase แรก
+- ยังไม่ rollout ไป HP/MH ใน Phase แรก
+
+## Open Questions
+
+- ไม่มี Business Rule ค้าง ณ วันที่ 9 กันยายน 2026
+
+## Status And Priority
+
+- Status: Phase 3 TWD Matrix and filter UI complete locally; Phase 4 Excel parity not started
+- Priority: (1) DB/API contract, (2) server-side filter/summary parity, (3) Matrix interaction/visual states, (4) Excel parity, (5) performance/regression validation

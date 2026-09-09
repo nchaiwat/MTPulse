@@ -6,6 +6,7 @@ interface SkuMultiSelectProps {
   options: SkuOption[]
   selectedSkuIds: string[]
   loading?: boolean
+  sourceCode?: string
   onApply: (skuIds: string[]) => void
 }
 
@@ -13,7 +14,7 @@ const rowHeight = 48
 const viewportHeight = 288
 const overscan = 5
 
-export function SkuMultiSelect({ options, selectedSkuIds, loading = false, onApply }: SkuMultiSelectProps) {
+export function SkuMultiSelect({ options, selectedSkuIds, loading = false, sourceCode = 'TWD', onApply }: SkuMultiSelectProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
@@ -91,7 +92,7 @@ export function SkuMultiSelect({ options, selectedSkuIds, loading = false, onApp
           <label className="popover-search">
             <span className="sr-only">ค้นหา SKU</span>
             <Search size={15} aria-hidden="true" />
-            <input autoFocus type="search" value={search} onChange={(event) => changeSearch(event.target.value)} placeholder="ค้นหา SKU หรือรายละเอียด TWD / WA" />
+            <input autoFocus type="search" value={search} onChange={(event) => changeSearch(event.target.value)} placeholder={`ค้นหา SKU หรือรายละเอียด ${sourceCode} / WA`} />
           </label>
           <div className="branch-selection-tools">
             <button type="button" onClick={() => setDraftIds(allSkuIds)}>เลือกทั้งหมด</button>

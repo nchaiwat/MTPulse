@@ -1,8 +1,41 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { downloadPerformanceReport, fetchPerformance, fetchPerformanceItemDetail, fetchSkuOptions } from './performanceApi'
+import { downloadPerformanceReport, fetchPerformance, fetchPerformanceItemDetail, fetchSkuOptions, updateSkuAnalysisFlag } from './performanceApi'
 
 describe('fetchPerformance', () => {
   afterEach(() => vi.restoreAllMocks())
+
+  it('serializes non-overlapping ranges and requests TWD turnover in Inventory mode', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({}), { status: 200 }),
+    )
+
+    await fetchPerformance({
+      dateFrom: '2026-06-01',
+      dateTo: '2026-09-08',
+      dateRanges: [
+        { from: '2026-06-01', to: '2026-06-30' },
+        { from: '2026-08-01', to: '2026-09-08' },
+      ],
+      branchIds: [],
+      monthFrom: '',
+      monthTo: '',
+      search: '',
+      page: 1,
+      dimension: 'day',
+      mode: 'inventory',
+      branchMonth: 'latest',
+      branchPeriod: 'month',
+    })
+
+    const url = new URL(String(fetchMock.mock.calls[0][0]), 'http://localhost')
+    expect(url.searchParams.getAll('date_range')).toEqual([
+      '2026-06-01,2026-06-30',
+      '2026-08-01,2026-09-08',
+    ])
+    expect(url.searchParams.has('date_from')).toBe(false)
+    expect(url.searchParams.has('date_to')).toBe(false)
+    expect(url.searchParams.get('include_turnover')).toBe('true')
+  })
 
   it('always refreshes SKU options instead of reusing a cached response', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
@@ -11,7 +44,7 @@ describe('fetchPerformance', () => {
 
     await fetchSkuOptions()
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/performance/sku-options', {
+    expect(fetchMock).toHaveBeenCalledWith('/api/performance/sku-options?mt_code=TWD', {
       signal: undefined,
       cache: 'no-store',
     })
@@ -73,6 +106,63 @@ describe('fetchPerformance', () => {
     }
   })
 
+  it.each(['all', 'flagged', 'sho', 'pro', 'both', 'none'] as const)(
+    'serializes the %s Sho/Pro filter for matrix and export',
+    async (skuFlag) => {
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+        new Response(JSON.stringify({ items: [] }), { status: 200 }),
+      )
+      const query = {
+        dateFrom: '',
+        dateTo: '',
+        branchIds: [],
+        monthFrom: '',
+        monthTo: '',
+        search: '',
+        page: 1,
+        dimension: 'month' as const,
+        mode: 'sales' as const,
+        skuFlag,
+        branchMonth: 'latest',
+        branchPeriod: 'month' as const,
+      }
+
+      await fetchPerformance(query)
+      fetchMock.mockResolvedValueOnce(new Response(new Blob(['xlsx']), { status: 200 }))
+      await downloadPerformanceReport(query, 'amount', true)
+
+      for (const call of fetchMock.mock.calls) {
+        const url = new URL(String(call[0]), 'http://localhost')
+        expect(url.searchParams.get('sku_flag')).toBe(skuFlag)
+      }
+    },
+  )
+
+  it('updates one Sho/Pro flag without sending the other flag', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({
+        mtCode: 'TWD',
+        sku: 'SKU/A',
+        isSho: true,
+        isPro: false,
+        updatedAt: '2026-09-09T07:00:00+07:00',
+      }), { status: 200 }),
+    )
+
+    const result = await updateSkuAnalysisFlag('TWD', 'SKU/A', 'sho', true)
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/performance/sku-flags/TWD/SKU%2FA',
+      expect.objectContaining({
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ flag: 'sho', enabled: true }),
+      }),
+    )
+    expect(result.isSho).toBe(true)
+    expect(result.isPro).toBe(false)
+  })
+
   it('requests all available history aggregated by month', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({}), { status: 200 }),
@@ -96,6 +186,32 @@ describe('fetchPerformance', () => {
     expect(url).toContain('grain=month')
     expect(url).toContain('date_from=2025-01-01')
     expect(url).toContain('date_to=2026-08-31')
+  })
+
+  it('marks an Inventory Month request for snapshot semantics', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({}), { status: 200 }),
+    )
+
+    await fetchPerformance({
+      dateFrom: '',
+      dateTo: '',
+      branchIds: [],
+      monthFrom: '2026-07',
+      monthTo: '2026-08',
+      search: '',
+      page: 1,
+      dimension: 'month',
+      mode: 'inventory',
+      branchMonth: 'latest',
+      branchPeriod: 'month',
+      mtCode: 'TWD',
+    })
+
+    const url = new URL(String(fetchMock.mock.calls[0][0]), 'http://localhost')
+    expect(url.searchParams.get('grain')).toBe('month')
+    expect(url.searchParams.get('report_mode')).toBe('inventory')
+    expect(url.searchParams.get('include_turnover')).toBe('true')
   })
 
   it('requests date totals aggregated by the backend', async () => {

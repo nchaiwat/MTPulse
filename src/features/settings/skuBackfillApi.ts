@@ -62,16 +62,16 @@ async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>
 }
 
-export function fetchSkuBackfillOptions(signal?: AbortSignal) {
+export function fetchSkuBackfillOptions(mtCode = 'TWD', signal?: AbortSignal) {
   return jsonRequest<SkuBackfillOptions>(
-    '/api/admin/modern-trades/TWD/sku-backfills/options',
+    `/api/admin/modern-trades/${encodeURIComponent(mtCode)}/sku-backfills/options`,
     { signal },
   )
 }
 
-export function previewSkuBackfill(sourceSku: string, rangeStart: string | null) {
+export function previewSkuBackfill(sourceSku: string, rangeStart: string | null, mtCode = 'TWD') {
   return jsonRequest<SkuBackfillPreview>(
-    '/api/admin/modern-trades/TWD/sku-backfills/preview',
+    `/api/admin/modern-trades/${encodeURIComponent(mtCode)}/sku-backfills/preview`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -80,8 +80,8 @@ export function previewSkuBackfill(sourceSku: string, rangeStart: string | null)
   )
 }
 
-export function startSkuBackfill(sourceSku: string, rangeStart: string | null) {
-  return jsonRequest<ImportRun>('/api/admin/modern-trades/TWD/sku-backfills', {
+export function startSkuBackfill(sourceSku: string, rangeStart: string | null, mtCode = 'TWD') {
+  return jsonRequest<ImportRun>(`/api/admin/modern-trades/${encodeURIComponent(mtCode)}/sku-backfills`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -92,9 +92,9 @@ export function startSkuBackfill(sourceSku: string, rangeStart: string | null) {
   })
 }
 
-export function refreshSourceRegistry() {
+export function refreshSourceRegistry(mtCode = 'TWD') {
   return jsonRequest<ImportRun>(
-    '/api/admin/modern-trades/TWD/source-registry/refresh',
+    `/api/admin/modern-trades/${encodeURIComponent(mtCode)}/source-registry/refresh`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -107,9 +107,9 @@ export function fetchImportRun(runId: number) {
   return jsonRequest<ImportRun>(`/api/admin/import-runs/${runId}`)
 }
 
-export async function fetchLatestBackfillRun(signal?: AbortSignal) {
+export async function fetchLatestBackfillRun(mtCode = 'TWD', signal?: AbortSignal) {
   const payload = await jsonRequest<{ runs: ImportRun[] }>(
-    '/api/admin/import-runs?mt_code=TWD&limit=20',
+    `/api/admin/import-runs?mt_code=${encodeURIComponent(mtCode)}&limit=20`,
     { signal },
   )
   return payload.runs.find((run) => run.mode === 'sku_backfill') ?? null

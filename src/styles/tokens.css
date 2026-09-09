@@ -1,6 +1,27 @@
 :root {
   color-scheme: light;
-  font-family: "Leelawadee UI", Aptos, "Segoe UI", Tahoma, system-ui, sans-serif;
+  --font-ui: "Leelawadee UI", Aptos, "Segoe UI", Tahoma, system-ui, sans-serif;
+  --font-data: "Cascadia Mono", Consolas, monospace;
+  --weight-regular: 400;
+  --weight-medium: 600;
+  --weight-bold: 700;
+  --type-page-title-size: 24px;
+  --type-page-title-line: 1.15;
+  --type-section-title-size: 16px;
+  --type-kpi-size: 20px;
+  --type-control-size: 12px;
+  --type-body-size: 12px;
+  --type-label-size: 10px;
+  --type-caption-size: 10px;
+  --type-data-size: 12px;
+  --control-height-compact: 34px;
+  --control-height-standard: 40px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  font-family: var(--font-ui);
   color: #152537;
   background: #f4f8fb;
   font-synthesis: none;
@@ -49,5 +70,5 @@ body { margin: 0; min-width: 320px; min-height: 100vh; }
 button, input, select { font: inherit; }
 button, select { cursor: pointer; }
 button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid rgb(2 171 255 / 0.32); outline-offset: 2px; }
-.mono, .numeric-column, .data-grain strong { font-family: "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
+.mono, .numeric-column, .data-grain strong { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }

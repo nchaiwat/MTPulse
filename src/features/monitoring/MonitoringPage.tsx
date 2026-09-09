@@ -357,6 +357,9 @@ export function MonitoringPage({ onOpenImports, onOpenCoverage }: MonitoringPage
                 return (
                   <article key={item.skuInterestId}>
                     <span>
+                      <small className="monitoring-sku-mt" data-mt={item.mtCode}>
+                        Modern Trade · {item.mtCode}
+                      </small>
                       <strong>{item.sku}</strong>
                       <small>{item.description ?? 'ไม่มีรายละเอียดสินค้า'}</small>
                       <time>พบครั้งแรก {formatDisplayDate(item.firstSeenDate)} · ล่าสุด {formatDisplayDate(item.lastSeenDate)}</time>

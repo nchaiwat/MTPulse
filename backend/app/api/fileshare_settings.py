@@ -83,22 +83,27 @@ def _saved_results(session: Session) -> list[dict[str, str]]:
 
 def _response(session: Session) -> dict:
     base_unc = setting_value(session, BASE_UNC_KEY) or ""
+    modern_trades = _modern_trades(session)
+    hp_owner = next((mt for mt in modern_trades if mt.code == "HP"), None)
     profiles = []
-    for mt in _modern_trades(session):
-        folder = mt.source_subfolder or (mt.code if mt.code == "TWD" else "")
+    for mt in modern_trades:
+        profile_mt = hp_owner if mt.source_group_code == "HP_MH" and hp_owner else mt
+        folder = profile_mt.source_subfolder or (
+            profile_mt.code if profile_mt.code == "TWD" else ""
+        )
         full_path = compose_unc(base_unc, folder) if base_unc and folder else ""
         last_run = session.scalar(
             select(ImportRun)
-            .where(ImportRun.modern_trade_id == mt.id)
+            .where(ImportRun.modern_trade_id == profile_mt.id)
             .order_by(ImportRun.requested_at.desc(), ImportRun.id.desc())
             .limit(1)
         )
         next_run_at = None
-        if mt.schedule_enabled and mt.schedule_time:
+        if profile_mt.schedule_enabled and profile_mt.schedule_time:
             now = bangkok_now()
             candidate = datetime.combine(
                 now.date(),
-                mt.schedule_time,
+                profile_mt.schedule_time,
                 tzinfo=BANGKOK_TIMEZONE,
             )
             if candidate <= now:
@@ -109,15 +114,30 @@ def _response(session: Session) -> dict:
                 "code": mt.code,
                 "name": mt.name,
                 "subfolder": folder,
-                "enabled": mt.source_enabled,
+                "enabled": profile_mt.source_enabled,
                 "fullPath": full_path,
-                "scheduleEnabled": mt.schedule_enabled,
+                "scheduleEnabled": profile_mt.schedule_enabled,
                 "scheduleTime": (
-                    mt.schedule_time.strftime("%H:%M") if mt.schedule_time else None
+                    profile_mt.schedule_time.strftime("%H:%M")
+                    if profile_mt.schedule_time
+                    else None
                 ),
-                "initialScanCompleted": initial_scan_completed(session, mt.id),
+                "sourceGroup": mt.source_group_code,
+                "sharedProfileOwner": (
+                    mt.source_group_code is None or mt.code == profile_mt.code
+                ),
+                "sharedWith": (
+                    ["MH"] if mt.code == "HP" and mt.source_group_code == "HP_MH"
+                    else ["HP"] if mt.code == "MH" and mt.source_group_code == "HP_MH"
+                    else []
+                ),
+                "initialScanCompleted": initial_scan_completed(
+                    session, profile_mt.id
+                ),
                 "lastRun": (
-                    run_payload(last_run, mt, session=session) if last_run else None
+                    run_payload(last_run, profile_mt, session=session)
+                    if last_run
+                    else None
                 ),
                 "nextRunAt": next_run_at,
             }
@@ -217,6 +237,8 @@ def update_fileshare_settings(
     set_setting(session, USERNAME_KEY, update.username.strip() or None, secret=False, actor=actor)
     for mt in modern_trades:
         profile = profiles.get(mt.code)
+        if mt.source_group_code == "HP_MH":
+            profile = profiles.get("HP") or profiles.get("MH")
         if profile:
             mt.source_subfolder = profile.subfolder
             mt.source_enabled = profile.enabled
@@ -264,10 +286,15 @@ def test_fileshare_settings(
     modern_trades = _modern_trades(session)
     profiles = _validate_profiles(request.profiles, modern_trades)
     names = {mt.code: mt.name for mt in modern_trades}
+    trades_by_code = {mt.code: mt for mt in modern_trades}
     enabled = [
         (code, names[code], profile.subfolder)
         for code, profile in profiles.items()
         if profile.enabled
+        and not (
+            trades_by_code[code].source_group_code == "HP_MH"
+            and code != "HP"
+        )
     ]
     if not enabled:
         raise HTTPException(status_code=400, detail="กรุณาเปิดใช้งานอย่างน้อย 1 Modern Trade")

@@ -24,7 +24,15 @@ const technicalMetrics: Array<{ code: TechnicalMetricCode; label: string; detail
   { code: 'deadTuples', label: 'Dead tuples', detail: 'ข้อมูลเก่าที่รอ PostgreSQL จัดเก็บพื้นที่' },
 ]
 
-export function SystemSettingsPage({ embedded = false }: { embedded?: boolean }) {
+export function SystemSettingsPage({
+  embedded = false,
+  fileShareView = 'all',
+  onDirtyChange,
+}: {
+  embedded?: boolean
+  fileShareView?: 'all' | 'connection'
+  onDirtyChange?: (dirty: boolean) => void
+}) {
   const [token, setToken] = useState('')
   const [showToken, setShowToken] = useState(false)
   const [groupId, setGroupId] = useState('')
@@ -35,10 +43,19 @@ export function SystemSettingsPage({ embedded = false }: { embedded?: boolean })
   const [savedTelegram, setSavedTelegram] = useState({ groupId: '', notifyManualImport: true })
   const [revealedToken, setRevealedToken] = useState('')
   const [fileShareBusy, setFileShareBusy] = useState(false)
+  const [fileShareDirty, setFileShareDirty] = useState(false)
   const [technical, setTechnical] = useState<TechnicalNotificationSettings>(defaultTechnicalNotificationSettings)
   const [savedTechnical, setSavedTechnical] = useState<TechnicalNotificationSettings>(defaultTechnicalNotificationSettings)
   const [healthCheck, setHealthCheck] = useState<{ checkedAt: string, overallStatus: string } | null>(null)
   const fileShareRef = useRef<FileShareSettingsHandle>(null)
+  const telegramDirty = groupId !== savedTelegram.groupId
+    || notifyManualImport !== savedTelegram.notifyManualImport
+    || Boolean(token.trim() && token !== revealedToken)
+  const technicalDirty = JSON.stringify(technical) !== JSON.stringify(savedTechnical)
+
+  useEffect(() => {
+    onDirtyChange?.(fileShareDirty || telegramDirty || technicalDirty)
+  }, [fileShareDirty, onDirtyChange, technicalDirty, telegramDirty])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -187,7 +204,7 @@ export function SystemSettingsPage({ embedded = false }: { embedded?: boolean })
 
   return (
     <div className={`system-settings-page ${embedded ? 'system-settings-page-embedded' : 'page-content'}`}>
-      <FileShareSettingsCard ref={fileShareRef} disabled={busy !== null} onBusyChange={setFileShareBusy} />
+      <FileShareSettingsCard ref={fileShareRef} disabled={busy !== null} onBusyChange={setFileShareBusy} onDirtyChange={setFileShareDirty} view={fileShareView} />
       <section className="telegram-settings" aria-labelledby="telegram-heading">
         <header>
           <div><span className="setting-icon"><Bell size={19} aria-hidden="true" /></span><div><span className="eyebrow">System notification</span><h3 id="telegram-heading">Telegram</h3><p>ส่งเหตุการณ์สำคัญของ MT Pulse ไปยัง Group กลาง</p></div></div>
@@ -246,7 +263,7 @@ export function SystemSettingsPage({ embedded = false }: { embedded?: boolean })
       </section>
       <div className="system-settings-savebar">
         {message && <div className="settings-message" data-tone={message.tone} role={message.tone === 'error' ? 'alert' : 'status'}>{message.text}</div>}
-        <button className="primary-action" type="button" disabled={busy !== null || fileShareBusy} onClick={() => void save()}>{busy === 'save' ? 'กำลังบันทึก…' : 'บันทึกการตั้งค่าระบบ'}</button>
+        <button className="primary-action" type="button" disabled={busy !== null || fileShareBusy} onClick={() => void save()}>{busy === 'save' ? 'กำลังบันทึก…' : 'Save changes'}</button>
       </div>
     </div>
   )

@@ -14,10 +14,11 @@ export const metricLabel: Record<Metric, string> = {
   qty: 'Qty',
   stockOh: 'Stock On Hand',
   stockOnOrder: 'Stock On Order',
+  stockValue: 'Stock Value (Source)',
 }
 
 export function metricValue(point: DataPoint, metric: Metric) {
-  return point[metric]
+  return point[metric] ?? 0
 }
 
 export function pointsForView(
@@ -64,7 +65,7 @@ export function aggregateByDimension(points: DataPoint[], dimension: Dimension, 
 }
 
 export function formatMetric(value: number, metric: Metric) {
-  return (metric === 'amount' ? amountFormatter : quantityFormatter).format(value)
+  return (metric === 'amount' || metric === 'stockValue' ? amountFormatter : quantityFormatter).format(value)
 }
 
 export function heatLevel(value: number, maxValue: number) {

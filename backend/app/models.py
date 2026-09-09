@@ -48,6 +48,8 @@ class ModernTrade(Base):
         Boolean, default=False, server_default="false"
     )
     schedule_time: Mapped[time | None] = mapped_column()
+    source_group_code: Mapped[str | None] = mapped_column(String(30), index=True)
+    branch_prefix: Mapped[str | None] = mapped_column(String(10))
 
 
 class ImportBatch(Base):
@@ -79,6 +81,11 @@ class ImportBatch(Base):
     stock_on_hand: Mapped[Decimal] = mapped_column(QUANTITY)
     reported_stock_on_hand: Mapped[Decimal] = mapped_column(QUANTITY)
     stock_on_order: Mapped[Decimal] = mapped_column(QUANTITY)
+    stock_value: Mapped[Decimal] = mapped_column(
+        MONEY, default=Decimal("0"), server_default="0"
+    )
+    business_fingerprint: Mapped[str | None] = mapped_column(String(64), index=True)
+    source_pair_json: Mapped[str | None] = mapped_column(Text)
     reconciliation_errors: Mapped[str | None] = mapped_column(Text)
     error_message: Mapped[str | None] = mapped_column(Text)
     warning_resolution: Mapped[str | None] = mapped_column(String(32))
@@ -160,6 +167,10 @@ class SourceFile(Base):
     last_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    source_kind: Mapped[str | None] = mapped_column(String(20), index=True)
+    pair_key: Mapped[str | None] = mapped_column(String(100), index=True)
+    pair_generation_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    business_fingerprint: Mapped[str | None] = mapped_column(String(64), index=True)
 
 
 class SalesInventoryFact(Base):
@@ -194,6 +205,9 @@ class SalesInventoryFact(Base):
     sales_qty: Mapped[Decimal] = mapped_column(QUANTITY)
     stock_on_hand: Mapped[Decimal] = mapped_column(QUANTITY)
     stock_on_order: Mapped[Decimal] = mapped_column(QUANTITY)
+    stock_value: Mapped[Decimal] = mapped_column(
+        MONEY, default=Decimal("0"), server_default="0"
+    )
     last_sold_date: Mapped[date | None] = mapped_column(Date)
     last_receive_date: Mapped[date | None] = mapped_column(Date)
     batch: Mapped[ImportBatch] = relationship(back_populates="facts")
@@ -259,6 +273,30 @@ class DailySkuSummary(Base):
     )
     stock_on_hand: Mapped[Decimal] = mapped_column(QUANTITY)
     stock_on_order: Mapped[Decimal] = mapped_column(QUANTITY)
+    stock_value: Mapped[Decimal] = mapped_column(
+        MONEY, default=Decimal("0"), server_default="0"
+    )
+
+
+class InventoryCoverage(Base):
+    __tablename__ = "inventory_coverages"
+    __table_args__ = (
+        UniqueConstraint(
+            "modern_trade_id",
+            "data_date",
+            name="uq_inventory_coverage_mt_date",
+        ),
+        Index("ix_inventory_coverage_mt_date", "modern_trade_id", "data_date"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    modern_trade_id: Mapped[int] = mapped_column(ForeignKey("modern_trades.id"))
+    data_date: Mapped[date] = mapped_column(Date)
+    source_skus_json: Mapped[str] = mapped_column(Text)
+    source_branches_json: Mapped[str] = mapped_column(Text)
+    source_row_count: Mapped[int] = mapped_column(Integer)
+    captured_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class ItemMapping(Base):
@@ -310,6 +348,37 @@ class SkuInterest(Base):
     )
     decided_by: Mapped[str | None] = mapped_column(String(200))
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class SkuAnalysisFlag(Base):
+    __tablename__ = "sku_analysis_flags"
+    __table_args__ = (
+        UniqueConstraint(
+            "modern_trade_id",
+            "source_sku",
+            name="uq_sku_analysis_flag_mt_sku",
+        ),
+        Index(
+            "ix_sku_analysis_flag_mt_flags_sku",
+            "modern_trade_id",
+            "is_showroom",
+            "is_promotion",
+            "source_sku",
+        ),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    modern_trade_id: Mapped[int] = mapped_column(ForeignKey("modern_trades.id"))
+    source_sku: Mapped[str] = mapped_column(String(50))
+    is_showroom: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    is_promotion: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    updated_by: Mapped[str] = mapped_column(String(200))
 
 
 class BranchMapping(Base):

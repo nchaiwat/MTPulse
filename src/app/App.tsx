@@ -16,11 +16,24 @@ import { MonitoringPage } from '../features/monitoring/MonitoringPage'
 import { PerformancePage } from '../features/performance/PerformancePage'
 import { SettingsPage } from '../features/settings/SettingsPage'
 
-type AppPage = 'dashboard' | 'performance' | 'imports' | 'monitoring' | 'settings'
+type AppPage =
+  | 'dashboard'
+  | 'dashboard-hp'
+  | 'dashboard-mh'
+  | 'performance'
+  | 'performance-hp'
+  | 'performance-mh'
+  | 'imports'
+  | 'monitoring'
+  | 'settings'
 
 const pageMeta: Record<AppPage, { eyebrow: string; title: string }> = {
   dashboard: { eyebrow: 'แดชบอร์ด / ไทวัสดุ', title: 'แดชบอร์ดไทวัสดุ' },
+  'dashboard-hp': { eyebrow: 'แดชบอร์ด / HomePro', title: 'แดชบอร์ด HomePro' },
+  'dashboard-mh': { eyebrow: 'แดชบอร์ด / MegaHome', title: 'แดชบอร์ด MegaHome' },
   performance: { eyebrow: 'รายงาน / ไทวัสดุ', title: 'รายงานไทวัสดุ' },
+  'performance-hp': { eyebrow: 'รายงาน / HomePro', title: 'รายงาน HomePro' },
+  'performance-mh': { eyebrow: 'รายงาน / MegaHome', title: 'รายงาน MegaHome' },
   imports: { eyebrow: 'สถานะข้อมูล / นำเข้าข้อมูล', title: 'นำเข้าข้อมูล' },
   monitoring: { eyebrow: 'System health', title: 'Monitoring' },
   settings: { eyebrow: 'การตั้งค่า', title: 'การตั้งค่า' },
@@ -60,14 +73,26 @@ export function App() {
             <button className="nav-group-label" type="button" title={navigationCollapsed ? 'แดชบอร์ด' : undefined} data-active={navigationCollapsed && page === 'dashboard' || undefined} aria-current={navigationCollapsed && page === 'dashboard' ? 'page' : undefined} aria-expanded={navigationCollapsed ? false : openMenu.dashboard} aria-controls="dashboard-submenu" onClick={() => { if (navigationCollapsed) { setPage('dashboard'); return } setOpenMenu((current) => ({ ...current, dashboard: !current.dashboard })) }}>
               <LayoutDashboard size={17} aria-hidden="true" /><span>แดชบอร์ด</span><ChevronDown size={16} aria-hidden="true" />
             </button>
-            {openMenu.dashboard && <div className="nav-submenu" id="dashboard-submenu"><button className="nav-item nav-subitem" aria-label="แดชบอร์ด ไทวัสดุ" data-active={page === 'dashboard' || undefined} aria-current={page === 'dashboard' ? 'page' : undefined} type="button" onClick={() => setPage('dashboard')}><span>ไทวัสดุ</span></button></div>}
+            {openMenu.dashboard && (
+              <div className="nav-submenu" id="dashboard-submenu">
+                <button className="nav-item nav-subitem" aria-label="แดชบอร์ด ไทวัสดุ" data-active={page === 'dashboard' || undefined} aria-current={page === 'dashboard' ? 'page' : undefined} type="button" onClick={() => setPage('dashboard')}><span>ไทวัสดุ</span></button>
+                <button className="nav-item nav-subitem" aria-label="แดชบอร์ด HomePro" data-active={page === 'dashboard-hp' || undefined} aria-current={page === 'dashboard-hp' ? 'page' : undefined} type="button" onClick={() => setPage('dashboard-hp')}><span>HomePro</span></button>
+                <button className="nav-item nav-subitem" aria-label="แดชบอร์ด MegaHome" data-active={page === 'dashboard-mh' || undefined} aria-current={page === 'dashboard-mh' ? 'page' : undefined} type="button" onClick={() => setPage('dashboard-mh')}><span>MegaHome</span></button>
+              </div>
+            )}
           </section>
 
           <section className="nav-group">
-            <button className="nav-group-label" type="button" title={navigationCollapsed ? 'รายงาน' : undefined} data-active={navigationCollapsed && page === 'performance' || undefined} aria-current={navigationCollapsed && page === 'performance' ? 'page' : undefined} aria-expanded={navigationCollapsed ? false : openMenu.reports} aria-controls="reports-submenu" onClick={() => { if (navigationCollapsed) { setPage('performance'); return } setOpenMenu((current) => ({ ...current, reports: !current.reports })) }}>
+            <button className="nav-group-label" type="button" title={navigationCollapsed ? 'รายงาน' : undefined} data-active={navigationCollapsed && page.startsWith('performance') || undefined} aria-current={navigationCollapsed && page.startsWith('performance') ? 'page' : undefined} aria-expanded={navigationCollapsed ? false : openMenu.reports} aria-controls="reports-submenu" onClick={() => { if (navigationCollapsed) { setPage('performance'); return } setOpenMenu((current) => ({ ...current, reports: !current.reports })) }}>
               <BarChart3 size={17} aria-hidden="true" /><span>รายงาน</span><ChevronDown size={16} aria-hidden="true" />
             </button>
-            {openMenu.reports && <div className="nav-submenu" id="reports-submenu"><button className="nav-item nav-subitem" aria-label="รายงาน ไทวัสดุ" data-active={page === 'performance' || undefined} aria-current={page === 'performance' ? 'page' : undefined} type="button" onClick={() => setPage('performance')}><span>ไทวัสดุ</span></button></div>}
+            {openMenu.reports && (
+              <div className="nav-submenu" id="reports-submenu">
+                <button className="nav-item nav-subitem" aria-label="รายงาน ไทวัสดุ" data-active={page === 'performance' || undefined} aria-current={page === 'performance' ? 'page' : undefined} type="button" onClick={() => setPage('performance')}><span>ไทวัสดุ</span></button>
+                <button className="nav-item nav-subitem" aria-label="รายงาน HomePro" data-active={page === 'performance-hp' || undefined} aria-current={page === 'performance-hp' ? 'page' : undefined} type="button" onClick={() => setPage('performance-hp')}><span>HomePro</span></button>
+                <button className="nav-item nav-subitem" aria-label="รายงาน MegaHome" data-active={page === 'performance-mh' || undefined} aria-current={page === 'performance-mh' ? 'page' : undefined} type="button" onClick={() => setPage('performance-mh')}><span>MegaHome</span></button>
+              </div>
+            )}
           </section>
 
           <section className="nav-group">
@@ -93,12 +118,18 @@ export function App() {
       </aside>
 
       <main className="app-main" id="main-content">
-        <header className="top-bar">
-          <div><span className="eyebrow">{meta.eyebrow}</span><h1>{meta.title}</h1></div>
-          <div className="user-chip" aria-label="Current user"><span>CN</span><div><strong>Chaiwat N.</strong><small>เจ้าของ Workspace</small></div></div>
-        </header>
+        {!page.startsWith('performance') && !page.startsWith('dashboard') && (
+          <header className="top-bar">
+            <div><span className="eyebrow">{meta.eyebrow}</span><h1>{meta.title}</h1></div>
+            <div className="user-chip" aria-label="Current user"><span>CN</span><div><strong>Chaiwat N.</strong><small>เจ้าของ Workspace</small></div></div>
+          </header>
+        )}
         {page === 'dashboard' && <TwdDashboardPage onOpenReport={() => setPage('performance')} />}
+        {page === 'dashboard-hp' && <TwdDashboardPage mtCode="HP" onOpenReport={() => setPage('performance-hp')} />}
+        {page === 'dashboard-mh' && <TwdDashboardPage mtCode="MH" onOpenReport={() => setPage('performance-mh')} />}
         {page === 'performance' && <PerformancePage />}
+        {page === 'performance-hp' && <PerformancePage mtCode="HP" />}
+        {page === 'performance-mh' && <PerformancePage mtCode="MH" />}
         {page === 'imports' && <ImportPage correctiveBatchId={correctiveBatchId} />}
         {page === 'monitoring' && <MonitoringPage onOpenImports={(batchId) => { setCorrectiveBatchId(batchId); setPage('imports') }} onOpenCoverage={() => { setSettingsFocusKey(Date.now()); setPage('settings') }} />}
         {page === 'settings' && <SettingsPage focusCoverageKey={settingsFocusKey} />}

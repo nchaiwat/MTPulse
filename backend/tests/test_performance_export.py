@@ -189,3 +189,92 @@ def test_gross_sales_export_is_clearly_labeled() -> None:
         datetime(2026, 8, 25, 12, 34, 56),
         sales_basis="gross",
     ) == "TWD_Sales_Gross_Amount_Branch_20260825_123456.xlsx"
+
+
+def test_inventory_export_contains_turnover_and_exact_selected_ranges() -> None:
+    report = _report()
+    report["selectedMonth"] = None
+    report["selectedDateRanges"] = [
+        {"from": "2026-06-01", "to": "2026-06-30"},
+        {"from": "2026-08-17", "to": "2026-08-17"},
+    ]
+    report["inventorySummary"] = {"averageTom": 5.99, "averageTod": 179.7}
+    report["items"] = [{**report["items"][0], "tom": 5.99, "tod": 179.7}]
+
+    content = build_performance_workbook(
+        report,
+        mode="inventory",
+        metric="stockOh",
+        grain="day",
+        show_descriptions=True,
+    )
+    workbook = openpyxl.load_workbook(BytesIO(content), data_only=False)
+    sheet = workbook["Report"]
+
+    assert [sheet.cell(5, column).value for column in range(1, 8)] == [
+        "TWD SKU",
+        "TWD Description",
+        "WA Item",
+        "WA Description",
+        "TOM",
+        "TOD",
+        "TOTAL",
+    ]
+    assert sheet["A4"].value == "AVG"
+    assert sheet["E4"].value == 5.99
+    assert sheet["F4"].value == 179.7
+    assert sheet["E6"].value == 5.99
+    assert sheet["F6"].value == 179.7
+    assert sheet.freeze_panes == "H6"
+    assert "01/06/2026 – 30/06/2026, 17/08/2026" in sheet["A2"].value
+    workbook.close()
+
+
+def test_inventory_month_export_matches_monthly_snapshot_points() -> None:
+    report = _report()
+    report["dates"] = ["2026-07", "2026-08"]
+    report["selectedMonth"] = None
+    report["inventorySummary"] = {"averageTom": 5.99, "averageTod": 179.7}
+    report["items"] = [
+        {
+            **report["items"][0],
+            "tom": 5.99,
+            "tod": 179.7,
+            "points": [
+                {
+                    "date": "2026-07",
+                    "branchId": "all",
+                    "amount": 0,
+                    "qty": 0,
+                    "stockOh": 10,
+                    "stockOnOrder": 3,
+                },
+                {
+                    "date": "2026-08",
+                    "branchId": "all",
+                    "amount": 0,
+                    "qty": 0,
+                    "stockOh": 20,
+                    "stockOnOrder": 7,
+                },
+            ],
+        }
+    ]
+
+    content = build_performance_workbook(
+        report,
+        mode="inventory",
+        metric="stockOh",
+        grain="month",
+        show_descriptions=True,
+    )
+    workbook = openpyxl.load_workbook(BytesIO(content), data_only=False)
+    sheet = workbook["Report"]
+
+    assert sheet["H5"].value == "2026-07"
+    assert sheet["I5"].value == "2026-08"
+    assert sheet["H6"].value == 10
+    assert sheet["I6"].value == 20
+    assert sheet["G6"].value == "=SUM(H6:I6)"
+    assert "Jul 2026 – Aug 2026" in sheet["A2"].value
+    workbook.close()

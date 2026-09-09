@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { CircleAlert, CircleCheck, LoaderCircle, X } from 'lucide-react'
-import { formatMetric, sumMetric } from './performanceMath'
+import { formatMetric, metricLabel, sumMetric } from './performanceMath'
 import type { Branch, Metric, PerformanceItem, SalesBasis, SelectedCell } from './types'
 import { formatDisplayDate } from '../../shared/dateFormat'
 
@@ -15,6 +15,8 @@ interface ItemDetailDrawerProps {
   isLoading?: boolean
   loadError?: string | null
   onClose: () => void
+  sourceCode?: string
+  inventoryMetrics?: Metric[]
 }
 
 const formatDimension = (date: string) => {
@@ -25,7 +27,7 @@ const formatDimension = (date: string) => {
   return formatDisplayDate(date)
 }
 
-export function ItemDetailDrawer({ item, selected, dates, branchIds, metric, salesBasis, branches, isLoading = false, loadError = null, onClose }: ItemDetailDrawerProps) {
+export function ItemDetailDrawer({ item, selected, dates, branchIds, metric, salesBasis, branches, isLoading = false, loadError = null, onClose, sourceCode = 'TWD', inventoryMetrics = ['stockOh', 'stockOnOrder'] }: ItemDetailDrawerProps) {
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()
@@ -43,17 +45,18 @@ export function ItemDetailDrawer({ item, selected, dates, branchIds, metric, sal
       ? `${focusBranch.id} - ${focusBranch.name}`
       : formatDimension(selected.dimensionKey)
     : 'ข้อมูลที่เลือกทั้งหมด'
+  const secondaryInventoryMetric: Metric = inventoryMetrics.includes('stockValue') ? 'stockValue' : 'stockOnOrder'
 
   return (
     <div className="drawer-layer" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) onClose() }}>
       <aside className="detail-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
         <header className="drawer-header">
-          <div><span className="eyebrow">รายละเอียด Item / {focusLabel} / {salesBasis === 'gross' ? 'Gross Sale Out' : 'Net Sales'}</span><h2 id="drawer-title">{item.sku}</h2><p>{item.twdDescription}</p></div>
+          <div><span className="eyebrow">รายละเอียด Item {sourceCode} / {focusLabel} / {salesBasis === 'gross' ? 'Gross Sale Out' : 'Net Sales'}</span><h2 id="drawer-title">{item.sku}</h2><p>{item.twdDescription}</p></div>
           <button className="icon-button" type="button" aria-label="ปิดรายละเอียด Item" onClick={onClose}><X size={19} /></button>
         </header>
 
         <div className="drawer-identities">
-          <div><span>WA Item</span><strong className="mono">{item.waItem ?? 'ยังไม่ Mapping'}</strong><small>{item.waDescription ?? 'เลือก Item ของ Window Asia ก่อนยืนยัน Mapping'}</small></div>
+          <div><span>WA Item</span><strong className="mono">{item.waItem ?? 'ยังไม่ Mapping'}</strong><small>{item.waDescription ?? 'เลือก Item ของ Window Asia ก่อนยืนยัน Mapping'}</small>{sourceCode === 'TWD' && <div className="sku-flag-badges" aria-label="สถานะความสนใจ SKU"><span className="sku-flag-badge flag-sho" data-active={item.isSho || undefined}>Sho</span><span className="sku-flag-badge flag-pro" data-active={item.isPro || undefined}>Pro</span></div>}</div>
           <span className={`status status-${item.mappingStatus}`}><span aria-hidden="true" />{item.mappingStatus === 'confirmed' ? 'ยืนยันแล้ว' : item.mappingStatus === 'pending' ? 'รอตรวจสอบ' : 'ยังไม่ Mapping'}</span>
         </div>
 
@@ -61,7 +64,7 @@ export function ItemDetailDrawer({ item, selected, dates, branchIds, metric, sal
           <div><span>Amount · {salesBasis === 'gross' ? 'Gross' : 'Net'}</span><strong>{formatMetric(sumMetric(points, 'amount'), 'amount')}</strong></div>
           <div><span>Sales Qty · {salesBasis === 'gross' ? 'Gross' : 'Net'}</span><strong>{formatMetric(sumMetric(points, 'qty'), 'qty')}</strong></div>
           <div><span>Stock OH ล่าสุด</span><strong>{formatMetric(sumMetric(points.filter((point) => point.date === dates.at(-1)), 'stockOh'), 'stockOh')}</strong></div>
-          <div><span>Stock On Order</span><strong>{formatMetric(sumMetric(points.filter((point) => point.date === dates.at(-1)), 'stockOnOrder'), 'stockOnOrder')}</strong></div>
+          <div><span>{metricLabel[secondaryInventoryMetric]}</span><strong>{formatMetric(sumMetric(points.filter((point) => point.date === dates.at(-1)), secondaryInventoryMetric), secondaryInventoryMetric)}</strong></div>
         </section>
 
         {item.mappingStatus === 'confirmed' ? (
@@ -71,14 +74,14 @@ export function ItemDetailDrawer({ item, selected, dates, branchIds, metric, sal
         )}
 
         <section className="daily-breakdown">
-          <div className="section-heading"><div><span className="eyebrow">SKU × Branch × Day</span><h3>รายละเอียดรายวัน</h3></div><span>Metric ที่เลือก: {metric === 'amount' ? 'Amount' : metric}</span></div>
+          <div className="section-heading"><div><span className="eyebrow">SKU × Branch × Day</span><h3>รายละเอียดรายวัน</h3></div><span>Metric ที่เลือก: {metricLabel[metric]}</span></div>
           {isLoading ? <div className="drawer-detail-loading" role="status"><LoaderCircle className="matrix-loading-spinner" size={22} aria-hidden="true" />กำลังโหลดรายละเอียดรายวัน…</div> : loadError ? <div className="drawer-detail-error" role="alert">{loadError}</div> : <div className="drawer-table-wrap">
             <table>
-              <thead><tr><th>วันที่</th><th>Branch</th><th className="numeric-column">Qty</th><th className="numeric-column">Amount</th><th className="numeric-column">Stock OH</th><th className="numeric-column">On Order</th></tr></thead>
+              <thead><tr><th>วันที่</th><th>Branch</th><th className="numeric-column">Qty</th><th className="numeric-column">Amount</th><th className="numeric-column">Stock OH</th><th className="numeric-column">{metricLabel[secondaryInventoryMetric]}</th></tr></thead>
               <tbody>
                 {points.map((point) => {
                   const branch = branches.find((entry) => entry.id === point.branchId)
-                  return <tr key={`${point.date}-${point.branchId}`}><td>{formatDisplayDate(point.date)}</td><td className="branch-inline"><strong className="mono">{point.branchId}</strong>{branch && <span> - {branch.name}</span>}</td><td className={`numeric-column ${point.qty < 0 ? 'is-negative' : ''}`}>{formatMetric(point.qty, 'qty')}</td><td className={`numeric-column ${point.amount < 0 ? 'is-negative' : ''}`}>{formatMetric(point.amount, 'amount')}</td><td className="numeric-column">{formatMetric(point.stockOh, 'stockOh')}</td><td className="numeric-column">{formatMetric(point.stockOnOrder, 'stockOnOrder')}</td></tr>
+                  return <tr key={`${point.date}-${point.branchId}`}><td>{formatDisplayDate(point.date)}</td><td className="branch-inline"><strong className="mono">{point.branchId}</strong>{branch && <span> - {branch.name}</span>}</td><td className={`numeric-column ${point.qty < 0 ? 'is-negative' : ''}`}>{formatMetric(point.qty, 'qty')}</td><td className={`numeric-column ${point.amount < 0 ? 'is-negative' : ''}`}>{formatMetric(point.amount, 'amount')}</td><td className="numeric-column">{formatMetric(point.stockOh, 'stockOh')}</td><td className="numeric-column">{formatMetric(point[secondaryInventoryMetric] ?? 0, secondaryInventoryMetric)}</td></tr>
                 })}
               </tbody>
             </table>

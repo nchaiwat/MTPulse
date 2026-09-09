@@ -24,7 +24,7 @@ def enqueue_due_runs(now: datetime | None = None) -> int:
     with SessionLocal() as session:
         modern_trades = session.scalars(
             select(ModernTrade).where(
-                ModernTrade.code == "TWD",
+                ModernTrade.code.in_(("TWD", "HP")),
                 ModernTrade.source_enabled.is_(True),
                 ModernTrade.schedule_enabled.is_(True),
                 ModernTrade.schedule_time.is_not(None),

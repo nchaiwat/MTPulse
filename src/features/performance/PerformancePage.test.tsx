@@ -1,12 +1,47 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PerformancePage } from './PerformancePage'
 import { samplePerformanceResponse } from './sampleData'
-afterEach(() => window.localStorage.removeItem('mtpulse.performance.twd.current-view'))
+import type { PerformanceResponse } from './types'
+afterEach(() => {
+  window.localStorage.removeItem('mtpulse.performance.twd.current-view')
+  window.localStorage.removeItem('mtpulse.performance.hp.current-view')
+  window.localStorage.removeItem('mtpulse.performance.mh.current-view')
+  vi.restoreAllMocks()
+})
 
 
 describe('PerformancePage', () => {
+  it('shows HP source labels and Stock Value instead of Stock On Order', async () => {
+    const user = userEvent.setup()
+    const hpData: PerformanceResponse = {
+      ...samplePerformanceResponse,
+      mtCode: 'HP' as const,
+      mtName: 'HomePro',
+      metricCapabilities: {
+        sales: ['amount', 'qty'],
+        inventory: ['stockOh', 'stockValue'],
+      },
+      inventorySummary: { stockOh: 15, stockOnOrder: 0, stockValue: 35000 },
+      items: samplePerformanceResponse.items.map((item) => ({
+        ...item,
+        points: item.points.map((point) => ({ ...point, stockValue: point.stockOh * 2000 })),
+      })),
+    }
+
+    render(<PerformancePage mtCode="HP" initialData={hpData} />)
+
+    expect(screen.getByRole('heading', { name: 'Matrix Performance ของ HomePro (HP)' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'HP SKU' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Inventory' }))
+    expect(screen.getByRole('button', { name: 'Stock value' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Stock on order' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Month' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Stock value' }))
+    expect(screen.getByText(/Stock Value \(Source\)/)).toBeInTheDocument()
+  })
+
   it('defaults to Net Sales and persists the selected Gross Sale Out basis', async () => {
     const user = userEvent.setup()
     const firstRender = render(<PerformancePage initialData={samplePerformanceResponse} />)
@@ -33,6 +68,27 @@ describe('PerformancePage', () => {
     const loading = screen.getByRole('status', { name: 'กำลังโหลดข้อมูล Performance' })
     expect(loading).toHaveTextContent('กำลังโหลดข้อมูล…')
     expect(loading.querySelector('svg')).toHaveClass('matrix-loading-spinner')
+  })
+
+  it('shows the loading overlay immediately while a mode change is waiting for new data', async () => {
+    let performanceCalls = 0
+    let resolveInventory!: (response: Response) => void
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.includes('/sku-options')) return new Response(JSON.stringify({ items: [] }), { status: 200 })
+      performanceCalls += 1
+      if (performanceCalls === 1) return new Response(JSON.stringify(samplePerformanceResponse), { status: 200 })
+      return new Promise((resolve) => { resolveInventory = resolve })
+    })
+    const user = userEvent.setup()
+    render(<PerformancePage />)
+
+    await waitFor(() => expect(screen.queryByRole('status', { name: 'กำลังโหลดข้อมูล Performance' })).not.toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'Inventory' }))
+
+    expect(screen.getByRole('status', { name: 'กำลังโหลดข้อมูล Performance' })).toHaveTextContent('กำลังโหลดข้อมูล…')
+    resolveInventory(new Response(JSON.stringify(samplePerformanceResponse), { status: 200 }))
+    await waitFor(() => expect(screen.queryByRole('status', { name: 'กำลังโหลดข้อมูล Performance' })).not.toBeInTheDocument())
   })
 
   it('switches between branch and day matrix views', async () => {
@@ -86,7 +142,7 @@ describe('PerformancePage', () => {
     expect(screen.getByRole('columnheader', { name: /60926.*ลำปาง/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '60424005' }).closest('tr')).toHaveTextContent('53,500.00')
   })
-  it('shows a monthly sales matrix and removes Month from Inventory', async () => {
+  it('shows Month for TWD Inventory and keeps the selected monthly matrix', async () => {
     const user = userEvent.setup()
     render(<PerformancePage initialData={samplePerformanceResponse} />)
 
@@ -95,8 +151,8 @@ describe('PerformancePage', () => {
     expect(screen.getByRole('columnheader', { name: 'Aug 2026' })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Inventory' }))
-    expect(screen.queryByRole('button', { name: 'Month' })).not.toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Inventory ตาม Branch' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Month' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('heading', { name: 'Inventory ตาม Month' })).toBeInTheDocument()
   })
 
   it('hides both description columns without hiding item identities', async () => {
@@ -110,6 +166,39 @@ describe('PerformancePage', () => {
     expect(screen.queryByRole('columnheader', { name: 'TWD description' })).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'WA description' })).not.toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'WA item' })).toBeInTheDocument()
+  })
+
+  it('keeps TWD TOM and TOD sticky columns visible when descriptions are hidden', async () => {
+    const user = userEvent.setup()
+    const inventoryData: PerformanceResponse = {
+      ...samplePerformanceResponse,
+      inventorySummary: {
+        stockOh: 10,
+        stockOnOrder: 0,
+        stockValue: 0,
+        averageTom: 5.99,
+        averageTod: 179.7,
+        turnoverSkuCount: 1,
+        turnoverReferenceDate: '2026-08-17',
+      },
+      items: samplePerformanceResponse.items.map((item, index) => ({
+        ...item,
+        tom: index === 0 ? 5.99 : null,
+        tod: index === 0 ? 179.7 : null,
+      })),
+    }
+    render(<PerformancePage initialData={inventoryData} />)
+
+    await user.click(screen.getByRole('button', { name: 'Inventory' }))
+    expect(screen.getByRole('columnheader', { name: 'TOM' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'TOD' })).toBeInTheDocument()
+    expect(document.querySelector('.matrix-summary-row')).toHaveTextContent('AVG 5.99')
+    expect(document.querySelector('.matrix-summary-row')).toHaveTextContent('AVG 179.70')
+
+    await user.click(screen.getByRole('button', { name: 'Description' }))
+    expect(screen.queryByRole('columnheader', { name: 'WA description' })).not.toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'TOM' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'TOD' })).toBeInTheDocument()
   })
 
   it('restores the current view after leaving and returning to the report', async () => {
@@ -214,5 +303,128 @@ describe('PerformancePage', () => {
       fireEvent.scroll(bottomScroll)
     }
     expect(topScroll.scrollLeft).toBe(40)
+  })
+})
+
+describe('Sho/Pro Phase 3 interactions', () => {
+  const flaggedData = (): PerformanceResponse => ({
+    ...samplePerformanceResponse,
+    items: samplePerformanceResponse.items.map((item, index) => ({
+      ...item,
+      isSho: index === 0 || index === 2,
+      isPro: index === 1 || index === 2,
+    })),
+  })
+
+  it('groups the SKU status beside Item and shows the latest data date in the compact page context', () => {
+    render(<PerformancePage initialData={flaggedData()} />)
+
+    const filterBar = screen.getByRole('region', { name: 'ตัวกรอง Performance' })
+    const fields = [...filterBar.children]
+    const itemField = within(filterBar).getByText('Item').closest('.sku-filter-field')
+    const statusField = screen.getByRole('combobox', { name: 'สถานะ Sho/Pro' }).closest('label')
+    expect(fields.indexOf(statusField!)).toBe(fields.indexOf(itemField!) + 1)
+    expect(statusField?.querySelector('svg')).not.toBeNull()
+    expect(screen.getByText('วันที่ข้อมูลล่าสุด')).toBeInTheDocument()
+    expect(screen.getByText('17/08/2026')).toBeInTheDocument()
+  })
+
+  it('shows sticky Sho/Pro controls in every TWD view but not HP', async () => {
+    const user = userEvent.setup()
+    const twd = render(<PerformancePage initialData={flaggedData()} />)
+
+    const headers = screen.getAllByRole('columnheader')
+    expect(headers.findIndex((header) => header.textContent === 'Sho')).toBeLessThan(
+      headers.findIndex((header) => header.textContent === 'TWD SKU'),
+    )
+    expect(headers.findIndex((header) => header.textContent === 'Pro')).toBeLessThan(
+      headers.findIndex((header) => header.textContent === 'TWD SKU'),
+    )
+    expect(screen.getByRole('checkbox', { name: 'Sho TWD SKU 60424005' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Pro TWD SKU 60424006' })).toBeChecked()
+
+    await user.click(screen.getByRole('button', { name: 'Date' }))
+    expect(screen.getByRole('checkbox', { name: 'Sho TWD SKU 60424005' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Inventory' }))
+    expect(screen.getByRole('checkbox', { name: 'Pro TWD SKU 60424006' })).toBeInTheDocument()
+
+    twd.unmount()
+    render(<PerformancePage mtCode="HP" initialData={{ ...flaggedData(), mtCode: 'HP', mtName: 'HomePro' }} />)
+    expect(screen.queryByRole('columnheader', { name: 'Sho' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Pro' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'สถานะ Sho/Pro' })).not.toBeInTheDocument()
+  })
+
+  it('updates a flag optimistically and keeps the selected row treatment', async () => {
+    let resolveSave!: (response: Response) => void
+    vi.spyOn(globalThis, 'fetch').mockReturnValue(new Promise((resolve) => { resolveSave = resolve }))
+    const user = userEvent.setup()
+    render(<PerformancePage initialData={flaggedData()} />)
+
+    const checkbox = screen.getByRole('checkbox', { name: 'Sho TWD SKU 60424006' })
+    const row = checkbox.closest('tr')!
+    await user.click(checkbox)
+
+    expect(checkbox).toBeChecked()
+    expect(checkbox).toBeDisabled()
+    expect(row).toHaveAttribute('data-sku-flag', 'both')
+    await user.click(within(row).getByRole('button', { name: '60424006' }))
+    expect(row).toHaveAttribute('data-selected', 'true')
+    expect(screen.getByLabelText('สถานะความสนใจ SKU')).toHaveTextContent('Sho')
+    expect(screen.getByLabelText('สถานะความสนใจ SKU')).toHaveTextContent('Pro')
+    expect(within(screen.getByLabelText('สถานะความสนใจ SKU')).getByText('Sho')).toHaveAttribute('data-active', 'true')
+    expect(within(screen.getByLabelText('สถานะความสนใจ SKU')).getByText('Pro')).toHaveAttribute('data-active', 'true')
+
+    resolveSave(new Response(JSON.stringify({
+      mtCode: 'TWD', sku: '60424006', isSho: true, isPro: true, updatedAt: '2026-09-09T07:00:00+07:00',
+    }), { status: 200 }))
+    await waitFor(() => expect(checkbox).not.toBeDisabled())
+  })
+
+  it('rolls back only the failed flag and tells the user what failed', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ detail: 'บันทึกสถานะไม่ได้' }), { status: 500 }),
+    )
+    const user = userEvent.setup()
+    render(<PerformancePage initialData={flaggedData()} />)
+
+    const sho = screen.getByRole('checkbox', { name: 'Sho TWD SKU 60424006' })
+    const pro = screen.getByRole('checkbox', { name: 'Pro TWD SKU 60424006' })
+    await user.click(sho)
+
+    await waitFor(() => expect(sho).not.toBeChecked())
+    expect(pro).toBeChecked()
+    expect(screen.getByRole('alert')).toHaveTextContent('บันทึกสถานะไม่ได้')
+  })
+
+  it('requests a fresh server scope when the Sho/Pro filter changes', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.includes('/sku-options')) {
+        return new Response(JSON.stringify({ items: [] }), { status: 200 })
+      }
+      return new Response(JSON.stringify(flaggedData()), { status: 200 })
+    })
+    const user = userEvent.setup()
+    render(<PerformancePage />)
+
+    await user.selectOptions(await screen.findByRole('combobox', { name: 'สถานะ Sho/Pro' }), 'flagged')
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => {
+      const url = new URL(String(input), 'http://localhost')
+      return url.pathname === '/api/performance' && url.searchParams.get('sku_flag') === 'flagged'
+    })).toBe(true))
+  })
+
+  it('shows every SKU with Sho or Pro while excluding unflagged SKUs', async () => {
+    const user = userEvent.setup()
+    render(<PerformancePage initialData={flaggedData()} />)
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'สถานะ Sho/Pro' }), 'flagged')
+
+    expect(screen.getByRole('button', { name: '60424005' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '60424006' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '60406627' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '60406629' })).not.toBeInTheDocument()
   })
 })

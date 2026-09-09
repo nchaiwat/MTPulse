@@ -7,6 +7,7 @@ import {
   Boxes,
   CalendarDays,
   CheckCircle2,
+  Download,
   PackageSearch,
   RefreshCw,
   Store,
@@ -14,7 +15,7 @@ import {
   TrendingUp,
 } from 'lucide-react'
 import { MonthlyBars, RankingBars, TrendChart } from './DashboardCharts'
-import { fetchTwdDashboard } from './dashboardApi'
+import { downloadDashboard, fetchDashboard } from './dashboardApi'
 import type {
   DashboardMetric,
   DashboardPeriod,
@@ -49,10 +50,20 @@ function Change({ value }: { value: number | null }) {
 }
 
 interface TwdDashboardPageProps {
-  onOpenReport: () => void
+  mtCode?: 'TWD' | 'HP' | 'MH'
+  onOpenReport?: () => void
 }
 
-export function TwdDashboardPage({ onOpenReport }: TwdDashboardPageProps) {
+const dashboardNames = {
+  TWD: { short: 'TWD', name: 'TWD' },
+  HP: { short: 'HP', name: 'HomePro (HP)' },
+  MH: { short: 'MH', name: 'MegaHome (MH)' },
+} as const
+
+export function TwdDashboardPage({
+  mtCode = 'TWD',
+  onOpenReport,
+}: TwdDashboardPageProps) {
   const [period, setPeriod] = useState<DashboardPeriod>('ytd')
   const [metric, setMetric] = useState<DashboardMetric>('amount')
   const [year, setYear] = useState<number>()
@@ -60,11 +71,13 @@ export function TwdDashboardPage({ onOpenReport }: TwdDashboardPageProps) {
   const [busy, setBusy] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const [isDownloading, setIsDownloading] = useState(false)
+  const [downloadMessage, setDownloadMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
     let active = true
-    fetchTwdDashboard(period, year, controller.signal)
+    fetchDashboard(mtCode, period, year, controller.signal)
       .then((response) => {
         if (active) setData(response)
       })
@@ -79,7 +92,9 @@ export function TwdDashboardPage({ onOpenReport }: TwdDashboardPageProps) {
       active = false
       controller.abort()
     }
-  }, [period, year, reloadKey])
+  }, [mtCode, period, year, reloadKey])
+
+  const dashboardName = dashboardNames[mtCode]
 
   if (!data && busy) {
     return (
@@ -89,7 +104,9 @@ export function TwdDashboardPage({ onOpenReport }: TwdDashboardPageProps) {
         <div className="dashboard-skeleton-grid">
           <div className="dashboard-skeleton" /><div className="dashboard-skeleton" />
         </div>
-        <span className="sr-only" role="status">กำลังโหลด Dashboard ไทวัสดุ</span>
+        <span className="sr-only" role="status">
+          กำลังโหลด Dashboard {dashboardName.name}
+        </span>
       </div>
     )
   }
@@ -112,17 +129,49 @@ export function TwdDashboardPage({ onOpenReport }: TwdDashboardPageProps) {
   const metricLabel = metric === 'amount' ? 'ยอดขาย Ex.VAT' : 'จำนวน (Qty)'
   const formatMetric = metric === 'amount' ? amount : quantity
 
+  const handleDownload = async () => {
+    setIsDownloading(true)
+    setDownloadMessage(null)
+    try {
+      const { blob, filename } = await downloadDashboard(mtCode, period, metric, currentYear)
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = filename
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
+      setDownloadMessage({ kind: 'success', text: 'Download Dashboard Excel ตามตัวกรองปัจจุบันแล้ว' })
+    } catch (reason) {
+      setDownloadMessage({
+        kind: 'error',
+        text: reason instanceof Error ? reason.message : 'Download Dashboard Excel ไม่สำเร็จ',
+      })
+    } finally {
+      setIsDownloading(false)
+    }
+  }
+
   return (
     <div className="twd-dashboard page-content" aria-busy={busy}>
       <header className="dashboard-intro">
         <div>
-          <span className="eyebrow">TWD sales intelligence</span>
-          <h2>ภาพรวม Performance ไทวัสดุ</h2>
+          <span className="eyebrow">{dashboardName.short} sales intelligence</span>
+          <h2>ภาพรวม Performance ของ {dashboardName.name}</h2>
           <p>ติดตามยอดขาย แนวโน้ม สาขา และ SKU ที่สร้างผลลัพธ์ในช่วงเวลาเดียวกัน</p>
         </div>
-        <button className="secondary-action dashboard-report-link" type="button" onClick={onOpenReport}>
-          เปิดรายงานรายละเอียด <ArrowRight size={15} aria-hidden="true" />
-        </button>
+        <div className="dashboard-intro-actions">
+          <div className="dashboard-updated"><CalendarDays size={16} aria-hidden="true" /><span>ข้อมูลล่าสุด<strong>{dateLabel(meta.latestDataDate)}</strong></span></div>
+          <button className="secondary-action dashboard-download" type="button" disabled={isDownloading || !summary} onClick={() => void handleDownload()}>
+            <Download size={15} aria-hidden="true" />{isDownloading ? 'กำลัง Download…' : 'Download Excel'}
+          </button>
+          {onOpenReport && (
+            <button className="secondary-action dashboard-report-link" type="button" onClick={onOpenReport}>
+              เปิดรายงานรายละเอียด <ArrowRight size={15} aria-hidden="true" />
+            </button>
+          )}
+        </div>
       </header>
 
       <section className="dashboard-toolbar" aria-label="ตัวกรอง Dashboard">
@@ -133,17 +182,24 @@ export function TwdDashboardPage({ onOpenReport }: TwdDashboardPageProps) {
         <fieldset><legend>มุมมองตัวเลข</legend>{([
           ['amount', 'ยอดขาย'], ['qty', 'จำนวน'],
         ] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={metric === value} onClick={() => setMetric(value)}>{label}</button>)}</fieldset>
-        <div className="dashboard-updated"><CalendarDays size={16} aria-hidden="true" /><span>ข้อมูลล่าสุด<strong>{dateLabel(meta.latestDataDate)}</strong></span></div>
         {busy && <RefreshCw className="is-spinning dashboard-busy" size={17} aria-label="กำลังอัปเดตข้อมูล" />}
       </section>
 
+      {downloadMessage && <div className={`dashboard-download-message is-${downloadMessage.kind}`} role={downloadMessage.kind === 'error' ? 'alert' : 'status'}>{downloadMessage.text}</div>}
       {error && <div className="dashboard-inline-error" role="alert"><AlertTriangle size={16} aria-hidden="true" />{error}<button type="button" onClick={() => { setBusy(true); setError(null); setReloadKey((value) => value + 1) }}>ลองอีกครั้ง</button></div>}
 
       {!summary ? (
         <section className="dashboard-state dashboard-empty">
           <PackageSearch size={30} aria-hidden="true" />
-          <div><strong>ยังไม่มีข้อมูลสำหรับ Dashboard</strong><span>นำเข้าข้อมูล TWD แล้วกลับมาที่หน้านี้อีกครั้ง</span></div>
-          <button className="secondary-action" type="button" onClick={onOpenReport}>เปิดรายงานไทวัสดุ</button>
+          <div>
+            <strong>ยังไม่มีข้อมูลสำหรับ Dashboard</strong>
+            <span>นำเข้าข้อมูล {dashboardName.short} แล้วกลับมาที่หน้านี้อีกครั้ง</span>
+          </div>
+          {onOpenReport && (
+            <button className="secondary-action" type="button" onClick={onOpenReport}>
+              เปิดรายงาน {dashboardName.name}
+            </button>
+          )}
         </section>
       ) : (
         <>

@@ -4,7 +4,7 @@
 
 MT Pulse ใช้แนวคิด **Operations Ledger** สำหรับทีมที่ต้องอ่านยอดจำนวนมากตลอดวัน หน้าจอต้องหนาแน่น เป็นระเบียบ และให้ตัวเลขเด่นกว่างานตกแต่ง ไม่ใช้แนว Landing Page, Hero ขนาดใหญ่ หรือ Card ลอยจำนวนมาก
 
-จุดจดจำของระบบคือ **Pulse Strip** แถบสถานะข้อมูลแนวนอนใต้ Header ซึ่งบอก Data Date, File Arrival, Completeness และ Import Result ในตำแหน่งเดียวก่อนเริ่มอ่าน Matrix
+จุดจดจำของระบบคือ **Data Context** ที่แสดงวันข้อมูลล่าสุดใกล้หัวหน้า Page; หน้ารายงานเดิมที่มี Pulse Strip ยังคงใช้ได้โดยไม่เปลี่ยน Workflow
 
 ## Design Dials
 
@@ -33,10 +33,12 @@ MT Pulse ใช้แนวคิด **Operations Ledger** สำหรับท
 
 ## ตัวอักษร
 
-- UI และหัวข้อ: `Aptos`, `Segoe UI`, system sans-serif
+- UI และหัวข้อภาษาไทย: `Leelawadee UI`, `Aptos`, `Segoe UI`, system sans-serif
 - ตัวเลขและรหัส: `Cascadia Mono`, `Consolas`, monospace พร้อม `font-variant-numeric: tabular-nums`
-- Base font 14px บน Desktop เพื่อรองรับ Density สูง แต่ Control สำคัญต้องมีพื้นที่กดอย่างน้อย 40px
-- ใช้ Sentence case และข้อความภาษาอังกฤษที่ตรงกับสิ่งที่ผู้ใช้ควบคุม
+- Type scale มาตรฐาน: Page title 24px/700, Section title 16px/700, KPI 20px/700, Body/Control/Data 12px และ Label/Caption 10px
+- ใช้น้ำหนัก 400/600/700 เท่านั้น เพื่อให้แต่ละระดับชัดและหลีกเลี่ยงการสร้างน้ำหนัก Font ปลอม
+- Report ใช้ Compact density (Control 34px) ส่วน Dashboard ใช้ Standard density (Control 40px)
+- ใช้ Sentence case และลด Letter spacing ของข้อความไทย; ตัวพิมพ์ใหญ่ใช้กับ Label สั้นเท่านั้น
 
 ## Layout
 
@@ -89,7 +91,8 @@ MT Pulse ใช้แนวคิด **Operations Ledger** สำหรับท
 
 - Visual Direction: Modern/Clean/Premium Internal SaaS Tool โดยคง Operations Ledger และ Density เดิม
 - ใช้ Soft Shadow และ Radius 12–16px เฉพาะ Surface/Control ที่เหมาะสม ไม่ทำทุกส่วนเป็น Card
-- หน้า TWD Performance ล็อก Layout, Component, Function และ Logic ทั้งหมด ใช้ CSS-only visual skin
+- หน้า TWD Performance เป็น Visual Template ของ Report สำหรับ TWD, HP และ MH โดยทั้งสามหน้าต้องใช้ Layout, Typography, Density, Surface และ Interaction pattern เดียวกันผ่าน shared component/CSS
+- ความสามารถและ Business Logic เฉพาะ MT เช่น Metric capability, Sho/Pro, TOM/TOD, Inventory Month, Mapping และ Data source ให้คงแยกตาม MT เดิม ห้ามเพิ่มหรือลดเพื่อให้หน้าตาเหมือนกัน
 - ห้ามเปลี่ยนตำแหน่ง Control, Matrix, Column, Pagination, Drawer หรือ Data Workflow ของ TWD
 - รอบนี้ไม่สร้าง Dashboard, Chart, Top SKU หรือ Top Branch
 - ไม่เพิ่ม Responsive Behavior ใหม่; Matrix ยังคง Desktop-first และ Horizontal Scroll
