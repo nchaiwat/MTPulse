@@ -52,7 +52,23 @@ const response = {
       rowCount: 12590,
       warningCount: 0,
     },
-    modernTrades: [{ code: 'TWD', name: 'ไทวัสดุ', latestDataDate: '2026-08-22', lagDays: 3 }],
+    modernTrades: [{
+      code: 'TWD',
+      name: 'ไทวัสดุ',
+      enabled: true,
+      status: 'warning',
+      latestDataDate: '2026-08-22',
+      lagDays: 3,
+      recordCount: 175717,
+      latestImport: {
+        batchId: 7,
+        dataDate: '2026-08-22',
+        status: 'imported',
+        finishedAt: '2026-08-25T03:00:00+00:00',
+        rowCount: 12590,
+        warningCount: 0,
+      },
+    }],
     pgStatStatementsAvailable: true,
     slowQueries: [{ query: 'SELECT * FROM sales_inventory_facts', calls: 3, meanTimeMs: 12.5, totalTimeMs: 37.5, rows: 30 }],
   },
@@ -83,10 +99,11 @@ describe('MonitoringPage', () => {
 
     render(<MonitoringPage onOpenImports={onOpenImports} />)
 
-    expect(await screen.findByRole('heading', { name: 'สถานะระบบ' })).toBeInTheDocument()
-    expect(screen.getByText('23/08/2026')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Monitoring' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'สถานะข้อมูลแยกตาม Modern Trade' })).toBeInTheDocument()
+    expect(screen.getByText('12,590 records · 25/08/2026 10:00')).toBeInTheDocument()
     expect(screen.getAllByText('22/08/2026')).toHaveLength(2)
-    expect(screen.getAllByText('175,717')).toHaveLength(2)
+    expect(screen.getAllByText('175,717')).toHaveLength(3)
     expect(screen.getByText('Import Batch 18 มีคำเตือน 1 รายการ')).toBeInTheDocument()
     expect(screen.getByText('Stock On Hand: calculated=77904.0, source=77379')).toBeInTheDocument()
     expect(screen.getByText('SELECT * FROM sales_inventory_facts')).toBeInTheDocument()

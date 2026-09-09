@@ -81,9 +81,9 @@ describe('App navigation', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'การตั้งค่า' }))
 
-    expect(screen.getByRole('heading', { level: 1, name: 'การตั้งค่า' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 2, name: 'Settings Control Plane' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 2, name: 'Global Settings' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'การตั้งค่าระบบ' })).toBeInTheDocument()
+    expect(screen.getByLabelText('ขอบเขตการตั้งค่าปัจจุบัน')).toHaveTextContent('Global Settings')
+    expect(screen.getByLabelText('ผู้ใช้งานปัจจุบัน')).toHaveTextContent('Chaiwat N.')
     expect(screen.getByRole('tab', { name: /Global/ })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('tab', { name: /TWD/ })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: /HP/ })).toBeInTheDocument()
@@ -104,11 +104,11 @@ describe('App navigation', () => {
     globalTab.focus()
     await userEvent.keyboard('{ArrowRight}')
     expect(screen.getByRole('tab', { name: /TWD/ })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByRole('heading', { level: 2, name: 'Thai Watsadu' })).toBeInTheDocument()
+    expect(screen.getByLabelText('ขอบเขตการตั้งค่าปัจจุบัน')).toHaveTextContent('Thai Watsadu')
 
     await userEvent.click(screen.getByRole('tab', { name: /HP/ }))
-    expect(screen.getByRole('heading', { level: 2, name: 'HomePro' })).toBeInTheDocument()
-    expect(screen.getByText('Shared source & schedule · HP + MH')).toBeInTheDocument()
+    expect(screen.getByLabelText('ขอบเขตการตั้งค่าปัจจุบัน')).toHaveTextContent('HomePro')
+    expect(screen.getByText('ใช้ Source และ Schedule ร่วมกับ MH')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Item และ Branch Mapping' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'ดึงข้อมูลย้อนหลังเฉพาะ SKU' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'การแสดงผลรายงาน' })).toBeInTheDocument()

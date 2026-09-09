@@ -5,7 +5,6 @@ import {
   CalendarClock,
   FileCog,
   FileSearch,
-  Gauge,
   Globe2,
   LockKeyhole,
   SlidersHorizontal,
@@ -38,9 +37,9 @@ const scopes: ScopeDefinition[] = [
 ]
 
 const statusLabel = {
-  ready: 'Ready',
-  partial: 'Partially available',
-  planned: 'Not configured',
+  ready: 'พร้อมใช้งาน',
+  partial: 'พร้อมใช้งานบางส่วน',
+  planned: 'ยังไม่ตั้งค่า',
 }
 
 function UnavailableSection({
@@ -107,8 +106,20 @@ export function SettingsPage({ focusCoverageKey = 0 }: { focusCoverageKey?: numb
   return (
     <div className="settings-control-plane page-content">
       <div className="settings-control-intro">
-        <div><span className="eyebrow">Administration / Configuration</span><h2>Settings Control Plane</h2><p>จัดการค่าระดับระบบและ Modern Trade ตามขอบเขตที่มีผลจริง</p></div>
-        <div className="settings-standard-mark"><Gauge size={16} aria-hidden="true" /><span><small>Application standard</small><strong>One system · One template</strong></span></div>
+        <div>
+          <span className="eyebrow">Administration</span>
+          <h1>การตั้งค่าระบบ</h1>
+          <p>ค่ากลางของระบบและค่าที่มีผลเฉพาะแต่ละ Modern Trade</p>
+        </div>
+        <div className="settings-scope-context" aria-label="ขอบเขตการตั้งค่าปัจจุบัน">
+          <span className="settings-scope-symbol">{activeScope === 'global' ? <Globe2 size={17} aria-hidden="true" /> : <Building2 size={17} aria-hidden="true" />}</span>
+          <span>
+            <small>{activeScope === 'global' ? 'Global scope' : current.code}</small>
+            <strong>{current.name}</strong>
+          </span>
+          {current.sharedWith && <em><CalendarClock size={12} aria-hidden="true" />ใช้ Source และ Schedule ร่วมกับ {current.sharedWith}</em>}
+          <b data-status={current.status}>{statusLabel[current.status]}</b>
+        </div>
       </div>
 
       <nav className="settings-scope-tabs" role="tablist" aria-label="Settings scope">
@@ -144,13 +155,6 @@ export function SettingsPage({ focusCoverageKey = 0 }: { focusCoverageKey?: numb
           </button>
         ))}
       </nav>
-
-      <section className="settings-scope-summary" aria-label="Current settings scope">
-        <span className="settings-scope-symbol">{activeScope === 'global' ? <Globe2 size={19} aria-hidden="true" /> : <Building2 size={19} aria-hidden="true" />}</span>
-        <div><span className="eyebrow">{activeScope === 'global' ? 'Global scope' : 'Modern Trade scope'}</span><h2>{current.name}</h2><p>{activeScope === 'global' ? 'ค่าภายใน Scope นี้ใช้ร่วมกันกับ Modern Trade ทุกเจ้า' : `ค่าภายใน Scope นี้มีผลกับ ${current.name} (${current.code})`}</p></div>
-        {current.sharedWith && <span className="settings-shared-badge"><CalendarClock size={14} aria-hidden="true" />Shared source & schedule · HP + MH</span>}
-        <span className="settings-readiness" data-status={current.status}>{statusLabel[current.status]}</span>
-      </section>
 
       <div id={`settings-panel-${activeScope}`} role="tabpanel" aria-labelledby={`settings-tab-${activeScope}`} className="settings-scope-panel">
         {activeScope === 'global' && (

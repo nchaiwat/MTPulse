@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.local_time import bangkok_now
-from app.models import ImportBatch, ModernTrade, MonitoringSnapshot
+from app.models import ImportBatch, ModernTrade, MonitoringSnapshot, SalesInventoryFact
 from app.services.technical_health import (
     WORKER_HEARTBEAT_KEY,
     evaluate_technical_metrics,
@@ -180,16 +180,58 @@ def collect_monitoring_metrics(session: Session) -> dict[str, object]:
         .limit(20)
     ).all()
     latest_data_date = session.scalar(select(func.max(ImportBatch.data_date)))
-    modern_trade_rows = session.execute(
+    import_summary = (
         select(
-            ModernTrade.code,
-            ModernTrade.name,
+            ImportBatch.modern_trade_id,
             func.max(ImportBatch.data_date).label("latest_data_date"),
         )
-        .outerjoin(ImportBatch, ImportBatch.modern_trade_id == ModernTrade.id)
-        .group_by(ModernTrade.code, ModernTrade.name)
+        .group_by(ImportBatch.modern_trade_id)
+        .subquery()
+    )
+    fact_summary = (
+        select(
+            SalesInventoryFact.modern_trade_id,
+            func.count(SalesInventoryFact.id).label("record_count"),
+        )
+        .group_by(SalesInventoryFact.modern_trade_id)
+        .subquery()
+    )
+    modern_trade_rows = session.execute(
+        select(
+            ModernTrade.id,
+            ModernTrade.code,
+            ModernTrade.name,
+            ModernTrade.source_enabled,
+            import_summary.c.latest_data_date,
+            func.coalesce(fact_summary.c.record_count, 0).label("record_count"),
+        )
+        .outerjoin(
+            import_summary,
+            import_summary.c.modern_trade_id == ModernTrade.id,
+        )
+        .outerjoin(
+            fact_summary,
+            fact_summary.c.modern_trade_id == ModernTrade.id,
+        )
         .order_by(ModernTrade.code)
     ).all()
+    latest_batch_ids = (
+        select(
+            ImportBatch.modern_trade_id,
+            func.max(ImportBatch.id).label("latest_batch_id"),
+        )
+        .group_by(ImportBatch.modern_trade_id)
+        .subquery()
+    )
+    latest_batches_by_mt = {
+        batch.modern_trade_id: batch
+        for batch in session.scalars(
+            select(ImportBatch).join(
+                latest_batch_ids,
+                ImportBatch.id == latest_batch_ids.c.latest_batch_id,
+            )
+        )
+    }
     pg_stat_available, slow_queries = _slow_queries(session)
 
     live_tuples = int(table_stats["n_live_tup"] or 0)
@@ -237,19 +279,49 @@ def collect_monitoring_metrics(session: Session) -> dict[str, object]:
             }
         )
 
-    modern_trades = [
-        {
-            "code": row.code,
-            "name": row.name,
-            "latestDataDate": _iso(row.latest_data_date),
-            "lagDays": (
-                (now.date() - row.latest_data_date).days
-                if row.latest_data_date is not None
-                else None
-            ),
-        }
-        for row in modern_trade_rows
-    ]
+    modern_trades = []
+    for row in modern_trade_rows:
+        mt_latest_batch = latest_batches_by_mt.get(row.id)
+        lag_days = (
+            (now.date() - row.latest_data_date).days
+            if row.latest_data_date is not None
+            else None
+        )
+        if not row.source_enabled and row.latest_data_date is None:
+            data_status = "inactive"
+        elif row.latest_data_date is None:
+            data_status = "critical"
+        elif mt_latest_batch and mt_latest_batch.status in {"failed", "rejected"}:
+            data_status = "critical"
+        elif lag_days is not None and lag_days > 2:
+            data_status = "warning"
+        elif mt_latest_batch and mt_latest_batch.status == "imported_with_warnings":
+            data_status = "warning"
+        else:
+            data_status = "healthy"
+        modern_trades.append(
+            {
+                "code": row.code,
+                "name": row.name,
+                "enabled": row.source_enabled,
+                "status": data_status,
+                "latestDataDate": _iso(row.latest_data_date),
+                "lagDays": lag_days,
+                "recordCount": int(row.record_count or 0),
+                "latestImport": (
+                    {
+                        "batchId": mt_latest_batch.id,
+                        "dataDate": mt_latest_batch.data_date.isoformat(),
+                        "status": mt_latest_batch.status,
+                        "finishedAt": _iso(mt_latest_batch.finished_at),
+                        "rowCount": mt_latest_batch.row_count,
+                        "warningCount": _warning_count(mt_latest_batch),
+                    }
+                    if mt_latest_batch
+                    else None
+                ),
+            }
+        )
     host = _host_metrics()
     worker_heartbeat = setting_value(session, WORKER_HEARTBEAT_KEY)
     database = {

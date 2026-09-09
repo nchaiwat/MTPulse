@@ -57,8 +57,12 @@ export interface MonitoringImport {
 export interface MonitoringModernTrade {
   code: string
   name: string
+  enabled: boolean
+  status: MonitoringStatus | 'inactive'
   latestDataDate: string | null
   lagDays: number | null
+  recordCount: number
+  latestImport: MonitoringImport | null
 }
 
 export interface SlowQuery {

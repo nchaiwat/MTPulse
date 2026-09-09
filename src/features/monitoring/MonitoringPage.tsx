@@ -45,6 +45,11 @@ function importStatus(status: string) {
   return status
 }
 
+function mtStatusLabel(status: MonitoringStatus | 'inactive') {
+  if (status === 'inactive') return 'ยังไม่เปิดใช้งาน'
+  return statusLabel(status)
+}
+
 function formatUptime(value: number | null) {
   if (value === null) return 'ไม่พร้อมใช้งาน'
   const days = Math.floor(value / 86_400)
@@ -153,7 +158,6 @@ export function MonitoringPage({ onOpenImports, onOpenCoverage }: MonitoringPage
   }
 
   const current = data.current
-  const latestImport = current.latestImport
   const automaticImports = data.automaticImports ?? { runs: [], pendingFiles: [], pendingSkus: [] }
   const latestBackfill = automaticImports.runs.find((run) => run.mode === 'sku_backfill')
 
@@ -161,9 +165,9 @@ export function MonitoringPage({ onOpenImports, onOpenCoverage }: MonitoringPage
     <div className="monitoring-page page-content">
       <header className="monitoring-intro">
         <div>
-          <span className="eyebrow">System health</span>
-          <h2>สถานะระบบ</h2>
-          <p>ตรวจสอบ API, PostgreSQL, ข้อมูลล่าสุด และภาระของฐานข้อมูลในจุดเดียว</p>
+          <span className="eyebrow">Operations health</span>
+          <h1>Monitoring</h1>
+          <p>สถานะระบบและความพร้อมของข้อมูลทุก Modern Trade</p>
         </div>
         <div className="monitoring-refresh">
           <span>ตรวจล่าสุด <time>{formatDisplayDateTime(current.capturedAt)}</time></span>
@@ -193,14 +197,43 @@ export function MonitoringPage({ onOpenImports, onOpenCoverage }: MonitoringPage
           <ServerCog size={18} aria-hidden="true" />
           <span><small>Server resources</small><strong>{statusLabel(current.host.status)}</strong><em>Uptime {formatUptime(current.host.uptimeSeconds)}</em></span>
         </article>
-        <article data-status={current.latestDataDate ? 'healthy' : 'warning'}>
-          <Clock3 size={18} aria-hidden="true" />
-          <span><small>วันที่ข้อมูลล่าสุด</small><strong>{formatDisplayDate(current.latestDataDate, 'ยังไม่มีข้อมูล')}</strong><em>{latestImport ? `Import ล่าสุด: ${importStatus(latestImport.status)}` : 'ยังไม่มี Import'}</em></span>
-        </article>
         <article data-status={current.notices.length ? 'warning' : 'healthy'}>
           <AlertTriangle size={18} aria-hidden="true" />
           <span><small>รายการที่ต้องดู</small><strong>{integer.format(current.notices.length)} รายการ</strong></span>
         </article>
+      </section>
+
+      <section className="monitoring-panel monitoring-mt-panel" aria-labelledby="mt-health-heading">
+        <header>
+          <TableProperties size={18} aria-hidden="true" />
+          <div>
+            <span className="eyebrow">Data readiness by MT</span>
+            <h2 id="mt-health-heading">สถานะข้อมูลแยกตาม Modern Trade</h2>
+          </div>
+          <small>{integer.format(current.modernTrades.filter((mt) => mt.enabled).length)} MT เปิดใช้งาน</small>
+        </header>
+        <div className="monitoring-table-scroll">
+          <table className="monitoring-mt-table">
+            <thead>
+              <tr><th>Modern Trade</th><th>สถานะข้อมูล</th><th>วันที่ข้อมูลล่าสุด</th><th>Records ในระบบ</th><th>Import ล่าสุด</th></tr>
+            </thead>
+            <tbody>
+              {current.modernTrades.map((mt) => (
+                <tr key={mt.code} data-status={mt.status}>
+                  <td><b className="monitoring-mt-code" data-mt={mt.code}>{mt.code}</b><span><strong>{mt.name}</strong><small>{mt.enabled ? 'เปิดใช้งาน' : 'ยังไม่เปิดใช้งาน'}</small></span></td>
+                  <td><span className="monitoring-status-text" data-status={mt.status}>{mtStatusLabel(mt.status)}</span></td>
+                  <td><time>{formatDisplayDate(mt.latestDataDate, '—')}</time><small>{mt.lagDays === null ? 'ยังไม่มีข้อมูล' : mt.lagDays === 0 ? 'ข้อมูลปัจจุบัน' : `ล่าช้า ${integer.format(mt.lagDays)} วัน`}</small></td>
+                  <td><strong className="monitoring-number">{integer.format(mt.recordCount)}</strong><small>Fact records</small></td>
+                  <td>
+                    {mt.latestImport
+                      ? <><strong>{importStatus(mt.latestImport.status)}</strong><small>{integer.format(mt.latestImport.rowCount)} records · {formatDisplayDateTime(mt.latestImport.finishedAt, 'ไม่ระบุเวลา')}</small></>
+                      : <><strong>—</strong><small>ยังไม่มี Import</small></>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section className="monitoring-panel monitoring-technical-panel" aria-labelledby="technical-health-heading">
@@ -256,12 +289,6 @@ export function MonitoringPage({ onOpenImports, onOpenCoverage }: MonitoringPage
                   <button className="monitoring-notice-action" type="button" onClick={onOpenCoverage}>ตรวจวันที่ขาด</button>
                 )}
               </article>
-            ))}
-          </div>
-          <div className="monitoring-mt-list">
-            <strong>ข้อมูลตาม Modern Trade</strong>
-            {current.modernTrades.map((mt) => (
-              <span key={mt.code}><b>{mt.code}</b>{mt.name}<time>{formatDisplayDate(mt.latestDataDate, 'ยังไม่มีข้อมูล')}</time></span>
             ))}
           </div>
         </section>

@@ -111,17 +111,16 @@ export function App() {
           </button>
         </nav>
 
-        <div className="rail-footer">
-          <span className="environment-dot" aria-hidden="true" />
-          <span><strong>ข้อมูลตัวอย่าง</strong><small>ไทวัสดุ · ส.ค. 2026</small></span>
+        <div className="rail-footer rail-user" aria-label="ผู้ใช้งานปัจจุบัน">
+          <span className="rail-user-avatar" aria-hidden="true">CN</span>
+          <span><strong>Chaiwat N.</strong><small>Workspace owner</small></span>
         </div>
       </aside>
 
       <main className="app-main" id="main-content">
-        {!page.startsWith('performance') && !page.startsWith('dashboard') && (
+        {!page.startsWith('performance') && !page.startsWith('dashboard') && page !== 'monitoring' && page !== 'settings' && (
           <header className="top-bar">
             <div><span className="eyebrow">{meta.eyebrow}</span><h1>{meta.title}</h1></div>
-            <div className="user-chip" aria-label="Current user"><span>CN</span><div><strong>Chaiwat N.</strong><small>เจ้าของ Workspace</small></div></div>
           </header>
         )}
         {page === 'dashboard' && <TwdDashboardPage onOpenReport={() => setPage('performance')} />}
