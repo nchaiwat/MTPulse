@@ -9,8 +9,9 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.database import SessionLocal
 from app.local_time import bangkok_now
-from app.models import ImportRun, ModernTrade
+from app.models import ImportRun, ManualUploadBatch, ModernTrade
 from app.services.automatic_import import ActiveRunError, create_run, process_run
+from app.services.manual_upload_batches import process_folder_batch
 from app.services.sku_backfill import process_sku_backfill_run
 from app.services.technical_health import process_technical_notifications
 
@@ -86,6 +87,23 @@ def claim_next_run() -> int | None:
         return run.id
 
 
+def claim_next_manual_upload_batch() -> int | None:
+    with SessionLocal() as session:
+        batch = session.scalar(
+            select(ManualUploadBatch)
+            .where(ManualUploadBatch.status == "queued")
+            .order_by(ManualUploadBatch.confirmed_at, ManualUploadBatch.id)
+            .with_for_update(skip_locked=True)
+            .limit(1)
+        )
+        if batch is None:
+            return None
+        batch.status = "processing"
+        batch.last_activity_at = bangkok_now()
+        session.commit()
+        return batch.id
+
+
 def recover_interrupted_runs() -> int:
     with SessionLocal() as session:
         runs = session.scalars(
@@ -115,6 +133,23 @@ def recover_interrupted_runs() -> int:
         return len(runs)
 
 
+def recover_interrupted_manual_upload_batches() -> int:
+    with SessionLocal() as session:
+        batches = session.scalars(
+            select(ManualUploadBatch).where(ManualUploadBatch.status == "processing")
+        ).all()
+        if not batches:
+            return 0
+        for batch in batches:
+            batch.status = "queued"
+            batch.last_activity_at = bangkok_now()
+            batch.summary_message = (
+                "Worker ถูก Restart ระหว่างนำเข้า Folder ระบบนำ Batch กลับเข้าคิวแล้ว"
+            )
+        session.commit()
+        return len(batches)
+
+
 def process_due_technical_notifications() -> int:
     with SessionLocal() as session:
         return process_technical_notifications(session)
@@ -125,6 +160,11 @@ def run_forever() -> None:
     recovered = recover_interrupted_runs()
     if recovered:
         logger.warning("marked %s interrupted run(s) as failed", recovered)
+    recovered_batches = recover_interrupted_manual_upload_batches()
+    if recovered_batches:
+        logger.warning(
+            "requeued %s interrupted manual upload batch(es)", recovered_batches
+        )
     logger.info("MT Pulse import worker started; poll=%ss", poll_seconds)
     while True:
         try:
@@ -135,14 +175,19 @@ def run_forever() -> None:
             enqueue_due_runs()
             run_id = claim_next_run()
             if run_id is None:
-                time.sleep(poll_seconds)
-                continue
-            with SessionLocal() as session:
-                run = session.get(ImportRun, run_id)
-                if run is not None and run.mode == "sku_backfill":
-                    process_sku_backfill_run(session, run_id)
-                else:
-                    process_run(session, run_id)
+                batch_id = claim_next_manual_upload_batch()
+                if batch_id is None:
+                    time.sleep(poll_seconds)
+                    continue
+                with SessionLocal() as session:
+                    process_folder_batch(session, batch_id)
+            else:
+                with SessionLocal() as session:
+                    run = session.get(ImportRun, run_id)
+                    if run is not None and run.mode == "sku_backfill":
+                        process_sku_backfill_run(session, run_id)
+                    else:
+                        process_run(session, run_id)
         except Exception:
             logger.exception("worker loop failed")
             time.sleep(poll_seconds)

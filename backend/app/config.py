@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     allow_secret_reveal: bool = False
     auth_mode: Literal["development", "ad"] = "development"
     worker_poll_seconds: int = 30
+    manual_upload_staging_dir: str = "/tmp/mtpulse-manual-uploads"
 
 
 @lru_cache

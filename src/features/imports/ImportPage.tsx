@@ -27,10 +27,12 @@ import {
   type UploadProgress,
 } from './importApi'
 import { ImportCorrectivePanel } from './ImportCorrectivePanel'
+import { FolderImportPanel } from './FolderImportPanel'
 import { formatDisplayDate, formatDisplayDateTime } from '../../shared/dateFormat'
 
 const number = new Intl.NumberFormat('th-TH', { maximumFractionDigits: 2 })
 type SourceMode = 'upload' | 'fileshare'
+type ManualMode = 'single' | 'folder'
 type ImportWorkspaceTab = 'overview' | 'TWD' | 'HP' | 'MH'
 
 const workspaceTabs: Array<{
@@ -112,6 +114,7 @@ function statusLabel(status: string) {
 
 export function ImportPage({ correctiveBatchId = null }: { correctiveBatchId?: number | null }) {
   const [activeTab, setActiveTab] = useState<ImportWorkspaceTab>('TWD')
+  const [manualMode, setManualMode] = useState<ManualMode>('single')
   const [sourceMode, setSourceMode] = useState<SourceMode>('upload')
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<ImportPreview | null>(null)
@@ -363,6 +366,14 @@ export function ImportPage({ correctiveBatchId = null }: { correctiveBatchId?: n
           <span className="import-format-note">Excel · .xls / .xlsx</span>
         </header>
 
+        <div className="manual-mode-switch" role="group" aria-label="รูปแบบการนำเข้า TWD">
+          <button type="button" aria-pressed={manualMode === 'single'} disabled={busy !== null} onClick={() => setManualMode('single')}>ไฟล์เดียว</button>
+          <button type="button" aria-pressed={manualMode === 'folder'} disabled={busy !== null} onClick={() => setManualMode('folder')}>ทั้ง Folder <small>Admin</small></button>
+        </div>
+
+        {manualMode === 'folder' ? (
+          <FolderImportPanel expectedSourceGroup="TWD" onCompleted={() => void loadActivity()} />
+        ) : <>
         <div className="import-source-bar">
           <div className="import-source-switch" role="group" aria-label="แหล่งข้อมูล">
             <button type="button" aria-pressed={sourceMode === 'upload'} disabled={busy !== null} onClick={() => changeSourceMode('upload')}>
@@ -470,6 +481,7 @@ export function ImportPage({ correctiveBatchId = null }: { correctiveBatchId?: n
             </footer>
           </div>
         )}
+        </>}
       </section>}
 
       {activeTab === 'overview' && (
@@ -514,6 +526,14 @@ export function ImportPage({ correctiveBatchId = null }: { correctiveBatchId?: n
             <span className="import-format-note">Shared pair · 2 ZIP files</span>
           </header>
 
+          <div className="manual-mode-switch" role="group" aria-label="รูปแบบการนำเข้า HP/MH">
+            <button type="button" aria-pressed={manualMode === 'single'} disabled={busy !== null} onClick={() => setManualMode('single')}>คู่ไฟล์</button>
+            <button type="button" aria-pressed={manualMode === 'folder'} disabled={busy !== null} onClick={() => setManualMode('folder')}>ทั้ง Folder <small>Admin</small></button>
+          </div>
+
+          {manualMode === 'folder' ? (
+            <FolderImportPanel expectedSourceGroup="HP_MH" onCompleted={() => void loadActivity()} />
+          ) : <>
           <div className="hp-mh-source-note">
             <Building2 size={18} aria-hidden="true" />
             <p>
@@ -630,6 +650,7 @@ export function ImportPage({ correctiveBatchId = null }: { correctiveBatchId?: n
               </footer>
             </div>
           )}
+          </>}
         </section>
       )}
 

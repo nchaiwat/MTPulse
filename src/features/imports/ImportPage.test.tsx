@@ -5,13 +5,18 @@ import { ImportPage } from './ImportPage'
 
 const api = vi.hoisted(() => ({
   confirmFileShareImport: vi.fn(),
+  confirmFolderImportBatch: vi.fn(),
   confirmHpMhImport: vi.fn(),
   confirmImport: vi.fn(),
+  createFolderImportBatch: vi.fn(),
   fetchFileShareReady: vi.fn(),
+  fetchFolderImportBatch: vi.fn(),
   fetchImportActivity: vi.fn(),
+  finalizeFolderImportBatch: vi.fn(),
   previewFileShareImport: vi.fn(),
   previewHpMhImport: vi.fn(),
   previewImport: vi.fn(),
+  uploadFolderImportFile: vi.fn(),
 }))
 
 vi.mock('./importApi', async () => {
@@ -80,6 +85,28 @@ const hpMhPreview = {
   duplicateReason: null,
 }
 
+const folderBatch = {
+  id: 50,
+  sourceMode: 'folder',
+  status: 'uploading',
+  detectionStatus: 'pending',
+  detectedSourceGroup: null,
+  requestedBy: 'development-admin',
+  createdAt: '2026-09-10T10:00:00+07:00',
+  expiresAt: '2026-09-17T10:00:00+07:00',
+  counts: {
+    total: 2,
+    uploaded: 0,
+    new: 0,
+    duplicate: 0,
+    eligible: 0,
+    imported: 0,
+    failed: 0,
+    needsReview: 0,
+  },
+  files: [],
+}
+
 describe('ImportPage', () => {
   beforeEach(() => {
     Object.values(api).forEach((mock) => mock.mockReset())
@@ -99,6 +126,23 @@ describe('ImportPage', () => {
       batchIds: { HP: 31, MH: 32 },
       status: 'imported',
       dataDate: '2026-09-09',
+    })
+    api.createFolderImportBatch.mockResolvedValue(folderBatch)
+    api.uploadFolderImportFile.mockResolvedValue({
+      id: 1,
+      filename: 'file.xls',
+      status: 'uploaded',
+      detectionStatus: 'detected',
+      detectedSourceGroup: 'TWD',
+      sourceKind: 'workbook',
+      reason: null,
+    })
+    api.finalizeFolderImportBatch.mockResolvedValue({
+      ...folderBatch,
+      status: 'awaiting_confirmation',
+      detectionStatus: 'detected',
+      detectedSourceGroup: 'TWD',
+      counts: { ...folderBatch.counts, uploaded: 2, eligible: 2, new: 2 },
     })
   })
 
@@ -243,5 +287,25 @@ describe('ImportPage', () => {
       expect.any(Function),
     )
     expect(await screen.findByText(/นำเข้าข้อมูลสำเร็จ/)).toBeInTheDocument()
+  })
+
+  it('offers Admin Folder Import for both TWD and HP/MH', async () => {
+    render(<ImportPage />)
+    await userEvent.click(screen.getByRole('button', { name: /ทั้ง Folder/ }))
+    expect(screen.getByLabelText('เลือก Folder สำหรับ TWD')).toHaveAttribute('webkitdirectory')
+
+    const files = [
+      new File(['one'], 'one.xls'),
+      new File(['two'], 'two.xls'),
+    ]
+    await userEvent.upload(screen.getByLabelText('เลือก Folder สำหรับ TWD'), files)
+    await userEvent.click(screen.getByRole('button', { name: 'ตรวจสอบ Folder' }))
+    expect(api.createFolderImportBatch).toHaveBeenCalledWith(2)
+    expect(api.uploadFolderImportFile).toHaveBeenCalledTimes(2)
+    expect(api.finalizeFolderImportBatch).toHaveBeenCalledWith(50, 'TWD')
+    expect(await screen.findByRole('button', { name: 'ยืนยันนำเข้า Folder' })).toBeEnabled()
+
+    await userEvent.click(screen.getByRole('tab', { name: /HP/ }))
+    expect(screen.getByLabelText('เลือก Folder สำหรับ HP_MH')).toHaveAttribute('webkitdirectory')
   })
 })

@@ -53,8 +53,20 @@ export interface ManualUploadBatchContract {
   requestedBy: string
   createdAt: string
   expiresAt: string
+  summaryMessage?: string | null
+  errorMessage?: string | null
   counts: ManualUploadBatchCounts
   files: ManualUploadFileContract[]
+}
+
+export interface ManualUploadFileResult {
+  id: number
+  filename: string
+  status: string
+  detectionStatus: UploadDetectionStatus
+  detectedSourceGroup: string | null
+  sourceKind: string | null
+  reason: string | null
 }
 
 export interface ImportPreview {
@@ -291,6 +303,65 @@ export async function confirmHpMhImport(
     timings?: ImportTimings
     notification: { status: string; message: string }
   }>('/api/imports/hp-mh/confirm', form, onProgress)
+}
+
+async function jsonRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${apiBaseUrl}${path}`, init)
+  if (!response.ok) throw new Error(await errorMessage(response))
+  return response.json() as Promise<T>
+}
+
+export function createFolderImportBatch(fileCount: number) {
+  return jsonRequest<ManualUploadBatchContract>('/api/admin/imports/manual-batches', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file_count: fileCount }),
+  })
+}
+
+export function uploadFolderImportFile(
+  batchId: number,
+  file: File,
+  idempotencyKey: string,
+  onProgress?: (progress: UploadProgress) => void,
+) {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('idempotency_key', idempotencyKey)
+  form.append('relative_depth', '1')
+  return uploadForm<ManualUploadFileResult>(
+    `/api/admin/imports/manual-batches/${batchId}/files`,
+    form,
+    onProgress,
+  )
+}
+
+export function finalizeFolderImportBatch(
+  batchId: number,
+  expectedSourceGroup: 'TWD' | 'HP_MH',
+) {
+  return jsonRequest<ManualUploadBatchContract>(
+    `/api/admin/imports/manual-batches/${batchId}/finalize`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expected_source_group: expectedSourceGroup }),
+    },
+  )
+}
+
+export function confirmFolderImportBatch(batchId: number) {
+  return jsonRequest<ManualUploadBatchContract>(
+    `/api/admin/imports/manual-batches/${batchId}/confirm`,
+    { method: 'POST' },
+  )
+}
+
+export function fetchFolderImportBatch(batchId: number, signal?: AbortSignal) {
+  return jsonRequest<ManualUploadBatchContract>(
+    `/api/admin/imports/manual-batches/${batchId}`,
+    { signal },
+  )
 }
 
 export async function fetchFileShareReady(
