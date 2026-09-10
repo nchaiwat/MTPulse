@@ -104,6 +104,12 @@ def extract_hp_mh_pair(
             f"{inventory_date:%d/%m/%Y} != {sales_date:%d/%m/%Y}"
         )
 
+    inventory_values, aligned_inventory_skus = _align_inventory_skus(
+        inventory_values,
+        inventory_meta,
+        sales_meta,
+    )
+
     combined: dict[tuple[str, str, str], _Values] = defaultdict(_Values)
     ignored = set(inventory_meta["ignored_branches"]) | set(sales_meta["ignored_branches"])
     for key, value in inventory_values.items():
@@ -125,7 +131,7 @@ def extract_hp_mh_pair(
             inventory_date,
             combined,
             sale_skus=sales_meta["sale_skus"][code],
-            inventory_skus=inventory_meta["inventory_skus"][code],
+            inventory_skus=aligned_inventory_skus[code],
             inventory_branches=inventory_meta["inventory_branches"][code],
         )
         for code in ("HP", "MH")
@@ -255,6 +261,7 @@ def _parse_sales(
             "DESC",
         ),
         "branch_name": _header_index(header, "SITENAME", "BRANCHNAME"),
+        "ean": _header_index(header, "ARTEAN", "EAN", "BARCODE"),
     }
     assert all(columns[name] is not None for name in ("date", "branch", "sku", "qty", "value"))
     values: dict[tuple[str, str, str], _Values] = defaultdict(_Values)
@@ -263,6 +270,7 @@ def _parse_sales(
     ignored_date_rows = 0
     ignored_dates: set[date] = set()
     sale_skus = {"HP": set(), "MH": set()}
+    ean_skus = {"HP": defaultdict(set), "MH": defaultdict(set)}
     for row_number, row in enumerate(rows[header_index + 1 :], start=header_index + 2):
         branch = _cell(row, columns["branch"]).upper()
         sku = _cell(row, columns["sku"])
@@ -294,6 +302,9 @@ def _parse_sales(
         target.sales_qty += qty
         target.source_amount += source_amount
         sale_skus[owner].add(sku)
+        ean = _cell(row, columns["ean"])
+        if ean:
+            ean_skus[owner][ean].add(sku)
     if expected_date is not None and expected_date not in dates:
         raise HpMhFormatError(
             f"วันที่ข้อมูล Inventory และ Sale Out ไม่ตรงกัน: ไม่พบ {expected_date:%d/%m/%Y} ใน Sale Out"
@@ -314,6 +325,7 @@ def _parse_sales(
         {
             "ignored_branches": ignored,
             "sale_skus": sale_skus,
+            "ean_skus": ean_skus,
             "errors": errors,
         },
     )
@@ -349,6 +361,7 @@ def _parse_inventory(
         "DESCRIPTION",
         "DESC",
     )
+    ean_column = _header_index(first_header, "ARTEAN", "EAN", "BARCODE")
 
     site_columns: list[tuple[int, str, str, str]] = []
     previous_branch = ""
@@ -386,6 +399,7 @@ def _parse_inventory(
     ignored: set[str] = set()
     inventory_skus = {"HP": set(), "MH": set()}
     inventory_branches = {"HP": set(), "MH": set()}
+    sku_eans = {"HP": defaultdict(set), "MH": defaultdict(set)}
     all_site_qty = Decimal("0")
     all_site_amount = Decimal("0")
     for row_number, row in enumerate(rows[data_start:], start=data_start + 1):
@@ -396,6 +410,7 @@ def _parse_inventory(
         if normalized_sku.startswith("TOTAL") or normalized_sku.startswith("GRANDTOTAL"):
             continue
         description = _cell(row, description_column) or None
+        ean = _cell(row, ean_column)
         for column, branch, branch_name, metric in site_columns:
             amount = _decimal(
                 _cell(row, column),
@@ -412,6 +427,8 @@ def _parse_inventory(
                 continue
             inventory_skus[owner].add(sku)
             inventory_branches[owner].add(branch)
+            if ean:
+                sku_eans[owner][sku].add(ean)
             if amount == 0:
                 continue
             target = values[(owner, branch, sku)]
@@ -438,6 +455,7 @@ def _parse_inventory(
             "ignored_branches": ignored,
             "inventory_skus": inventory_skus,
             "inventory_branches": inventory_branches,
+            "sku_eans": sku_eans,
             "errors": errors,
         },
     )
@@ -475,6 +493,7 @@ def _parse_row_inventory(
             "STOCK_AVAILABLE_VALUE",
             "STOCK_UR_VALUE",
         ),
+        "ean": _header_index(header, "ARTEAN", "EAN", "BARCODE"),
     }
     if columns["qty"] is None:
         raise HpMhFormatError("Inventory แบบรายสาขาไม่พบ column ONHANDQTY")
@@ -484,6 +503,7 @@ def _parse_row_inventory(
     ignored: set[str] = set()
     inventory_skus = {"HP": set(), "MH": set()}
     inventory_branches = {"HP": set(), "MH": set()}
+    sku_eans = {"HP": defaultdict(set), "MH": defaultdict(set)}
     for row_number, row in enumerate(rows[header_index + 1 :], start=header_index + 2):
         branch = _cell(row, columns["branch"]).upper()
         sku = _cell(row, columns["sku"])
@@ -497,6 +517,9 @@ def _parse_row_inventory(
             continue
         inventory_skus[owner].add(sku)
         inventory_branches[owner].add(branch)
+        ean = _cell(row, columns["ean"])
+        if ean:
+            sku_eans[owner][sku].add(ean)
         stock_on_hand = _decimal(
             _cell(row, columns["qty"]),
             field=f"Inventory {branch} ONHANDQTY",
@@ -522,9 +545,42 @@ def _parse_row_inventory(
             "ignored_branches": ignored,
             "inventory_skus": inventory_skus,
             "inventory_branches": inventory_branches,
+            "sku_eans": sku_eans,
             "errors": [],
         },
     )
+
+
+def _align_inventory_skus(
+    values: dict[tuple[str, str, str], _Values],
+    inventory_meta: dict[str, object],
+    sales_meta: dict[str, object],
+) -> tuple[dict[tuple[str, str, str], _Values], dict[str, set[str]]]:
+    sale_skus = sales_meta["sale_skus"]
+    ean_skus = sales_meta["ean_skus"]
+    sku_eans = inventory_meta["sku_eans"]
+
+    def aligned_sku(owner: str, sku: str) -> str:
+        if sku in sale_skus[owner]:
+            return sku
+        candidates: set[str] = set()
+        for ean in sku_eans[owner].get(sku, ()):
+            candidates.update(ean_skus[owner].get(ean, ()))
+        return next(iter(candidates)) if len(candidates) == 1 else sku
+
+    aligned_values: dict[tuple[str, str, str], _Values] = defaultdict(_Values)
+    for (owner, branch, sku), value in values.items():
+        target = aligned_values[(owner, branch, aligned_sku(owner, sku))]
+        target.branch_name = value.branch_name or target.branch_name
+        target.description = value.description or target.description
+        target.stock_on_hand += value.stock_on_hand
+        target.stock_value += value.stock_value
+
+    aligned_inventory_skus = {
+        owner: {aligned_sku(owner, sku) for sku in inventory_meta["inventory_skus"][owner]}
+        for owner in ("HP", "MH")
+    }
+    return aligned_values, aligned_inventory_skus
 
 
 def _inventory_date(rows: list[list[str]]) -> date:

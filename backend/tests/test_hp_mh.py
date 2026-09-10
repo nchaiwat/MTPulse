@@ -135,6 +135,42 @@ def test_extract_legacy_row_inventory_preserves_opaque_skus(tmp_path) -> None:
     assert extract.mh.summary.stock_on_hand == Decimal("3")
 
 
+def test_inventory_uses_ean_to_match_sales_sku_without_length_normalization(tmp_path) -> None:
+    inventory = tmp_path / "VRM_InventoryData_20260909.zip"
+    sales = tmp_path / "VRM_SalesData_20260909.zip"
+    _zip_csv(
+        inventory,
+        "VRM_InventoryData_20260909.csv",
+        [
+            ["Last Update : 09/09/2026", "Output : Onhand"],
+            ["ARTNO", "ARTDESC", "ARTEAN", "S001 QTY", "S001 AMT", "M026 QTY", "M026 AMT"],
+            ["000000000009999999", "Window A", "2400000156673", "10", "1000", "0", "0"],
+            ["INVENTORY-CODE-B", "Door B", "2900002724660", "0", "0", "6", "600"],
+        ],
+    )
+    _zip_csv(
+        sales,
+        "VRM_SalesData_20260909.csv",
+        [
+            ["Period : 2026-09-09 - 2026-09-09"],
+            ["PERIODDATE", "SITENO", "ARTNO", "ARTDESC", "ARTEAN", "QTY", "VALUE"],
+            ["09/09/2026", "S001", "00001", "Window A", "2400000156673", "2", "200"],
+            ["09/09/2026", "M026", "1128033", "Door B", "2900002724660", "3", "300"],
+        ],
+    )
+
+    extract = extract_hp_mh_pair(inventory, sales)
+
+    assert extract.hp.inventory_skus == frozenset({"00001", "INVENTORY-CODE-B"})
+    assert extract.mh.inventory_skus == frozenset({"000000000009999999", "1128033"})
+    hp_row = next(row for row in extract.hp.rows if row.sku == "00001")
+    mh_row = next(row for row in extract.mh.rows if row.sku == "1128033")
+    assert hp_row.stock_on_hand == Decimal("10")
+    assert hp_row.sales_qty == Decimal("2")
+    assert mh_row.stock_on_hand == Decimal("6")
+    assert mh_row.sales_qty == Decimal("3")
+
+
 def test_business_fingerprint_ignores_zip_filename(tmp_path) -> None:
     first = extract_hp_mh_pair(*_pair(tmp_path))
     second_dir = tmp_path / "second"
