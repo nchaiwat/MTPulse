@@ -94,7 +94,10 @@ def extract_hp_mh_pair(
     sales_rows = _read_zip_csv(sales, expected_kind="sales")
 
     inventory_date, inventory_values, inventory_meta = _parse_inventory(inventory_rows)
-    sales_date, sales_values, sales_meta = _parse_sales(sales_rows)
+    sales_date, sales_values, sales_meta = _parse_sales(
+        sales_rows,
+        expected_date=inventory_date,
+    )
     if inventory_date != sales_date:
         raise HpMhFormatError(
             "วันที่ข้อมูล Inventory และ Sale Out ไม่ตรงกัน: "
@@ -140,7 +143,7 @@ def extract_hp_mh_pair(
         hp=extracts["HP"],
         mh=extracts["MH"],
         ignored_branch_codes=tuple(sorted(ignored)),
-        reconciliation_errors=tuple(inventory_meta["errors"]),
+        reconciliation_errors=tuple([*inventory_meta["errors"], *sales_meta["errors"]]),
     )
 
 
@@ -157,9 +160,7 @@ def _read_zip_csv(path: Path, *, expected_kind: str) -> list[list[str]]:
                 if not name.endswith("/") and Path(name).suffix.lower() == ".csv"
             ]
             if len(members) != 1:
-                raise HpMhFormatError(
-                    f"ZIP {path.name} ต้องมี CSV หนึ่งไฟล์ แต่พบ {len(members)} ไฟล์"
-                )
+                raise HpMhFormatError(f"ZIP {path.name} ต้องมี CSV หนึ่งไฟล์ แต่พบ {len(members)} ไฟล์")
             member = members[0]
             lower = member.lower()
             if expected_kind == "inventory" and "inventorydata" not in lower:
@@ -191,9 +192,7 @@ def _decimal(value: str, *, field: str, row_number: int) -> Decimal:
     try:
         return Decimal(text)
     except InvalidOperation as exc:
-        raise HpMhFormatError(
-            f"{field} แถว {row_number} ไม่ใช่ตัวเลข: {value!r}"
-        ) from exc
+        raise HpMhFormatError(f"{field} แถว {row_number} ไม่ใช่ตัวเลข: {value!r}") from exc
 
 
 def _date(value: str) -> date:
@@ -233,6 +232,8 @@ def _branch_owner(branch_code: str) -> str | None:
 
 def _parse_sales(
     rows: list[list[str]],
+    *,
+    expected_date: date | None = None,
 ) -> tuple[
     date,
     dict[tuple[str, str, str], _Values],
@@ -246,13 +247,21 @@ def _parse_sales(
         "sku": _header_index(header, "ARTNO", "SKU"),
         "qty": _header_index(header, "QTY"),
         "value": _header_index(header, "VALUE", "AMOUNT"),
-        "description": _header_index(header, "ARTNAME", "DESCRIPTION", "DESC"),
+        "description": _header_index(
+            header,
+            "ARTNAME",
+            "ARTDESC",
+            "DESCRIPTION",
+            "DESC",
+        ),
         "branch_name": _header_index(header, "SITENAME", "BRANCHNAME"),
     }
     assert all(columns[name] is not None for name in ("date", "branch", "sku", "qty", "value"))
     values: dict[tuple[str, str, str], _Values] = defaultdict(_Values)
     dates: set[date] = set()
     ignored: set[str] = set()
+    ignored_date_rows = 0
+    ignored_dates: set[date] = set()
     sale_skus = {"HP": set(), "MH": set()}
     for row_number, row in enumerate(rows[header_index + 1 :], start=header_index + 2):
         branch = _cell(row, columns["branch"]).upper()
@@ -266,24 +275,48 @@ def _parse_sales(
             ignored.add(branch)
             continue
         row_date = _date(_cell(row, columns["date"]))
+        qty = _decimal(_cell(row, columns["qty"]), field="QTY", row_number=row_number)
+        source_amount = _decimal(
+            _cell(row, columns["value"]),
+            field="VALUE",
+            row_number=row_number,
+        )
+        if expected_date is not None and row_date != expected_date:
+            if qty != 0 or source_amount != 0:
+                ignored_date_rows += 1
+                ignored_dates.add(row_date)
+            continue
         dates.add(row_date)
         key = (owner, branch, sku)
         target = values[key]
         target.branch_name = _cell(row, columns["branch_name"]) or branch
         target.description = _cell(row, columns["description"]) or target.description
-        target.sales_qty += _decimal(_cell(row, columns["qty"]), field="QTY", row_number=row_number)
-        target.source_amount += _decimal(
-            _cell(row, columns["value"]), field="VALUE", row_number=row_number
-        )
+        target.sales_qty += qty
+        target.source_amount += source_amount
         sale_skus[owner].add(sku)
-    if len(dates) != 1:
+    if expected_date is not None and expected_date not in dates:
         raise HpMhFormatError(
-            f"Sale Out ต้องมี Data Date เดียว แต่พบ {len(dates)} วัน"
+            f"วันที่ข้อมูล Inventory และ Sale Out ไม่ตรงกัน: ไม่พบ {expected_date:%d/%m/%Y} ใน Sale Out"
         )
-    return dates.pop(), values, {
-        "ignored_branches": ignored,
-        "sale_skus": sale_skus,
-    }
+    if expected_date is None and len(dates) != 1:
+        raise HpMhFormatError(f"Sale Out ต้องมี Data Date เดียว แต่พบ {len(dates)} วัน")
+    data_date = expected_date if expected_date is not None else dates.pop()
+    errors = []
+    if ignored_date_rows:
+        ignored_text = ", ".join(value.strftime("%d/%m/%Y") for value in sorted(ignored_dates))
+        errors.append(
+            f"Sale Out Data Date {data_date:%d/%m/%Y}: "
+            f"ข้าม {ignored_date_rows} แถวจากวันที่อื่น ({ignored_text})"
+        )
+    return (
+        data_date,
+        values,
+        {
+            "ignored_branches": ignored,
+            "sale_skus": sale_skus,
+            "errors": errors,
+        },
+    )
 
 
 def _parse_inventory(
@@ -298,11 +331,10 @@ def _parse_inventory(
     sku_column = _header_index(first_header, "ARTNO", "SKU")
     if sku_column is None:
         raise HpMhFormatError("Inventory ไม่พบ column ARTNO")
+    if _header_index(first_header, "SITENO", "SITE") is not None:
+        return _parse_row_inventory(rows, art_row, first_header)
     band_end = art_row + 1
-    while (
-        band_end < min(len(rows), art_row + 3)
-        and not _cell(rows[band_end], sku_column)
-    ):
+    while band_end < min(len(rows), art_row + 3) and not _cell(rows[band_end], sku_column):
         band_end += 1
     header_band = rows[art_row:band_end]
     width = max((len(row) for row in header_band), default=0)
@@ -310,7 +342,13 @@ def _parse_inventory(
         " ".join(_cell(row, column) for row in header_band if _cell(row, column))
         for column in range(width)
     ]
-    description_column = _header_index(first_header, "ARTNAME", "DESCRIPTION", "DESC")
+    description_column = _header_index(
+        first_header,
+        "ARTNAME",
+        "ARTDESC",
+        "DESCRIPTION",
+        "DESC",
+    )
 
     site_columns: list[tuple[int, str, str, str]] = []
     previous_branch = ""
@@ -328,12 +366,15 @@ def _parse_inventory(
         )
         if metric and previous_branch:
             branch_name = re.sub(BRANCH_PATTERN, "", title)
-            branch_name = re.sub(
-                r"\b(QTY|AMT|AMOUNT|VALUE)\b",
-                "",
-                branch_name,
-                flags=re.I,
-            ).strip(" -_/|") or previous_branch
+            branch_name = (
+                re.sub(
+                    r"\b(QTY|AMT|AMOUNT|VALUE)\b",
+                    "",
+                    branch_name,
+                    flags=re.I,
+                ).strip(" -_/|")
+                or previous_branch
+            )
             site_columns.append((column, previous_branch, branch_name, metric))
     if not site_columns:
         raise HpMhFormatError("Inventory ไม่พบ column สาขา QTY/AMT")
@@ -390,12 +431,100 @@ def _parse_inventory(
         all_site_qty,
         all_site_amount,
     )
-    return data_date, values, {
-        "ignored_branches": ignored,
-        "inventory_skus": inventory_skus,
-        "inventory_branches": inventory_branches,
-        "errors": errors,
+    return (
+        data_date,
+        values,
+        {
+            "ignored_branches": ignored,
+            "inventory_skus": inventory_skus,
+            "inventory_branches": inventory_branches,
+            "errors": errors,
+        },
+    )
+
+
+def _parse_row_inventory(
+    rows: list[list[str]],
+    header_index: int,
+    header: list[str],
+) -> tuple[
+    date,
+    dict[tuple[str, str, str], _Values],
+    dict[str, object],
+]:
+    columns = {
+        "branch": _header_index(header, "SITENO", "SITE"),
+        "branch_name": _header_index(header, "SITENAME", "BRANCHNAME"),
+        "sku": _header_index(header, "ARTNO", "SKU"),
+        "description": _header_index(
+            header,
+            "ARTNAME",
+            "ARTDESC",
+            "DESCRIPTION",
+            "DESC",
+        ),
+        "qty": _header_index(
+            header,
+            "ONHANDQTY",
+            "STOCK_AVAILABLE_QTY",
+            "STOCK_UR_QTY",
+        ),
+        "amount": _header_index(
+            header,
+            "ONHANDVALUE",
+            "STOCK_AVAILABLE_VALUE",
+            "STOCK_UR_VALUE",
+        ),
     }
+    if columns["qty"] is None:
+        raise HpMhFormatError("Inventory แบบรายสาขาไม่พบ column ONHANDQTY")
+    assert columns["branch"] is not None and columns["sku"] is not None
+
+    values: dict[tuple[str, str, str], _Values] = defaultdict(_Values)
+    ignored: set[str] = set()
+    inventory_skus = {"HP": set(), "MH": set()}
+    inventory_branches = {"HP": set(), "MH": set()}
+    for row_number, row in enumerate(rows[header_index + 1 :], start=header_index + 2):
+        branch = _cell(row, columns["branch"]).upper()
+        sku = _cell(row, columns["sku"])
+        if not branch and not sku:
+            continue
+        if not branch or not sku:
+            raise HpMhFormatError(f"Inventory แถว {row_number} ขาด SITENO หรือ ARTNO")
+        owner = _branch_owner(branch)
+        if owner is None:
+            ignored.add(branch)
+            continue
+        inventory_skus[owner].add(sku)
+        inventory_branches[owner].add(branch)
+        stock_on_hand = _decimal(
+            _cell(row, columns["qty"]),
+            field=f"Inventory {branch} ONHANDQTY",
+            row_number=row_number,
+        )
+        stock_value = _decimal(
+            _cell(row, columns["amount"]),
+            field=f"Inventory {branch} ONHANDVALUE",
+            row_number=row_number,
+        )
+        if stock_on_hand == 0 and stock_value == 0:
+            continue
+        target = values[(owner, branch, sku)]
+        target.branch_name = _cell(row, columns["branch_name"]) or branch
+        target.description = _cell(row, columns["description"]) or None
+        target.stock_on_hand += stock_on_hand
+        target.stock_value += stock_value
+
+    return (
+        _inventory_date(rows[: max(header_index, 1)]),
+        values,
+        {
+            "ignored_branches": ignored,
+            "inventory_skus": inventory_skus,
+            "inventory_branches": inventory_branches,
+            "errors": [],
+        },
+    )
 
 
 def _inventory_date(rows: list[list[str]]) -> date:
@@ -447,9 +576,7 @@ def _inventory_reconciliation(
             Decimal("0"),
         )
         if reported_qty != calculated_qty:
-            errors.append(
-                f"Inventory QTY: calculated={calculated_qty}, source={reported_qty}"
-            )
+            errors.append(f"Inventory QTY: calculated={calculated_qty}, source={reported_qty}")
     if amount_column is not None:
         reported_amount = sum(
             (
@@ -498,9 +625,7 @@ def _build_mt_extract(
         row_count=len(rows),
         store_count=len({row.branch_code for row in rows}),
         sku_count=len({row.sku for row in rows}),
-        negative_row_count=sum(
-            row.source_amount < 0 or row.sales_qty < 0 for row in rows
-        ),
+        negative_row_count=sum(row.source_amount < 0 or row.sales_qty < 0 for row in rows),
         source_amount=sum((row.source_amount for row in rows), Decimal("0")),
         amount=sum((row.amount for row in rows), Decimal("0")).quantize(STORAGE_SCALE),
         sales_qty=sum((row.sales_qty for row in rows), Decimal("0")),
