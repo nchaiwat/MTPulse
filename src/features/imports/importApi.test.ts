@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { previewImport } from './importApi'
+import { MANUAL_UPLOAD_LIMITS, previewImport } from './importApi'
 
 class FakeEventTarget {
   private listeners = new Map<string, EventListener[]>()
@@ -105,5 +105,16 @@ describe('manual import upload transport', () => {
     xhr.emit('load', new Event('load'))
 
     await expect(request).rejects.toThrow('Import API ส่งข้อมูลตอบกลับไม่ถูกต้อง')
+  })
+})
+
+describe('manual folder upload phase 1 contract', () => {
+  it('publishes the approved limits without changing the active UI', () => {
+    expect(MANUAL_UPLOAD_LIMITS).toEqual({
+      maxFolderFiles: 200,
+      maxFileBytes: 25 * 1024 * 1024,
+      uploadConcurrency: 3,
+      stagingRetentionDays: 7,
+    })
   })
 })

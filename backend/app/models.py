@@ -173,6 +173,89 @@ class SourceFile(Base):
     business_fingerprint: Mapped[str | None] = mapped_column(String(64), index=True)
 
 
+class ManualUploadBatch(Base):
+    __tablename__ = "manual_upload_batches"
+    __table_args__ = (
+        Index("ix_manual_upload_batch_status_activity", "status", "last_activity_at"),
+        Index("ix_manual_upload_batch_expiry", "expires_at"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    status: Mapped[str] = mapped_column(String(32))
+    source_mode: Mapped[str] = mapped_column(String(16))
+    detected_source_group: Mapped[str | None] = mapped_column(String(30))
+    detection_status: Mapped[str] = mapped_column(
+        String(20), default="pending", server_default="pending"
+    )
+    requested_by: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    upload_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    total_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    uploaded_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    new_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    duplicate_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    eligible_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    imported_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    failed_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    needs_review_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_activity_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    summary_message: Mapped[str | None] = mapped_column(Text)
+    error_message: Mapped[str | None] = mapped_column(Text)
+
+
+class ManualUploadFile(Base):
+    __tablename__ = "manual_upload_files"
+    __table_args__ = (
+        UniqueConstraint(
+            "upload_batch_id",
+            "idempotency_key",
+            name="uq_manual_upload_file_batch_idempotency",
+        ),
+        Index("ix_manual_upload_file_batch_status", "upload_batch_id", "status"),
+        Index("ix_manual_upload_file_mt_status", "detected_mt_code", "status"),
+        Index("ix_manual_upload_file_expiry", "expires_at"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    upload_batch_id: Mapped[int] = mapped_column(
+        ForeignKey("manual_upload_batches.id", ondelete="CASCADE")
+    )
+    display_filename: Mapped[str] = mapped_column(String(255))
+    size_bytes: Mapped[int] = mapped_column(BigInteger)
+    checksum_sha256: Mapped[str | None] = mapped_column(String(64))
+    staging_key: Mapped[str | None] = mapped_column(String(255))
+    relative_depth: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    idempotency_key: Mapped[str] = mapped_column(String(64))
+    detected_mt_code: Mapped[str | None] = mapped_column(String(20))
+    detected_source_group: Mapped[str | None] = mapped_column(String(30))
+    source_kind: Mapped[str | None] = mapped_column(String(20))
+    data_date: Mapped[date | None] = mapped_column(Date)
+    business_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    detection_status: Mapped[str] = mapped_column(
+        String(20), default="pending", server_default="pending"
+    )
+    validation_status: Mapped[str] = mapped_column(
+        String(32), default="pending", server_default="pending"
+    )
+    status: Mapped[str] = mapped_column(String(32))
+    status_reason: Mapped[str | None] = mapped_column(Text)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    import_batch_id: Mapped[int | None] = mapped_column(
+        ForeignKey("import_batches.id", ondelete="SET NULL")
+    )
+    source_file_id: Mapped[int | None] = mapped_column(
+        ForeignKey("source_files.id", ondelete="SET NULL")
+    )
+    uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class SalesInventoryFact(Base):
     __tablename__ = "sales_inventory_facts"
     __table_args__ = (

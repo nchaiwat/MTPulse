@@ -1,5 +1,62 @@
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
 
+export const MANUAL_UPLOAD_LIMITS = {
+  maxFolderFiles: 200,
+  maxFileBytes: 25 * 1024 * 1024,
+  uploadConcurrency: 3,
+  stagingRetentionDays: 7,
+} as const
+
+export type ManualUploadSourceMode = 'single' | 'folder'
+export type UploadDetectionStatus = 'pending' | 'detected' | 'needs_review' | 'conflict' | 'unsupported'
+export type ManualUploadBatchStatus =
+  | 'uploading'
+  | 'detecting'
+  | 'awaiting_confirmation'
+  | 'queued'
+  | 'processing'
+  | 'completed'
+  | 'completed_with_issues'
+  | 'failed'
+
+export interface ManualUploadBatchCounts {
+  total: number
+  uploaded: number
+  new: number
+  duplicate: number
+  eligible: number
+  imported: number
+  failed: number
+  needsReview: number
+}
+
+export interface ManualUploadFileContract {
+  id: number
+  filename: string
+  sizeBytes: number
+  status: string
+  detectionStatus: UploadDetectionStatus
+  detectedMtCode: string | null
+  detectedSourceGroup: string | null
+  sourceKind: string | null
+  dataDate: string | null
+  reason: string | null
+  retryCount: number
+}
+
+export interface ManualUploadBatchContract {
+  id: number
+  sourceMode: ManualUploadSourceMode
+  status: ManualUploadBatchStatus
+  detectionStatus: UploadDetectionStatus
+  detectedSourceGroup: string | null
+  requestedBy: string
+  createdAt: string
+  expiresAt: string
+  counts: ManualUploadBatchCounts
+  files: ManualUploadFileContract[]
+}
+
 export interface ImportPreview {
   detectedMt: string
   detectedMtName: string

@@ -1109,3 +1109,101 @@ Discovery สำหรับ Frontend UX Milestone ได้รับอนุ�
 
 - Status: Phase 3 TWD Matrix and filter UI complete locally; Phase 4 Excel parity not started
 - Priority: (1) DB/API contract, (2) server-side filter/summary parity, (3) Matrix interaction/visual states, (4) Excel parity, (5) performance/regression validation
+# Requirement เพิ่มเติม: Multi-MT Import Operations Workspace — 10 กันยายน 2026
+
+## Objective
+
+- ปรับหน้า `สถานะข้อมูล > นำเข้าข้อมูล` ให้กระชับและใช้ Operations Ledger Theme เดียวกับ Report, Dashboard, Settings และ Monitoring
+- ทำให้หน้า Import เป็น Operations Workspace กลางสำหรับ TWD, HP, MH และรองรับการเพิ่ม Modern Trade จาก Configuration ในอนาคต
+- รองรับ Manual Upload ทีละไฟล์สำหรับ User และ Folder Batch Upload สำหรับ Admin เพื่อเติมข้อมูลย้อนหลังที่ขาด โดยไม่เปลี่ยน UNC ใน Global Settings
+- ย้ายรายการที่ต้องลงมือแก้เกี่ยวกับ Import ออกจาก Monitoring มาอยู่หน้า Import; Monitoring เก็บเฉพาะภาพรวมและลิงก์เข้าสู่รายการที่เกี่ยวข้อง
+
+## Users And Authorization
+
+- `Admin`: Upload ทีละไฟล์หรือเลือก Folder ระดับแรกได้, ยืนยัน Batch, ระบุ MT เพื่อให้ระบบตรวจซ้ำ, Retry เฉพาะไฟล์ และติดตาม Background Job
+- `User`: Upload และยืนยันได้ครั้งละหนึ่งไฟล์เท่านั้น; ไม่มีสิทธิ์ Folder Batch, เปลี่ยน MT แบบ Manual หรือจัดการไฟล์ของผู้อื่น
+- ทุก Action ต้องบันทึก Actor, เวลา, Source mode, MT/Source group, ผล Validation, ผล Import และ Retry ใน Audit Log
+
+## Information Architecture And UX
+
+- Header ใช้ Page title และ Context บรรทัดเดียวแบบกระชับ; ตัด Breadcrumb/Header ซ้ำ, Phase badge และคำอธิบายที่ไม่ช่วยตัดสินใจ
+- ใช้ Tab `ภาพรวม`, `TWD`, `HP`, `MH`; Tab ของ MT ในอนาคตสร้างจาก Configuration ไม่สร้าง Page แยกใหม่
+- `ภาพรวม` แสดง Running batches, รายการรอตรวจ, Failed/Retry และ Activity ล่าสุดของทุก MT
+- Tab MT ใช้ Layout/Status/Action Template เดียวกัน แต่ข้อมูลและผล Import แยกตาม MT โดยห้าม fallback หรือยืมข้อมูลจาก MT อื่น
+- จุดเด่นเฉพาะหน้าเป็น Compact Batch Ledger: สรุปจำนวนทั้งหมด/ใหม่/ซ้ำ/ผิดพลาด/สำเร็จ แล้วตามด้วยรายการรายไฟล์ที่กรองและ Retry ได้
+- Status ต้องมีข้อความและ Icon ไม่ใช้สีเพียงอย่างเดียว; Error ใช้ `role=alert`/`aria-live`, Progress ใช้ semantic progress และ Keyboard focus ต้องชัดเจน
+
+## Core Workflow: Single-file Upload
+
+1. User หรือ Admin เลือกหนึ่งไฟล์จากเครื่อง
+2. Server ตรวจชนิดไฟล์, ขนาด, checksum, business fingerprint, โครงสร้าง Sheet/Header และตรวจจับ MT/Source group อัตโนมัติ
+3. ระบบแสดง MT ที่ตรวจพบ, วันที่ข้อมูล, ประเภทข้อมูล, Duplicate status และ Validation result ก่อนยืนยัน
+4. หากตรวจจับ MT ไม่ได้หรือขัดแย้ง ไฟล์เข้าสถานะ `รอตรวจสอบ MT`; เฉพาะ Admin ระบุ MT ที่คาดว่าเป็นเพื่อให้ Strict Validation ทำงานซ้ำได้
+5. Admin ไม่สามารถ Override ไฟล์ที่ไม่ผ่าน Strict Validation ให้ Import ได้
+6. เมื่อยืนยัน ระบบใช้ Import Pipeline และ Transaction boundary เฉพาะ MT เดิม
+
+## Core Workflow: Admin Folder Batch
+
+1. Admin เลือก Folder บนเครื่องผ่าน Browser; ระบบพิจารณาเฉพาะไฟล์ระดับแรกและแจ้งจำนวน Subfolder/ไฟล์ระดับลึกที่ถูกละเว้น
+2. รองรับสูงสุด 200 ไฟล์ต่อ Batch, ไฟล์ละไม่เกิน 25 MB และ Upload พร้อมกันสูงสุด 3 ไฟล์
+3. แต่ละไฟล์ Upload และ Retry แยกกัน; การเชื่อมต่อขาดไม่บังคับ Upload ไฟล์ที่สำเร็จแล้วใหม่
+4. Server ตรวจจับ MT และ Duplicate รายไฟล์ก่อนสรุป Batch
+5. Folder ปกติต้องเป็น MT เดียว หากพบหลาย MT ให้หยุด Batch และแจ้ง Admin แยก Folder โดยห้าม Partial Import ข้าม MT
+6. `HP_MH` เป็น Shared Source Group ที่อนุญาตเป็นกรณีพิเศษ: ระบบต้องตรวจคู่ Sales/Inventory ตาม Logic เดิม แล้วแยกผลเป็น HP และ MH ภายในโดยไม่ถือว่าเป็น Mixed-MT Folder
+7. ไฟล์ซ้ำถูกข้ามอัตโนมัติ; ไฟล์ใหม่ที่ถูกต้องรวมรอการยืนยันครั้งเดียว
+8. ไฟล์ผิดพลาดถูกแยกออกพร้อมเหตุผล และไม่ขวางการ Import ไฟล์ที่ถูกต้องภายใน MT/Source group เดียวกัน
+9. หลัง Upload ครบ การตรวจและ Import ทำใน Background Worker ต่อได้แม้ Admin ปิด Browser หรือออกจากระบบ
+10. เก็บไฟล์ Staging 7 วันเพื่อ Audit/Retry แล้ว Cleanup อัตโนมัติ; Import Batch, Fact และ Audit Log ไม่ถูกลบ
+
+## MT Detection And Data Safety Rules
+
+- ห้ามใช้ความยาว SKU, เลขศูนย์นำหน้า หรือ Pattern ของ SKU เป็น Standard ในการระบุ MT
+- Detector ใช้ File signature, Archive contents, Workbook structure, Sheet names, required headers และ source-specific invariants ที่แต่ละ Importer ยืนยันได้
+- ชื่อไฟล์ใช้เป็น Supporting signal เท่านั้น ไม่ใช่หลักฐานเพียงอย่างเดียว
+- ผลตรวจต้องเป็น `detected`, `needs_review`, `conflict` หรือ `unsupported` พร้อมเหตุผลที่อ่านได้
+- Admin เลือก MT ได้เฉพาะเพื่อเรียก Strict Validator ของ MT นั้นใหม่; Validation ไม่ผ่านต้องถูกปฏิเสธ
+- Duplicate ต้องตรวจทั้ง checksum และ business identity/date ตามกฎ Importer เดิม เพื่อรู้ว่าเนื้อหาเคยเข้าแล้วแม้ชื่อไฟล์หรือที่เก็บเปลี่ยน
+- TWD, HP และ MH ใช้ Import/Pairing/Reconciliation/Idempotency Logic ปัจจุบันเป็น Source of Truth ห้ามสร้าง Parser กลางที่ลดทอนกฎเฉพาะ MT
+
+## Import Issue Ownership And Monitoring Boundary
+
+- หน้า Import เป็นเจ้าของ actionable issues: Upload failed, unsupported, unknown/conflicting MT, duplicate, missing pair, validation/reconciliation error, pending review และ Retry
+- Monitoring แสดงเฉพาะจำนวน/ระดับปัญหาแยก MT, Running/Last run และสุขภาพรวมของ Pipeline
+- Action จาก Monitoring ต้อง Deep-link ไปหน้า Import พร้อม `mt`, `status` และ batch/file context ที่เกี่ยวข้อง
+- ห้ามมีปุ่มแก้ไข/Retry ซ้ำสองหน้าซึ่งทำให้สถานะไม่สอดคล้องกัน
+
+## Data, Storage And Reliability Requirements
+
+- Folder path บนเครื่อง User ไม่ถูกบันทึกเป็น UNC และไม่แก้ Global FileShare Settings
+- Server ใช้ generated identifier เป็นชื่อ Staging object; sanitize ชื่อไฟล์สำหรับแสดงผลและห้ามใช้ client path เป็น filesystem path
+- Upload ต่อไฟล์ต้อง idempotent และ Session/Batch ต้องกลับมาติดตามต่อได้
+- Worker claim งานแบบป้องกันงานซ้ำและเก็บ progress/counts รายไฟล์
+- Cleanup job ลบเฉพาะ Staging file ที่หมดอายุและไม่กำลังประมวลผล
+- Activity/Batch API ต้อง paginate และ filter ที่ Server เพื่อรองรับประวัติจำนวนมาก
+
+## Success Criteria
+
+- หน้า Import ไม่มี Header ซ้ำและใช้ Typography, spacing, border, color และ control density ตาม MT Pulse Design System
+- User Upload ผิด MT ไม่สามารถสร้าง Fact ของ MT ผิดได้
+- Folder 100 ไฟล์ Upload/ตรวจ/Import ต่อเนื่องใน Background พร้อม progress และ partial failure รายไฟล์
+- Folder เกิน 200 ไฟล์หรือไฟล์เกิน 25 MB ถูกปฏิเสธก่อนสร้างภาระเกินขอบเขต
+- ไฟล์ซ้ำถูกข้ามโดยไม่สร้าง Fact/Batch ซ้ำ และแสดงเหตุผลชัดเจน
+- ไฟล์ถูกต้อง Import ต่อได้แม้ไฟล์อื่นผิดพลาด; Retry ไม่ทำซ้ำไฟล์สำเร็จ
+- ปิด Browser แล้วกลับมาดู Batch เดิมและสถานะล่าสุดได้
+- Monitoring แสดง Summary ถูกต้องและเปิดหน้า Import พร้อม Filter ที่เกี่ยวข้องได้
+- Regression ของ TWD และ HP/MH Import Pipeline เดิมผ่านทั้งหมด
+
+## Non-scope
+
+- รอบแรกเปิดใช้งานจริงเฉพาะ TWD, HP และ MH
+- ไม่เปลี่ยน UNC/Schedule/Automatic Import ใน Settings
+- ไม่อนุญาต User ทั่วไปทำ Folder Batch
+- ไม่อนุญาต Force Import ข้าม Validation
+- ไม่อ่าน Subfolder และไม่ Sync Folder ต่อเนื่องหลังการเลือกครั้งนั้น
+
+## Status
+
+- Discovery และ Business Rules ได้รับการยืนยันแล้ว
+- Product Owner ยืนยัน Implementation Plan แล้ว
+- Phase 1 Contracts, Detection และ Additive Migration เสร็จใน Local เมื่อ 10 กันยายน 2026
+- ยังไม่เปลี่ยนหน้า Import เดิม, UX/UI เดิม หรือ Import Logic ปัจจุบัน; Phase 2 ยังไม่เริ่ม

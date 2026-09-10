@@ -1483,3 +1483,162 @@ Backend ในระยะถัดไปจะแยกขอบเขตเช
 - Frontend full suite 80 tests, Backend full suite 127 tests, ESLint, production build และ Ruff เฉพาะ Sho/Pro backend paths ผ่าน
 - ยังไม่เปลี่ยน summary/calculation, TOM/TOD, Excel layout หรือ rollout ไป HP/MH
 - ยังไม่ Push/Deploy ตาม Deployment Gate; ขั้นต่อไปคือ Phase 4 Excel Parity เมื่อ Product Owner สั่งเริ่ม
+# Multi-MT Import Operations Workspace — Implementation Plan (10 September 2026)
+
+## Project Summary
+
+ปรับหน้า Import เดิมจาก TWD single-file form ให้เป็น Operations Workspace แบบหลาย MT พร้อม Admin Folder Batch จากเครื่อง User, strict MT detection, per-file duplicate/validation, background processing, retry และ 7-day staging retention โดยรักษา Import Pipeline เฉพาะ TWD/HP/MH เดิมและย้าย actionable import issues ออกจาก Monitoring
+
+## Goals And Non-goals
+
+### Goals
+
+- Compact header และ shared visual template ตาม MT Pulse Operations Ledger
+- Overview + dynamic MT tabs สำหรับ TWD/HP/MH และ MT ที่เปิดในอนาคต
+- Single-file upload สำหรับ User ทุกคนและ Folder Batch สูงสุด 200 ไฟล์สำหรับ Admin
+- MT detection ที่ไม่พึ่ง SKU format พร้อม Quarantine/Strict Validation
+- Upload concurrency 3, per-file resume/retry, background worker และ partial success
+- Import issue management อยู่หน้า Import; Monitoring เป็น summary + deep link
+
+### Non-goals
+
+- ไม่เปลี่ยน parser, pairing, reconciliation, mapping, duplicate หรือ transaction logic ของ TWD/HP/MH
+- ไม่เปิด GH/SCG/HH/TA จนมี Importer และ Configuration จริง
+- ไม่อ่าน Subfolder, ไม่เฝ้า Folder ต่อเนื่อง และไม่แก้ UNC/Schedule
+- ไม่เพิ่ม Force Import หรือ Admin override ข้าม Strict Validation
+
+## UX And Visual Direction
+
+- ใช้ `design-system/mt-pulse/MASTER.md` เป็น Source of Truth: Primary sky/navy, Leelawadee UI/Aptos, Cascadia Mono สำหรับรหัส/ตัวเลข, Control 34px และ density 9/10
+- ไม่ใช้ผลค้นหาแนว Exaggerated Minimalism/สีเขียว เพราะขัดกับ Application Theme และความต้องการพื้นที่ข้อมูลสูง
+- Header เป็นแถวเดียว: Page title + compact context/status; ตัด Breadcrumb ซ้ำ, Phase badge และคำอธิบายยาว
+- Top workspace: source selector + action ด้านซ้าย, Batch summary/progress ด้านขวา; ถัดลงมาเป็น Overview/MT tabs และ File ledger
+- File ledger ใช้ stable file ID, server-side pagination/filter, status icon+text, inline error, per-file Retry และ bulk confirm เฉพาะ eligible files
+- Activity เดิมรวมเข้า Batch ledger/history ไม่วาง Card แยกยาวที่ดันข้อมูลสำคัญลงล่าง
+
+## Technical Architecture
+
+### Frontend
+
+- Refactor `ImportPage.tsx` เป็น container ขนาดเล็กและแยก `ImportHeader`, `ImportTabs`, `ImportSourcePanel`, `FolderUploadPanel`, `ImportBatchSummary`, `ImportFileLedger`, `ImportIssueActions` และ `ImportHistory`
+- ใช้ `<input type="file" webkitdirectory multiple>` สำหรับ browser fallback; filter เฉพาะ `webkitRelativePath` ระดับแรกและแสดงไฟล์ระดับลึกที่ถูกละเว้น
+- Upload queue ส่งพร้อมกันสูงสุด 3 ไฟล์และเก็บ server file/session ID เพื่อ Retry เฉพาะรายการ
+- Poll active batch แบบ bounded interval และหยุดเมื่อ terminal; page reload โหลด active/recent batches จาก Server
+- Route/query contract รองรับ `?mt=HP&status=failed&batchId=...` สำหรับ Monitoring deep link
+- User role ควบคุมการแสดง Folder mode; Server authorization เป็น enforcement หลัก
+
+### Backend Services
+
+- เพิ่ม detector registry ที่คืน source group/MT, confidence state, evidence และ strict validator callback
+- TWD detector เรียกโครงสร้าง/validation ของ TWD importer เดิม; HP/MH detector ระบุ `HP_MH` source group, จับคู่ Sales/Inventory และปล่อย splitter/importer เดิมแยก HP/MH
+- แยก Staging service, upload-session service, batch orchestrator, cleanup service และ issue projection ออกจาก route
+- Worker claim queued files/jobs แบบ transaction-safe; อัปเดต progress และ heartbeat โดยไม่เก็บผลรายไฟล์ขนาดใหญ่ใน JSON ก้อนเดียว
+- Reuse existing checksum/business fingerprint/period conflict checks ก่อน Confirm และก่อน Import จริงอีกครั้ง
+
+## Data Model Draft
+
+### `manual_upload_batches`
+
+- `id`, `status`, `source_mode`, `detected_source_group`, `detection_status`
+- `requested_by`, `created_at`, `upload_completed_at`, `confirmed_at`, `finished_at`
+- counters: total/uploaded/new/duplicate/eligible/imported/failed/needs_review
+- `expires_at`, `last_activity_at`, optional summary/error
+
+### `manual_upload_files`
+
+- `id`, `upload_batch_id`, safe display filename, size, checksum, staging object key
+- relative-depth metadata โดยไม่เก็บ client absolute path
+- detected MT/source group, source kind, data date, business fingerprint, validation status/reason
+- processing status, retry count, resulting import batch/source file references และ timestamps
+- unique upload idempotency key ภายใน Batch และ indexes สำหรับ batch/status/detected MT/expiry
+
+Final migration naming และ reuse กับ `ImportRun`/`SourceFile` ให้ตัดสินหลังเพิ่ม contract tests; ห้ามยัดรายการ 200 ไฟล์ลง `results_json` เพราะเคยพิสูจน์แล้วว่าสร้าง Monitoring payload bottleneck
+
+## API Plan
+
+- `POST /api/import-upload-batches` — สร้าง Folder/Single session; Server enforce role และ limits
+- `POST /api/import-upload-batches/{id}/files` — ส่งหนึ่งไฟล์พร้อม idempotency key
+- `POST /api/import-upload-batches/{id}/complete-upload` — ปิดรับไฟล์และ queue detection/validation
+- `GET /api/import-upload-batches` และ `GET /{id}` — filter/paginate summary + files
+- `POST /api/import-upload-batches/{id}/confirm` — confirm eligible files ครั้งเดียว
+- `POST /api/import-upload-files/{id}/retry` — retry terminal failed file เท่านั้น
+- `POST /api/import-upload-files/{id}/resolve-mt` — Admin ระบุ expected MT แล้วเรียก strict validation ใหม่; ไม่มี force flag
+- Existing single-file endpoints คง compatibility ระหว่าง rollout และค่อย route ผ่าน service เดียวกันเมื่อ parity tests ผ่าน
+- Monitoring response ส่ง counts/link context เท่านั้น ไม่ embed file list
+
+## Background Job And Storage Plan
+
+- เพิ่ม persistent staging volume บน WA-MTPULSE-TEST/production แยกจาก application image
+- เขียนไฟล์เป็น generated object key และ finalize แบบ atomic หลังรับครบ; checksum ขณะ stream และไม่อ่านทั้ง 25 MB เข้า memory หาก refactor path ใหม่
+- Queue phases: `uploading → detecting → awaiting_confirmation → queued → processing → completed_with_issues/completed/failed`
+- File states แยก `uploaded/detected/duplicate/needs_review/invalid/eligible/queued/importing/imported/failed/expired`
+- Cleanup job รันตาม schedule ลบ staging object เมื่อครบ 7 วันและ batch/file ไม่ active; DB metadata/Audit ไม่ลบ
+- จำกัดหนึ่ง active processing job ต่อ MT; `HP_MH` ใช้ lock ระดับ source group เพื่อไม่ชน Automatic Import คู่เดิม
+
+## Phased Implementation
+
+### Phase 1 — Contracts, Detection And Migration
+
+1. เพิ่ม failing tests สำหรับ role limits, 1/200/201 files, 25 MB, idempotency, mixed MT, unknown MT และ HP_MH exception
+2. Extract detector interface โดยครอบ importer เดิม ไม่ทำ parser ใหม่
+3. เพิ่ม batch/file models และ Alembic migration พร้อม indexes/constraints
+4. เพิ่ม API types และ frontend fixtures โดย UI เดิมยังทำงานได้
+
+### Phase 2 — Staging Upload And Background Worker
+
+1. Implement streamed staging upload, checksum และ per-file idempotency
+2. Implement upload queue concurrency contract, finalize, detection/validation jobs และ persisted progress
+3. Implement confirm/processing/partial success/retry และ source-group lock
+4. Implement 7-day cleanup พร้อม tests กันลบไฟล์ active
+
+### Phase 3 — Compact Multi-MT Import UI
+
+1. ลด Header/spacing และรวม Activity เป็น ledger ตาม Master Design System
+2. เพิ่ม Overview/TWD/HP/MH dynamic tabs และ filters
+3. เพิ่ม Admin Folder picker, 3-file upload queue, progress, reconnect/resume และ per-file status
+4. รักษา single-file flow สำหรับ User พร้อม auto-detection และ preview/confirm
+
+### Phase 4 — Import Issues And Monitoring Deep Links
+
+1. ย้าย actionable issue lists/actions มา Import Workspace
+2. Monitoring เก็บ summary counts/health และ deep-link context
+3. เพิ่ม URL state, permission tests และ consistency tests ระหว่างสองหน้า
+
+### Phase 5 — Verification, Performance And Deployment
+
+1. Backend full suite/Ruff; Frontend full suite/ESLint/build
+2. Browser QA: User/Admin, refresh/logout, keyboard/focus, errors announced, 375/768/1024/1440
+3. Load test Folder 100 และ 200 ไฟล์, network interruption, retry, mixed folder rejection และ concurrent Automatic Import
+4. ตรวจ TWD/HP/MH facts, counts, duplicate protection และ Audit ก่อน/หลังด้วย fixtures/real samples
+5. Backup PostgreSQL, deploy migration/API/Worker/Web, smoke Background continuation และตรวจ cleanup dry-run ก่อนเปิดจริง
+
+## Test And Acceptance Matrix
+
+- Detection: valid TWD, HP_MH pair, malformed archive/workbook, misleading filename, variable SKU length/leading zero, unknown/conflict
+- Folder: direct files only, nested ignored, empty, 100, 200, 201 files, mixed MT, HP_MH source-group exception
+- Security: User blocked from folder/bulk/resolve-MT; Admin allowed; path traversal sanitized; stale/foreign batch access blocked
+- Reliability: duplicate checksum/business date, interrupted upload, repeated complete/confirm, worker restart, browser closed, retry one file, active file not cleaned
+- Data integrity: partial file failure does not rollback other valid files and never creates cross-MT Fact/Mapping
+- UX: compact header, status text+icon, screen-reader announcements, stable progress, deep link and server-side pagination
+- Performance targets: file selection feedback <200ms, progress remains responsive, list render bounded, API payload excludes full historical results
+
+## Deployment And Rollback
+
+- Migration is additive; existing manual and automatic import paths remain available during staged rollout
+- Feature flag Admin Folder mode until 100-file test and real-data reconciliation pass
+- Rollback application to prior revision while retaining additive tables/staging metadata; pause folder jobs before rollback
+- Do not delete staging volume during rollback; cleanup only through verified job
+
+## Confirmation Gate
+
+- First release enables TWD, HP and MH only but components/contracts are configuration-driven
+- User single-file and Admin folder permissions, 200-file limit, 3 concurrent uploads, 7-day retention, partial success, strict detection, HP_MH exception and Monitoring boundary follow the approved PRD
+- Product Owner confirmed Phase 1 implementation on 10 September 2026
+
+## Implementation Status — 10 September 2026
+
+- Phase 1 complete locally: role/file/folder limits, direct-level rule, detector registry, TWD strict importer wrapper, HP/MH shared-source detection and strict pair wrapper
+- Added additive manual_upload_batches and manual_upload_files models plus Alembic migration; existing Fact, Mapping, ImportBatch and SourceFile behavior remains unchanged
+- Added frontend API contracts and limits only; Import page components, layout, styles and current interaction behavior were not changed
+- Backend 147 tests, Frontend 87 tests, Ruff, ESLint, production build and offline PostgreSQL migration SQL generation passed
+- Phase 2 staging upload, endpoints and background worker have not started

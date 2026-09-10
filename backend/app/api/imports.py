@@ -27,6 +27,7 @@ from app.services.fileshare import (
     FileShareSettingsError,
     safe_fileshare_error,
 )
+from app.services.manual_upload_contracts import MAX_UPLOAD_BYTES
 from app.services.monitoring import capture_monitoring_snapshot
 from app.services.telegram import (
     TelegramDelivery,
@@ -40,7 +41,6 @@ from app.services.twd_import import (
 )
 
 router = APIRouter(prefix="/api/imports", tags=["imports"])
-MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 logger = logging.getLogger(__name__)
 
 
