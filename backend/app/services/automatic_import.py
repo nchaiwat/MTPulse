@@ -101,11 +101,7 @@ def _live_run_progress(session: Session, run: ImportRun) -> dict[str, object] | 
             "phase": "queued" if run.status == "queued" else "processing",
             "processed": processed,
             "total": run.found_count,
-            "percent": (
-                round(processed * 100 / run.found_count, 1)
-                if run.found_count
-                else 0
-            ),
+            "percent": (round(processed * 100 / run.found_count, 1) if run.found_count else 0),
             "lastProcessedFile": None,
             "lastProcessedPath": None,
             "lastActivityAt": None,
@@ -121,9 +117,7 @@ def _live_run_progress(session: Session, run: ImportRun) -> dict[str, object] | 
         }
 
     source_group = session.scalar(
-        select(ModernTrade.source_group_code).where(
-            ModernTrade.id == run.modern_trade_id
-        )
+        select(ModernTrade.source_group_code).where(ModernTrade.id == run.modern_trade_id)
     )
     if source_group == "HP_MH":
         return _live_hp_mh_progress(session, run)
@@ -165,11 +159,7 @@ def _live_run_progress(session: Session, run: ImportRun) -> dict[str, object] | 
     )
     return {
         "phase": (
-            "queued"
-            if run.status == "queued"
-            else "discovering"
-            if total == 0
-            else "processing"
+            "queued" if run.status == "queued" else "discovering" if total == 0 else "processing"
         ),
         "processed": processed,
         "total": total,
@@ -231,11 +221,7 @@ def _live_hp_mh_progress(session: Session, run: ImportRun) -> dict[str, object]:
         counts[key] for key in ("imported", "ready", "pending", "failed")
     )
     latest = rows[0] if rows else None
-    issues = [
-        row
-        for row in rows
-        if row.status in {"failed", "pending_review", "missing"}
-    ][:3]
+    issues = [row for row in rows if row.status in {"failed", "pending_review", "missing"}][:3]
     return {
         "phase": (
             "queued"
@@ -267,20 +253,27 @@ def run_payload(
     mt: ModernTrade | None = None,
     *,
     session: Session | None = None,
+    include_results: bool = True,
 ) -> dict[str, object]:
-    try:
-        results = json.loads(run.results_json or "[]")
-    except json.JSONDecodeError:
-        results = []
+    results = []
+    if include_results:
+        try:
+            results = json.loads(run.results_json or "[]")
+        except json.JSONDecodeError:
+            results = []
     progress = _live_run_progress(session, run) if session else None
-    counts = progress["counts"] if progress else {
-        "found": run.found_count,
-        "imported": run.imported_count,
-        "skipped": run.skipped_count,
-        "ready": run.ready_count,
-        "pending": run.pending_count,
-        "failed": run.failed_count,
-    }
+    counts = (
+        progress["counts"]
+        if progress
+        else {
+            "found": run.found_count,
+            "imported": run.imported_count,
+            "skipped": run.skipped_count,
+            "ready": run.ready_count,
+            "pending": run.pending_count,
+            "failed": run.failed_count,
+        }
+    )
     return {
         "runId": run.id,
         "mtCode": mt.code if mt else None,
@@ -295,9 +288,7 @@ def run_payload(
         "targetSku": run.target_sku,
         "rangeStart": run.range_start.isoformat() if run.range_start else None,
         "rangeEnd": run.range_end.isoformat() if run.range_end else None,
-        "stopRequestedAt": (
-            run.stop_requested_at.isoformat() if run.stop_requested_at else None
-        ),
+        "stopRequestedAt": (run.stop_requested_at.isoformat() if run.stop_requested_at else None),
         "requestedAt": run.requested_at.isoformat() if run.requested_at else None,
         "startedAt": run.started_at.isoformat() if run.started_at else None,
         "finishedAt": run.finished_at.isoformat() if run.finished_at else None,
@@ -328,9 +319,7 @@ def create_run(
     )
     if active is not None:
         raise ActiveRunError(f"{mt.code} กำลังประมวลผลอยู่ใน Run {active.id}")
-    selected_mode = mode or (
-        "import" if initial_scan_completed(session, mt.id) else "scan"
-    )
+    selected_mode = mode or ("import" if initial_scan_completed(session, mt.id) else "scan")
     run = ImportRun(
         modern_trade_id=mt.id,
         trigger=trigger,
@@ -355,9 +344,7 @@ def create_run(
                         "trigger": trigger,
                         "mode": selected_mode,
                         "scheduledLocalDate": (
-                            scheduled_local_date.isoformat()
-                            if scheduled_local_date
-                            else None
+                            scheduled_local_date.isoformat() if scheduled_local_date else None
                         ),
                     },
                     ensure_ascii=False,
@@ -490,10 +477,7 @@ def decide_twd_extract(
     if period_batch is not None:
         return ImportDecision(
             "pending_review",
-            (
-                f"วันที่ {extract.data_date:%d/%m/%Y} มี Batch "
-                f"{period_batch.id} แต่ checksum ต่างกัน"
-            ),
+            (f"วันที่ {extract.data_date:%d/%m/%Y} มี Batch {period_batch.id} แต่ checksum ต่างกัน"),
             period_batch.id,
         )
     if mode == "scan":
@@ -502,9 +486,11 @@ def decide_twd_extract(
 
 
 def _tolerable_stock_warnings(warnings: tuple[str, ...]) -> bool:
-    return bool(warnings) and all(
-        warning.startswith("Stock On Hand:") for warning in warnings
-    ) and any("#VALUE!" in warning for warning in warnings)
+    return (
+        bool(warnings)
+        and all(warning.startswith("Stock On Hand:") for warning in warnings)
+        and any("#VALUE!" in warning for warning in warnings)
+    )
 
 
 def _source_row(
@@ -533,10 +519,7 @@ def _source_row(
 
 
 def _unchanged_outcome(row: SourceFile, candidate: SourceCandidate) -> dict | None:
-    if (
-        row.size_bytes != candidate.size_bytes
-        or row.modified_at != candidate.modified_at
-    ):
+    if row.size_bytes != candidate.size_bytes or row.modified_at != candidate.modified_at:
         return None
     status = row.status
     if status == "missing":
@@ -544,17 +527,13 @@ def _unchanged_outcome(row: SourceFile, candidate: SourceCandidate) -> dict | No
     if not row.checksum_sha256 and status not in {"failed", "unsupported"}:
         return None
     if status == "ready" or (
-        status == "pending_review"
-        and row.error_message
-        and "#VALUE!" in row.error_message
+        status == "pending_review" and row.error_message and "#VALUE!" in row.error_message
     ):
         return None
     return {
         "path": candidate.path,
         "filename": candidate.filename,
-        "dataDate": (
-            row.detected_data_date.isoformat() if row.detected_data_date else None
-        ),
+        "dataDate": (row.detected_data_date.isoformat() if row.detected_data_date else None),
         "status": status,
         "message": row.error_message or "ไฟล์ไม่เปลี่ยนแปลง",
         "batchId": row.imported_batch_id,
@@ -711,9 +690,7 @@ def _mark_missing(
                 "path": row.source_path,
                 "filename": row.source_filename,
                 "dataDate": (
-                    row.detected_data_date.isoformat()
-                    if row.detected_data_date
-                    else None
+                    row.detected_data_date.isoformat() if row.detected_data_date else None
                 ),
                 "status": "missing",
                 "message": row.error_message,
@@ -731,7 +708,9 @@ def _finish_run(
 ) -> None:
     pending_sku_count = (
         session.scalar(
-            select(func.count()).select_from(SkuInterest).where(
+            select(func.count())
+            .select_from(SkuInterest)
+            .where(
                 SkuInterest.modern_trade_id == mt.id,
                 SkuInterest.status == "pending",
             )
@@ -741,9 +720,7 @@ def _finish_run(
     counts = {
         "imported": sum(item["status"] == "imported" for item in results),
         "ready": sum(item["status"] == "ready" for item in results),
-        "pending": sum(
-            item["status"] in {"pending_review", "missing"} for item in results
-        ),
+        "pending": sum(item["status"] in {"pending_review", "missing"} for item in results),
         "failed": sum(item["status"] == "failed" for item in results),
     }
     counts["skipped"] = len(results) - sum(counts.values())
@@ -753,11 +730,7 @@ def _finish_run(
     run.ready_count = counts["ready"]
     run.pending_count = counts["pending"]
     run.failed_count = counts["failed"]
-    run.status = (
-        "success_with_warnings"
-        if counts["pending"] or counts["failed"]
-        else "success"
-    )
+    run.status = "success_with_warnings" if counts["pending"] or counts["failed"] else "success"
     run.finished_at = bangkok_now()
     run.summary_message = (
         f"พบ {len(results)} · นำเข้า {counts['imported']} · "
@@ -792,10 +765,7 @@ def _finish_run(
     event_counts = {
         "imported": sum(item["status"] == "imported" for item in event_results),
         "ready": sum(item["status"] == "ready" for item in event_results),
-        "pending": sum(
-            item["status"] in {"pending_review", "missing"}
-            for item in event_results
-        ),
+        "pending": sum(item["status"] in {"pending_review", "missing"} for item in event_results),
         "failed": sum(item["status"] == "failed" for item in event_results),
     }
     event_counts["skipped"] = len(event_results) - sum(event_counts.values())
@@ -868,18 +838,18 @@ def process_run(session: Session, run_id: int) -> None:
         session.commit()
         results = []
         for index, candidate in enumerate(candidates, start=1):
-            run.summary_message = (
-                f"กำลังตรวจไฟล์ {index}/{len(candidates)} · {candidate.filename}"
-            )
+            run.summary_message = f"กำลังตรวจไฟล์ {index}/{len(candidates)} · {candidate.filename}"
             session.commit()
-            results.append(_process_candidate(
-                session,
-                run,
-                mt,
-                candidate,
-                username=username,
-                password=password,
-            ))
+            results.append(
+                _process_candidate(
+                    session,
+                    run,
+                    mt,
+                    candidate,
+                    username=username,
+                    password=password,
+                )
+            )
         results.extend(
             _mark_missing(
                 session,
@@ -901,9 +871,7 @@ def process_run(session: Session, run_id: int) -> None:
         elif isinstance(exc, (SMBException, OSError)):
             run.error_message = safe_fileshare_error(exc)
         else:
-            run.error_message = (
-                f"ประมวลผลไฟล์ไม่สำเร็จ: {type(exc).__name__}: {str(exc)}"
-            )[:1000]
+            run.error_message = (f"ประมวลผลไฟล์ไม่สำเร็จ: {type(exc).__name__}: {str(exc)}")[:1000]
         run.summary_message = "Run ไม่สำเร็จและไม่มีการลบข้อมูลเดิม"
         session.add(
             AuditEvent(

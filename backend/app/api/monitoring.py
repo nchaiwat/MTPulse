@@ -60,17 +60,28 @@ def _automatic_imports(session: Session) -> dict:
         .order_by(SkuInterest.last_seen_at.desc(), SkuInterest.id.desc())
         .limit(100)
     ).all()
+    run_items = []
+    included_backfill_results = False
+    for run, mt in run_rows:
+        include_results = run.mode == "sku_backfill" and not included_backfill_results
+        run_items.append(
+            run_payload(
+                run,
+                mt,
+                session=session,
+                include_results=include_results,
+            )
+        )
+        included_backfill_results |= include_results
     return {
-        "runs": [run_payload(run, mt, session=session) for run, mt in run_rows],
+        "runs": run_items,
         "pendingFiles": [
             {
                 "sourceFileId": source.id,
                 "mtCode": mt.code,
                 "filename": source.source_filename,
                 "dataDate": (
-                    source.detected_data_date.isoformat()
-                    if source.detected_data_date
-                    else None
+                    source.detected_data_date.isoformat() if source.detected_data_date else None
                 ),
                 "sourceFolderDate": _source_folder_date(source.source_path),
                 "status": source.status,
@@ -86,9 +97,7 @@ def _automatic_imports(session: Session) -> dict:
                 "mtCode": mt.code,
                 "sku": interest.source_sku,
                 "description": interest.source_description,
-                "status": (
-                    "pending" if interest.status == "pending" else "accepted"
-                ),
+                "status": ("pending" if interest.status == "pending" else "accepted"),
                 "firstSeenDate": interest.first_seen_date.isoformat(),
                 "lastSeenDate": interest.last_seen_date.isoformat(),
                 "lastSeenAt": interest.last_seen_at.isoformat(),

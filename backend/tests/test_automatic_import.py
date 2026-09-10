@@ -123,10 +123,7 @@ def test_stock_value_source_errors_are_ready_for_import(engine) -> None:
 
         warnings = (
             "Stock On Hand: calculated=78998.0, source=78473",
-            (
-                "Stock On Hand: พบเซลล์ต้นทาง #VALUE! จำนวน 35 เซลล์ "
-                "ระบบไม่นำมารวมยอด"
-            ),
+            ("Stock On Hand: พบเซลล์ต้นทาง #VALUE! จำนวน 35 เซลล์ ระบบไม่นำมารวมยอด"),
         )
         scan = decide_twd_extract(
             session,
@@ -315,6 +312,17 @@ def test_running_payload_reports_live_file_progress(engine) -> None:
             ],
         }
 
+        run.results_json = '[{"dataDate":"2026-09-01","status":"imported"}]'
+        assert (
+            run_payload(
+                run,
+                mt,
+                session=session,
+                include_results=False,
+            )["results"]
+            == []
+        )
+
 
 def test_initial_scan_registers_new_file_without_importing_fact(
     engine,
@@ -406,9 +414,7 @@ def test_initial_scan_continues_after_one_invalid_file(engine, monkeypatch) -> N
             size_bytes=size,
             modified_at=datetime(2026, 8, 31, tzinfo=UTC),
         )
-        for index, (name, size) in enumerate(
-            (("empty.xls", 0), ("valid.xlsx", 100))
-        )
+        for index, (name, size) in enumerate((("empty.xls", 0), ("valid.xlsx", 100)))
     ]
     monkeypatch.setattr(
         automatic_import,
@@ -467,9 +473,7 @@ def test_initial_scan_continues_after_one_invalid_file(engine, monkeypatch) -> N
         process_run(session, 1)
 
         run = session.get(ImportRun, 1)
-        sources = session.scalars(
-            select(SourceFile).order_by(SourceFile.source_filename)
-        ).all()
+        sources = session.scalars(select(SourceFile).order_by(SourceFile.source_filename)).all()
         assert run is not None
         assert run.status == "success_with_warnings"
         assert run.failed_count == 1

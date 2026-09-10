@@ -191,7 +191,7 @@ def collect_monitoring_metrics(session: Session) -> dict[str, object]:
     fact_summary = (
         select(
             SalesInventoryFact.modern_trade_id,
-            func.count(SalesInventoryFact.id).label("record_count"),
+            func.count().label("record_count"),
         )
         .group_by(SalesInventoryFact.modern_trade_id)
         .subquery()
