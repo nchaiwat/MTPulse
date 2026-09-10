@@ -5,6 +5,7 @@ import './styles/tailwind.css'
 import './styles/tokens.css'
 import './styles/app.css'
 import './styles/visual-refresh.css'
+import './styles/import-workspace.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

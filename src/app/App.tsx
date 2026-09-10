@@ -118,7 +118,7 @@ export function App() {
       </aside>
 
       <main className="app-main" id="main-content">
-        {!page.startsWith('performance') && !page.startsWith('dashboard') && page !== 'monitoring' && page !== 'settings' && (
+        {!page.startsWith('performance') && !page.startsWith('dashboard') && page !== 'imports' && page !== 'monitoring' && page !== 'settings' && (
           <header className="top-bar">
             <div><span className="eyebrow">{meta.eyebrow}</span><h1>{meta.title}</h1></div>
           </header>

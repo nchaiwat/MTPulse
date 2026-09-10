@@ -131,4 +131,47 @@ describe('ImportPage', () => {
     expect(await screen.findByText(/ยังไม่มีไฟล์พร้อมนำเข้า/)).toBeInTheDocument()
     expect(api.fetchFileShareReady).toHaveBeenCalledTimes(2)
   })
+
+  it('separates overview and activity by Modern Trade without changing TWD workflow', async () => {
+    api.fetchImportActivity.mockResolvedValue([
+      {
+        id: 1,
+        occurredAt: '2026-09-10T08:00:00+07:00',
+        action: 'import',
+        status: 'imported',
+        message: 'TWD import completed',
+        filename: 'twd.xls',
+        mtCode: 'TWD',
+        dataDate: '2026-09-09',
+        batchId: 10,
+      },
+      {
+        id: 2,
+        occurredAt: '2026-09-10T08:05:00+07:00',
+        action: 'import',
+        status: 'imported',
+        message: 'HP import completed',
+        filename: 'hp.zip',
+        mtCode: 'HP',
+        dataDate: '2026-09-09',
+        batchId: 11,
+      },
+    ])
+
+    render(<ImportPage />)
+
+    expect(screen.getByRole('tab', { name: /TWD/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByLabelText('เลือกไฟล์ Raw Data จากเครื่อง')).toBeInTheDocument()
+    expect(await screen.findByText('TWD import completed')).toBeInTheDocument()
+    expect(screen.queryByText('HP import completed')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('tab', { name: /ภาพรวม/ }))
+    expect(screen.getAllByText('HP import completed')).toHaveLength(2)
+    expect(screen.queryByLabelText('เลือกไฟล์ Raw Data จากเครื่อง')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('tab', { name: /HP/ }))
+    expect(screen.getByText('HP import completed')).toBeInTheDocument()
+    expect(screen.queryByText('TWD import completed')).not.toBeInTheDocument()
+    expect(screen.getByText(/ใช้ Source Group ร่วมกับ MH/)).toBeInTheDocument()
+  })
 })

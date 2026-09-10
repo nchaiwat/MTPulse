@@ -202,4 +202,16 @@ describe('App navigation', () => {
     expect(await screen.findByRole('heading', { level: 2, name: 'Matrix Performance ของ MegaHome (MH)' })).toBeInTheDocument()
     expect(requested.some((url) => url.includes('mt_code=MH'))).toBe(true)
   })
+
+  it('uses the compact Import-owned header without rendering the duplicate shell header', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ items: [] }), { status: 200 }),
+    )
+
+    render(<App />)
+    await userEvent.click(screen.getByRole('button', { name: 'สถานะข้อมูล นำเข้าข้อมูล' }))
+
+    expect(screen.getByRole('heading', { level: 1, name: 'นำเข้าข้อมูล' })).toBeInTheDocument()
+    expect(document.querySelector('.top-bar')).not.toBeInTheDocument()
+  })
 })

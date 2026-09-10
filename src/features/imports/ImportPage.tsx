@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle,
+  Building2,
   CheckCircle2,
   Database,
   FileSpreadsheet,
   History,
+  LayoutList,
   LoaderCircle,
   RefreshCw,
+  ShieldCheck,
 } from 'lucide-react'
 import {
   confirmFileShareImport,
@@ -25,6 +28,18 @@ import { formatDisplayDate, formatDisplayDateTime } from '../../shared/dateForma
 
 const number = new Intl.NumberFormat('th-TH', { maximumFractionDigits: 2 })
 type SourceMode = 'upload' | 'fileshare'
+type ImportWorkspaceTab = 'overview' | 'TWD' | 'HP' | 'MH'
+
+const workspaceTabs: Array<{
+  code: ImportWorkspaceTab
+  label: string
+  name: string
+}> = [
+  { code: 'overview', label: 'ภาพรวม', name: 'ทุก Modern Trade' },
+  { code: 'TWD', label: 'TWD', name: 'Thai Watsadu' },
+  { code: 'HP', label: 'HP', name: 'HomePro' },
+  { code: 'MH', label: 'MH', name: 'MegaHome' },
+]
 type WorkProgress = UploadProgress | {
   phase: 'fileshare' | 'importing'
   loaded: number
@@ -93,6 +108,7 @@ function statusLabel(status: string) {
 }
 
 export function ImportPage({ correctiveBatchId = null }: { correctiveBatchId?: number | null }) {
+  const [activeTab, setActiveTab] = useState<ImportWorkspaceTab>('TWD')
   const [sourceMode, setSourceMode] = useState<SourceMode>('upload')
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<ImportPreview | null>(null)
@@ -104,6 +120,10 @@ export function ImportPage({ correctiveBatchId = null }: { correctiveBatchId?: n
   const [progress, setProgress] = useState<WorkProgress | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const visibleActivities = activeTab === 'overview'
+    ? activities
+    : activities.filter((item) => item.mtCode.toUpperCase() === activeTab)
+  const selectedTab = workspaceTabs.find((tab) => tab.code === activeTab) ?? workspaceTabs[0]
 
   const loadActivity = () => fetchImportActivity().then(setActivities).catch(() => undefined)
   useEffect(() => { void loadActivity() }, [])
@@ -117,6 +137,13 @@ export function ImportPage({ correctiveBatchId = null }: { correctiveBatchId?: n
       setReadyState('error')
     }
   }, [])
+  const moveWorkspaceFocus = (nextTab: ImportWorkspaceTab) => {
+    if (busy !== null) return
+    setActiveTab(nextTab)
+    window.requestAnimationFrame(() => {
+      document.getElementById('import-tab-' + nextTab)?.focus()
+    })
+  }
   const changeSourceMode = (nextMode: SourceMode) => {
     if (busy !== null || nextMode === sourceMode) return
     setSourceMode(nextMode)
@@ -199,15 +226,78 @@ export function ImportPage({ correctiveBatchId = null }: { correctiveBatchId?: n
 
   return (
     <div className="import-page page-content">
+      <header className="import-operations-header">
+        <div>
+          <span className="eyebrow">Data operations</span>
+          <h1>นำเข้าข้อมูล</h1>
+          <p>ตรวจสอบ Modern Trade และความถูกต้องของไฟล์ก่อนบันทึกข้อมูลจริง</p>
+        </div>
+        <div className="import-safety-context" aria-label="มาตรฐานการนำเข้าข้อมูล">
+          <ShieldCheck size={17} aria-hidden="true" />
+          <span><small>Data protection</small><strong>Strict validation</strong></span>
+        </div>
+      </header>
+
+      <nav className="import-workspace-tabs" role="tablist" aria-label="Modern Trade">
+        {workspaceTabs.map((tab) => {
+          const activityCount = tab.code === 'overview'
+            ? activities.length
+            : activities.filter((item) => item.mtCode.toUpperCase() === tab.code).length
+          const selected = activeTab === tab.code
+          return (
+            <button
+              key={tab.code}
+              id={'import-tab-' + tab.code}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              aria-controls={'import-panel-' + tab.code}
+              tabIndex={selected ? 0 : -1}
+              disabled={busy !== null}
+              onClick={() => setActiveTab(tab.code)}
+              onKeyDown={(event) => {
+                const currentIndex = workspaceTabs.findIndex((item) => item.code === tab.code)
+                if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+                  event.preventDefault()
+                  const step = event.key === 'ArrowRight' ? 1 : -1
+                  const nextIndex = (
+                    currentIndex + step + workspaceTabs.length
+                  ) % workspaceTabs.length
+                  moveWorkspaceFocus(workspaceTabs[nextIndex].code)
+                }
+                if (event.key === 'Home' || event.key === 'End') {
+                  event.preventDefault()
+                  moveWorkspaceFocus(
+                    event.key === 'Home'
+                      ? workspaceTabs[0].code
+                      : workspaceTabs[workspaceTabs.length - 1].code,
+                  )
+                }
+              }}
+            >
+              {tab.code === 'overview'
+                ? <LayoutList size={16} aria-hidden="true" />
+                : <Building2 size={16} aria-hidden="true" />}
+              <span><strong>{tab.label}</strong><small>{tab.name}</small></span>
+              <b>{activityCount}</b>
+            </button>
+          )
+        })}
+      </nav>
+
       {correctiveBatchId !== null && <ImportCorrectivePanel batchId={correctiveBatchId} onCompleted={() => void loadActivity()} />}
-      <section className="import-workflow" aria-labelledby="import-heading">
-        <header className="import-intro">
+      {activeTab === 'TWD' && <section
+        id="import-panel-TWD"
+        className="import-workflow"
+        role="tabpanel"
+        aria-labelledby="import-tab-TWD"
+      >
+        <header className="import-workflow-heading">
           <div>
-            <span className="eyebrow">Data import</span>
-            <h2 id="import-heading">นำเข้าข้อมูล</h2>
-            <p>เลือกไฟล์จากเครื่องหรือ FileShare ระบบจะแสดงผลตรวจสอบก่อนนำเข้าจริง</p>
+            <span className="eyebrow">TWD manual import</span>
+            <h2>Thai Watsadu (TWD)</h2>
           </div>
-          <span className="import-scope"><strong>Phase 1</strong>TWD · .xls / .xlsx</span>
+          <span className="import-format-note">Excel · .xls / .xlsx</span>
         </header>
 
         <div className="import-source-bar">
@@ -317,13 +407,60 @@ export function ImportPage({ correctiveBatchId = null }: { correctiveBatchId?: n
             </footer>
           </div>
         )}
-      </section>
+      </section>}
+
+      {activeTab === 'overview' && (
+        <section
+          id="import-panel-overview"
+          className="import-overview-panel"
+          role="tabpanel"
+          aria-labelledby="import-tab-overview"
+        >
+          <header><span className="eyebrow">Import overview</span><h2>สถานะล่าสุดแยกตาม Modern Trade</h2></header>
+          <div className="import-mt-ledger">
+            {workspaceTabs.slice(1).map((tab) => {
+              const mtActivities = activities.filter(
+                (item) => item.mtCode.toUpperCase() === tab.code,
+              )
+              const latest = mtActivities[0]
+              return (
+                <article key={tab.code}>
+                  <span className="mt-ledger-code">{tab.code}</span>
+                  <div><strong>{tab.name}</strong><small>{latest ? latest.message : 'ยังไม่มีประวัติการนำเข้า'}</small></div>
+                  <div><b>{mtActivities.length}</b><small>รายการล่าสุด</small></div>
+                  <time>{latest ? formatDisplayDateTime(latest.occurredAt) : '—'}</time>
+                </article>
+              )
+            })}
+          </div>
+        </section>
+      )}
+
+      {(activeTab === 'HP' || activeTab === 'MH') && (
+        <section
+          id={'import-panel-' + activeTab}
+          className="import-mt-context-panel"
+          role="tabpanel"
+          aria-labelledby={'import-tab-' + activeTab}
+        >
+          <Building2 size={20} aria-hidden="true" />
+          <div>
+            <span className="eyebrow">{activeTab} data source</span>
+            <h2>{selectedTab.name} ({activeTab})</h2>
+            <p>
+              ใช้ Source Group ร่วมกับ {activeTab === 'HP' ? 'MH' : 'HP'}
+              {' '}ระบบตรวจคู่ Sales/Inventory แล้วแยกผลของแต่ละ MT ตาม Logic เดิม
+            </p>
+          </div>
+          <span className="import-connection-state">Shared source · HP_MH</span>
+        </section>
+      )}
 
       <section className="activity-panel" aria-labelledby="activity-heading">
-        <header><div><History size={18} aria-hidden="true" /><div><span className="eyebrow">Activity log</span><h3 id="activity-heading">ประวัติการทำงานล่าสุด</h3></div></div><button type="button" onClick={() => void loadActivity()}>Refresh</button></header>
+        <header><div><History size={18} aria-hidden="true" /><div><span className="eyebrow">Activity ledger</span><h3 id="activity-heading">ประวัติการทำงาน · {selectedTab.label}</h3></div></div><button type="button" onClick={() => void loadActivity()}>Refresh</button></header>
         <div className="activity-list">
-          {activities.length === 0 && <p className="empty-activity">ยังไม่มีประวัติการนำเข้าข้อมูล</p>}
-          {activities.map((item) => (
+          {visibleActivities.length === 0 && <p className="empty-activity">ยังไม่มีประวัติการนำเข้าข้อมูลของ {selectedTab.label}</p>}
+          {visibleActivities.map((item) => (
             <article key={item.id}>
               <span className={`activity-status ${item.status}`} aria-hidden="true" />
               <div><strong>{item.message}</strong><small>{item.mtCode} · {item.filename}{item.dataDate ? ` · ข้อมูล ${formatDisplayDate(item.dataDate)}` : ''}</small></div>
