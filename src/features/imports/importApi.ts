@@ -80,6 +80,31 @@ export interface ImportPreview {
   timings?: ImportTimings
 }
 
+export interface HpMhImportSummary {
+  rowCount: number
+  skuCount: number
+  branchCount: number
+  amount: number
+  salesQty: number
+  stockOnHand: number
+  stockValue: number
+  negativeRowCount: number
+}
+
+export interface HpMhImportPreview {
+  detectedSourceGroup: 'HP_MH'
+  detectedMtCodes: ['HP', 'MH']
+  dataDate: string
+  inventoryFilename: string
+  salesFilename: string
+  businessFingerprint: string
+  summaries: { HP: HpMhImportSummary; MH: HpMhImportSummary }
+  warnings: string[]
+  canImport: boolean
+  duplicateReason: string | null
+  timings?: ImportTimings
+}
+
 export interface ImportTimings {
   serverReadMs?: number
   downloadMs?: number
@@ -235,6 +260,37 @@ export async function confirmImport(
     timings?: ImportTimings
     notification: { status: string; message: string }
   }>('/api/imports/confirm', form, onProgress)
+}
+
+export async function previewHpMhImport(
+  inventoryFile: File,
+  salesFile: File,
+  onProgress?: (progress: UploadProgress) => void,
+): Promise<HpMhImportPreview> {
+  const form = new FormData()
+  form.append('inventory_file', inventoryFile)
+  form.append('sales_file', salesFile)
+  return uploadForm<HpMhImportPreview>('/api/imports/hp-mh/preview', form, onProgress)
+}
+
+export async function confirmHpMhImport(
+  inventoryFile: File,
+  salesFile: File,
+  fingerprint: string,
+  onProgress?: (progress: UploadProgress) => void,
+) {
+  const form = new FormData()
+  form.append('inventory_file', inventoryFile)
+  form.append('sales_file', salesFile)
+  form.append('expected_fingerprint', fingerprint)
+  return uploadForm<{
+    batchIds: { HP: number; MH: number }
+    status: string
+    message: string
+    dataDate: string
+    timings?: ImportTimings
+    notification: { status: string; message: string }
+  }>('/api/imports/hp-mh/confirm', form, onProgress)
 }
 
 export async function fetchFileShareReady(

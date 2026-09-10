@@ -1,5 +1,7 @@
+import asyncio
 from datetime import date, datetime
 from decimal import Decimal
+from io import BytesIO
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
@@ -8,10 +10,12 @@ from cryptography.fernet import Fernet
 from fastapi import HTTPException
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
+from starlette.datastructures import UploadFile
 
 from app.api import imports, system_settings
 from app.api.imports import _preview
 from app.database import Base
+from app.importers.hp_mh import HpMhMtExtract, HpMhPairExtract, HpMhSummary
 from app.importers.twd import TwdExtract, TwdSummary
 from app.models import ImportBatch, ModernTrade, SourceFile
 from app.services import telegram, twd_import
@@ -47,6 +51,46 @@ def extract(checksum: str, data_date: date = date(2026, 8, 18)) -> TwdExtract:
     )
 
 
+def hp_mh_pair(fingerprint: str = "b" * 64) -> HpMhPairExtract:
+    summary = HpMhSummary(
+        row_count=0,
+        store_count=0,
+        sku_count=0,
+        negative_row_count=0,
+        source_amount=Decimal("0"),
+        amount=Decimal("0"),
+        sales_qty=Decimal("0"),
+        stock_on_hand=Decimal("0"),
+        stock_value=Decimal("0"),
+    )
+    extracts = {
+        code: HpMhMtExtract(
+            code=code,
+            data_date=date(2026, 9, 9),
+            rows=(),
+            summary=summary,
+            sale_skus=frozenset(),
+            inventory_skus=frozenset(),
+            inventory_branches=frozenset(),
+        )
+        for code in ("HP", "MH")
+    }
+    return HpMhPairExtract(
+        data_date=date(2026, 9, 9),
+        inventory_path="manual-upload:Inventory.zip",
+        sales_path="manual-upload:Sales.zip",
+        inventory_filename="Inventory.zip",
+        sales_filename="Sales.zip",
+        inventory_checksum="c" * 64,
+        sales_checksum="d" * 64,
+        business_fingerprint=fingerprint,
+        hp=extracts["HP"],
+        mh=extracts["MH"],
+        ignored_branch_codes=(),
+        reconciliation_errors=(),
+    )
+
+
 def test_preview_is_read_only_and_reports_twd() -> None:
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
@@ -57,6 +101,82 @@ def test_preview_is_read_only_and_reports_twd() -> None:
     assert (before, after) == (0, 0)
     assert result["detectedMt"] == "TWD"
     assert result["canImport"] is True
+
+
+def test_hp_mh_preview_accepts_two_files_and_reports_both_mts(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    pair = hp_mh_pair()
+
+    async def read_pair(*_args):
+        return "Inventory.zip", b"inventory", "Sales.zip", b"sales"
+
+    monkeypatch.setattr(imports, "_read_hp_mh_files", read_pair)
+    monkeypatch.setattr(imports, "_extract_hp_mh_uploads", lambda *_args: pair)
+    monkeypatch.setattr(imports, "_record_hp_mh_pair", lambda *_args, **_kwargs: None)
+
+    with Session(engine) as session:
+        result = asyncio.run(
+            imports.preview_hp_mh_import(
+                session=session,
+                inventory_file=UploadFile(
+                    filename="Inventory.zip",
+                    file=BytesIO(b"inventory"),
+                ),
+                sales_file=UploadFile(
+                    filename="Sales.zip",
+                    file=BytesIO(b"sales"),
+                ),
+            )
+        )
+        batch_count = session.scalar(select(func.count()).select_from(ImportBatch))
+
+    assert batch_count == 0
+    assert result["detectedSourceGroup"] == "HP_MH"
+    assert result["detectedMtCodes"] == ["HP", "MH"]
+    assert result["canImport"] is True
+
+
+def test_hp_mh_confirm_rejects_files_changed_after_preview(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+
+    async def read_pair(*_args):
+        return "Inventory.zip", b"inventory", "Sales.zip", b"sales"
+
+    imported = False
+
+    def unexpected_import(*_args, **_kwargs):
+        nonlocal imported
+        imported = True
+
+    monkeypatch.setattr(imports, "_read_hp_mh_files", read_pair)
+    monkeypatch.setattr(
+        imports,
+        "_extract_hp_mh_uploads",
+        lambda *_args: hp_mh_pair("e" * 64),
+    )
+    monkeypatch.setattr(imports, "import_hp_mh_pair", unexpected_import)
+
+    with Session(engine) as session, pytest.raises(HTTPException) as error:
+        asyncio.run(
+            imports.confirm_hp_mh_import(
+                session=session,
+                inventory_file=UploadFile(
+                    filename="Inventory.zip",
+                    file=BytesIO(b"inventory"),
+                ),
+                sales_file=UploadFile(
+                    filename="Sales.zip",
+                    file=BytesIO(b"sales"),
+                ),
+                expected_fingerprint="f" * 64,
+            )
+        )
+
+    assert error.value.status_code == 409
+    assert "เปลี่ยนจากรอบ Preview" in str(error.value.detail)
+    assert imported is False
 
 
 def test_import_rejects_checksum_and_period_duplicates() -> None:

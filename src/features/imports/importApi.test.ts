@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { MANUAL_UPLOAD_LIMITS, previewImport } from './importApi'
+import { MANUAL_UPLOAD_LIMITS, previewHpMhImport, previewImport } from './importApi'
 
 class FakeEventTarget {
   private listeners = new Map<string, EventListener[]>()
@@ -95,6 +95,23 @@ describe('manual import upload transport', () => {
     xhr.emit('load', new Event('load'))
 
     await expect(request).rejects.toThrow('ตรวจสอบไฟล์ไม่ผ่าน')
+  })
+
+  it('sends the HP/MH inventory and sales pair to the dedicated preview endpoint', async () => {
+    const inventory = new File(['inventory'], 'Inventory.zip')
+    const sales = new File(['sales'], 'Sales.zip')
+    const request = previewHpMhImport(inventory, sales)
+    const xhr = FakeXMLHttpRequest.instances[0]
+    const body = xhr.body as FormData
+
+    expect(xhr.url).toContain('/api/imports/hp-mh/preview')
+    expect(body.get('inventory_file')).toBe(inventory)
+    expect(body.get('sales_file')).toBe(sales)
+
+    xhr.status = 200
+    xhr.responseText = JSON.stringify({ detectedSourceGroup: 'HP_MH' })
+    xhr.emit('load', new Event('load'))
+    await expect(request).resolves.toMatchObject({ detectedSourceGroup: 'HP_MH' })
   })
 
   it('rejects instead of hanging when a successful response is not valid JSON', async () => {

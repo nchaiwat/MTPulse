@@ -5,10 +5,12 @@ import { ImportPage } from './ImportPage'
 
 const api = vi.hoisted(() => ({
   confirmFileShareImport: vi.fn(),
+  confirmHpMhImport: vi.fn(),
   confirmImport: vi.fn(),
   fetchFileShareReady: vi.fn(),
   fetchImportActivity: vi.fn(),
   previewFileShareImport: vi.fn(),
+  previewHpMhImport: vi.fn(),
   previewImport: vi.fn(),
 }))
 
@@ -44,6 +46,40 @@ const success = {
   notification: { status: 'skipped', message: 'ยังไม่ได้ตั้งค่า Telegram' },
 }
 
+const hpMhPreview = {
+  detectedSourceGroup: 'HP_MH' as const,
+  detectedMtCodes: ['HP', 'MH'] as ['HP', 'MH'],
+  dataDate: '2026-09-09',
+  inventoryFilename: 'Inventory.zip',
+  salesFilename: 'Sales.zip',
+  businessFingerprint: 'b'.repeat(64),
+  summaries: {
+    HP: {
+      rowCount: 120,
+      skuCount: 30,
+      branchCount: 20,
+      amount: 1000,
+      salesQty: 40,
+      stockOnHand: 500,
+      stockValue: 7500,
+      negativeRowCount: 0,
+    },
+    MH: {
+      rowCount: 80,
+      skuCount: 25,
+      branchCount: 11,
+      amount: 800,
+      salesQty: 30,
+      stockOnHand: 300,
+      stockValue: 4500,
+      negativeRowCount: 0,
+    },
+  },
+  warnings: [],
+  canImport: true,
+  duplicateReason: null,
+}
+
 describe('ImportPage', () => {
   beforeEach(() => {
     Object.values(api).forEach((mock) => mock.mockReset())
@@ -55,8 +91,15 @@ describe('ImportPage', () => {
       sourceMode: 'fileshare',
       sourceFileId: 21,
     })
+    api.previewHpMhImport.mockResolvedValue(hpMhPreview)
     api.confirmImport.mockResolvedValue(success)
     api.confirmFileShareImport.mockResolvedValue(success)
+    api.confirmHpMhImport.mockResolvedValue({
+      ...success,
+      batchIds: { HP: 31, MH: 32 },
+      status: 'imported',
+      dataDate: '2026-09-09',
+    })
   })
 
   it('previews one TWD file and requires confirmation', async () => {
@@ -172,6 +215,33 @@ describe('ImportPage', () => {
     await userEvent.click(screen.getByRole('tab', { name: /HP/ }))
     expect(screen.getByText('HP import completed')).toBeInTheDocument()
     expect(screen.queryByText('TWD import completed')).not.toBeInTheDocument()
-    expect(screen.getByText(/ใช้ Source Group ร่วมกับ MH/)).toBeInTheDocument()
+    expect(screen.getByText(/HP และ MH ใช้คู่ไฟล์เดียวกัน/)).toBeInTheDocument()
+  })
+
+  it('provides a real HP/MH pair upload action and confirms both MTs together', async () => {
+    render(<ImportPage />)
+    await userEvent.click(screen.getByRole('tab', { name: /HP/ }))
+
+    const inventory = new File(['inventory'], 'Inventory.zip', { type: 'application/zip' })
+    const sales = new File(['sales'], 'Sales.zip', { type: 'application/zip' })
+    await userEvent.upload(screen.getByLabelText(/Inventory ZIP/), inventory)
+    await userEvent.upload(screen.getByLabelText(/Sales ZIP/), sales)
+    await userEvent.click(screen.getByRole('button', { name: 'ตรวจสอบคู่ไฟล์' }))
+
+    expect(await screen.findByText('HP + MH · 09/09/2026')).toBeInTheDocument()
+    expect(api.previewHpMhImport).toHaveBeenCalledWith(
+      inventory,
+      sales,
+      expect.any(Function),
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: 'ยืนยันนำเข้า HP และ MH' }))
+    expect(api.confirmHpMhImport).toHaveBeenCalledWith(
+      inventory,
+      sales,
+      hpMhPreview.businessFingerprint,
+      expect.any(Function),
+    )
+    expect(await screen.findByText(/นำเข้าข้อมูลสำเร็จ/)).toBeInTheDocument()
   })
 })

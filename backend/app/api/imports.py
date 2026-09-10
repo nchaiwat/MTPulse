@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_session
+from app.importers.hp_mh import HpMhFormatError, HpMhPairExtract, extract_hp_mh_pair
 from app.importers.twd import TwdExtract, TwdFormatError, extract_twd_file
 from app.models import AuditEvent, ImportBatch, ModernTrade, SkuInterest, SourceFile
 from app.services.automatic_import import (
@@ -27,6 +28,7 @@ from app.services.fileshare import (
     FileShareSettingsError,
     safe_fileshare_error,
 )
+from app.services.hp_mh_import import HpMhImportError, import_hp_mh_pair
 from app.services.manual_upload_contracts import MAX_UPLOAD_BYTES
 from app.services.monitoring import capture_monitoring_snapshot
 from app.services.telegram import (
@@ -96,12 +98,13 @@ def _record(
     batch_id: int | None = None,
     notification: TelegramDelivery | None = None,
     actor: str = "manual-upload",
+    mt_code: str = "TWD",
 ) -> None:
     payload = {
         "status": status,
         "message": message,
         "filename": Path(filename).name,
-        "mtCode": "TWD",
+        "mtCode": mt_code,
         "dataDate": data_date,
         "batchId": batch_id,
     }
@@ -121,6 +124,93 @@ def _record(
         )
     )
     session.commit()
+
+
+def _extract_hp_mh_uploads(
+    inventory_content: bytes,
+    inventory_filename: str,
+    sales_content: bytes,
+    sales_filename: str,
+) -> HpMhPairExtract:
+    inventory_name = Path(inventory_filename).name or "inventory.zip"
+    sales_name = Path(sales_filename).name or "sales.zip"
+    if Path(inventory_name).suffix.lower() != ".zip" or Path(sales_name).suffix.lower() != ".zip":
+        raise HpMhFormatError("HP/MH ต้องใช้ไฟล์ Inventory และ Sales นามสกุล .zip")
+    with tempfile.TemporaryDirectory(prefix="mtpulse-hp-mh-manual-") as temp_dir:
+        inventory_path = Path(temp_dir) / f"inventory-{inventory_name}"
+        sales_path = Path(temp_dir) / f"sales-{sales_name}"
+        inventory_path.write_bytes(inventory_content)
+        sales_path.write_bytes(sales_content)
+        pair = extract_hp_mh_pair(inventory_path, sales_path)
+    return replace(
+        pair,
+        inventory_path=f"manual-upload:{inventory_name}",
+        sales_path=f"manual-upload:{sales_name}",
+        inventory_filename=inventory_name,
+        sales_filename=sales_name,
+    )
+
+
+def _hp_mh_duplicate_reason(session: Session, pair: HpMhPairExtract) -> str | None:
+    trades = {
+        mt.code: mt
+        for mt in session.scalars(
+            select(ModernTrade).where(ModernTrade.code.in_(("HP", "MH")))
+        )
+    }
+    existing = {
+        code: session.scalar(
+            select(ImportBatch).where(
+                ImportBatch.modern_trade_id == trades[code].id,
+                ImportBatch.data_date == pair.data_date,
+            )
+        )
+        for code in ("HP", "MH")
+        if code in trades
+    }
+    present = [code for code, batch in existing.items() if batch is not None]
+    if present and len(present) != 2:
+        return "ข้อมูลวันเดิมของ HP/MH ไม่ครบคู่ กรุณาตรวจสอบก่อน Reimport"
+    if len(present) == 2 and all(
+        batch and batch.business_fingerprint == pair.business_fingerprint
+        for batch in existing.values()
+    ):
+        return "ข้อมูลธุรกิจชุดนี้ถูกนำเข้าแล้ว แม้ชื่อไฟล์อาจต่างกัน"
+    return None
+
+
+def _hp_mh_preview(
+    pair: HpMhPairExtract,
+    duplicate_reason: str | None,
+    *,
+    timings: dict[str, float] | None = None,
+) -> dict:
+    def summary(extract) -> dict:
+        values = extract.summary
+        return {
+            "rowCount": values.row_count,
+            "skuCount": values.sku_count,
+            "branchCount": values.store_count,
+            "amount": float(values.amount),
+            "salesQty": float(values.sales_qty),
+            "stockOnHand": float(values.stock_on_hand),
+            "stockValue": float(values.stock_value),
+            "negativeRowCount": values.negative_row_count,
+        }
+
+    return {
+        "detectedSourceGroup": "HP_MH",
+        "detectedMtCodes": ["HP", "MH"],
+        "dataDate": pair.data_date.isoformat(),
+        "inventoryFilename": pair.inventory_filename,
+        "salesFilename": pair.sales_filename,
+        "businessFingerprint": pair.business_fingerprint,
+        "summaries": {"HP": summary(pair.hp), "MH": summary(pair.mh)},
+        "warnings": list(pair.reconciliation_errors),
+        "canImport": duplicate_reason is None,
+        "duplicateReason": duplicate_reason,
+        "timings": timings or {},
+    }
 
 
 def _preview(
@@ -498,6 +588,167 @@ async def _read_file(file: UploadFile) -> tuple[str, bytes]:
     if not content:
         raise HTTPException(status_code=400, detail="ไฟล์ว่าง")
     return filename, content
+
+
+async def _read_hp_mh_files(
+    inventory_file: UploadFile,
+    sales_file: UploadFile,
+) -> tuple[str, bytes, str, bytes]:
+    inventory_name, inventory_content = await _read_file(inventory_file)
+    sales_name, sales_content = await _read_file(sales_file)
+    return inventory_name, inventory_content, sales_name, sales_content
+
+
+def _record_hp_mh_pair(
+    session: Session,
+    pair: HpMhPairExtract,
+    *,
+    action: str,
+    status: str,
+    message: str,
+    batch_ids: dict[str, int] | None = None,
+    notification: TelegramDelivery | None = None,
+) -> None:
+    filename = f"{pair.inventory_filename} + {pair.sales_filename}"
+    for code in ("HP", "MH"):
+        _record(
+            session,
+            checksum=f"{pair.business_fingerprint}:{code}",
+            action=action,
+            status=status,
+            message=message,
+            filename=filename,
+            data_date=pair.data_date.isoformat(),
+            batch_id=batch_ids.get(code) if batch_ids else None,
+            notification=notification,
+            mt_code=code,
+        )
+
+
+@router.post("/hp-mh/preview")
+async def preview_hp_mh_import(
+    session: Annotated[Session, Depends(get_session)],
+    inventory_file: Annotated[UploadFile, File()],
+    sales_file: Annotated[UploadFile, File()],
+) -> dict:
+    read_started = perf_counter()
+    inventory_name, inventory_content, sales_name, sales_content = (
+        await _read_hp_mh_files(inventory_file, sales_file)
+    )
+    read_finished = perf_counter()
+    try:
+        parse_started = perf_counter()
+        pair = _extract_hp_mh_uploads(
+            inventory_content,
+            inventory_name,
+            sales_content,
+            sales_name,
+        )
+        parse_finished = perf_counter()
+    except (HpMhFormatError, OSError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"ตรวจสอบคู่ไฟล์ HP/MH ไม่ผ่าน: {exc}",
+        ) from exc
+    duplicate_started = perf_counter()
+    duplicate_reason = _hp_mh_duplicate_reason(session, pair)
+    duplicate_finished = perf_counter()
+    _record_hp_mh_pair(
+        session,
+        pair,
+        action="hp_mh_preview",
+        status="duplicate" if duplicate_reason else "validated",
+        message=duplicate_reason or "ตรวจสอบคู่ไฟล์ HP/MH ผ่าน รอผู้ใช้ยืนยัน Import",
+    )
+    return _hp_mh_preview(
+        pair,
+        duplicate_reason,
+        timings={
+            "serverReadMs": round((read_finished - read_started) * 1000, 1),
+            "parseMs": round((parse_finished - parse_started) * 1000, 1),
+            "duplicateCheckMs": round(
+                (duplicate_finished - duplicate_started) * 1000,
+                1,
+            ),
+        },
+    )
+
+
+@router.post("/hp-mh/confirm")
+async def confirm_hp_mh_import(
+    session: Annotated[Session, Depends(get_session)],
+    inventory_file: Annotated[UploadFile, File()],
+    sales_file: Annotated[UploadFile, File()],
+    expected_fingerprint: Annotated[str, Form(max_length=64)],
+) -> dict:
+    inventory_name, inventory_content, sales_name, sales_content = (
+        await _read_hp_mh_files(inventory_file, sales_file)
+    )
+    try:
+        pair = _extract_hp_mh_uploads(
+            inventory_content,
+            inventory_name,
+            sales_content,
+            sales_name,
+        )
+        if pair.business_fingerprint != expected_fingerprint:
+            raise ValueError("คู่ไฟล์เปลี่ยนจากรอบ Preview กรุณาตรวจสอบใหม่")
+        import_started = perf_counter()
+        batches = import_hp_mh_pair(session, pair, actor="manual-upload")
+        import_finished = perf_counter()
+        session.commit()
+    except (HpMhFormatError, HpMhImportError, OSError, ValueError) as exc:
+        session.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    batch_ids = {code: batch.id for code, batch in batches.items()}
+    delivery = send_telegram(
+        session,
+        "✅ นำเข้าข้อมูล HomePro และ MegaHome สำเร็จ",
+        [
+            "🏪 Modern Trade: HomePro (HP) + MegaHome (MH)",
+            "📥 วิธีนำเข้า: Manual Upload",
+            f"📅 วันที่ข้อมูล: {format_thai_date(pair.data_date)}",
+            f"📄 Inventory: {pair.inventory_filename}",
+            f"📄 Sales: {pair.sales_filename}",
+            f"🆔 Batch HP: {batch_ids['HP']} · MH: {batch_ids['MH']}",
+        ],
+    )
+    message = f"นำเข้าข้อมูล HP และ MH วันที่ {format_thai_date(pair.data_date)} สำเร็จ"
+    import_status = (
+        "imported_with_warnings"
+        if pair.reconciliation_errors
+        else "imported"
+    )
+    _record_hp_mh_pair(
+        session,
+        pair,
+        action="import_completed",
+        status=import_status,
+        message=message,
+        batch_ids=batch_ids,
+        notification=delivery,
+    )
+    try:
+        capture_monitoring_snapshot(session, trigger="import", upsert_today=True)
+    except Exception:
+        session.rollback()
+        logger.exception(
+            "HP/MH import completed, but the daily monitoring snapshot could not be saved"
+        )
+    return {
+        "batchIds": batch_ids,
+        "status": import_status,
+        "message": message,
+        "dataDate": pair.data_date.isoformat(),
+        "timings": {
+            "importMs": round((import_finished - import_started) * 1000, 1),
+        },
+        "notification": {
+            "status": delivery.status,
+            "message": delivery.message,
+        },
+    }
 
 
 @router.post("/preview")

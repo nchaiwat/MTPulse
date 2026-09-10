@@ -13,12 +13,15 @@ import {
 } from 'lucide-react'
 import {
   confirmFileShareImport,
+  confirmHpMhImport,
   confirmImport,
   fetchFileShareReady,
   fetchImportActivity,
   previewFileShareImport,
+  previewHpMhImport,
   previewImport,
   type FileShareReadyFile,
+  type HpMhImportPreview,
   type ImportActivity,
   type ImportPreview,
   type UploadProgress,
@@ -119,6 +122,12 @@ export function ImportPage({ correctiveBatchId = null }: { correctiveBatchId?: n
   const [busy, setBusy] = useState<'preview' | 'confirm' | null>(null)
   const [progress, setProgress] = useState<WorkProgress | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  const [hpMhFiles, setHpMhFiles] = useState<{
+    inventory: File | null
+    sales: File | null
+  }>({ inventory: null, sales: null })
+  const [hpMhPreview, setHpMhPreview] = useState<HpMhImportPreview | null>(null)
+  const [hpMhMessage, setHpMhMessage] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const visibleActivities = activeTab === 'overview'
     ? activities
@@ -217,6 +226,60 @@ export function ImportPage({ correctiveBatchId = null }: { correctiveBatchId?: n
       void loadActivity()
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'นำเข้าข้อมูลไม่สำเร็จ')
+      void loadActivity()
+    } finally {
+      setProgress(null)
+      setBusy(null)
+    }
+  }
+
+  const inspectHpMh = async () => {
+    if (!hpMhFiles.inventory || !hpMhFiles.sales) return
+    setBusy('preview')
+    setHpMhMessage(null)
+    setHpMhPreview(null)
+    try {
+      setHpMhPreview(
+        await previewHpMhImport(
+          hpMhFiles.inventory,
+          hpMhFiles.sales,
+          setProgress,
+        ),
+      )
+    } catch (error) {
+      setHpMhMessage(
+        error instanceof Error ? error.message : 'ตรวจสอบคู่ไฟล์ HP/MH ไม่สำเร็จ',
+      )
+      void loadActivity()
+    } finally {
+      setProgress(null)
+      setBusy(null)
+    }
+  }
+
+  const confirmHpMh = async () => {
+    if (
+      !hpMhPreview?.canImport
+      || !hpMhFiles.inventory
+      || !hpMhFiles.sales
+    ) return
+    setBusy('confirm')
+    setHpMhMessage(null)
+    try {
+      const result = await confirmHpMhImport(
+        hpMhFiles.inventory,
+        hpMhFiles.sales,
+        hpMhPreview.businessFingerprint,
+        setProgress,
+      )
+      setHpMhMessage(`${result.message} · ${result.notification.message}`)
+      setHpMhFiles({ inventory: null, sales: null })
+      setHpMhPreview(null)
+      void loadActivity()
+    } catch (error) {
+      setHpMhMessage(
+        error instanceof Error ? error.message : 'นำเข้าข้อมูล HP/MH ไม่สำเร็จ',
+      )
       void loadActivity()
     } finally {
       setProgress(null)
@@ -439,20 +502,134 @@ export function ImportPage({ correctiveBatchId = null }: { correctiveBatchId?: n
       {(activeTab === 'HP' || activeTab === 'MH') && (
         <section
           id={'import-panel-' + activeTab}
-          className="import-mt-context-panel"
+          className="import-workflow import-hp-mh-workflow"
           role="tabpanel"
           aria-labelledby={'import-tab-' + activeTab}
         >
-          <Building2 size={20} aria-hidden="true" />
-          <div>
-            <span className="eyebrow">{activeTab} data source</span>
-            <h2>{selectedTab.name} ({activeTab})</h2>
+          <header className="import-workflow-heading">
+            <div>
+              <span className="eyebrow">HP/MH manual import</span>
+              <h2>{selectedTab.name} ({activeTab})</h2>
+            </div>
+            <span className="import-format-note">Shared pair · 2 ZIP files</span>
+          </header>
+
+          <div className="hp-mh-source-note">
+            <Building2 size={18} aria-hidden="true" />
             <p>
-              ใช้ Source Group ร่วมกับ {activeTab === 'HP' ? 'MH' : 'HP'}
-              {' '}ระบบตรวจคู่ Sales/Inventory แล้วแยกผลของแต่ละ MT ตาม Logic เดิม
+              HP และ MH ใช้คู่ไฟล์เดียวกัน ระบบจะตรวจ Inventory/Sales และนำเข้าทั้งสอง MT
+              พร้อมกัน โดยแยกข้อมูลของแต่ละ MT ตาม Logic เดิม
             </p>
           </div>
-          <span className="import-connection-state">Shared source · HP_MH</span>
+
+          <div className="hp-mh-file-grid">
+            <label>
+              <span>1 · Inventory ZIP</span>
+              <input
+                type="file"
+                accept=".zip"
+                disabled={busy !== null}
+                onChange={(event) => {
+                  const selectedFile = event.target.files?.[0] ?? null
+                  setHpMhFiles((current) => ({ ...current, inventory: selectedFile }))
+                  setHpMhPreview(null)
+                  setHpMhMessage(null)
+                }}
+              />
+              <small>
+                {hpMhFiles.inventory
+                  ? `${hpMhFiles.inventory.name} · ${number.format(hpMhFiles.inventory.size / 1024)} KB`
+                  : 'ZIP ที่ภายในมี InventoryData.csv'}
+              </small>
+            </label>
+            <label>
+              <span>2 · Sales ZIP</span>
+              <input
+                type="file"
+                accept=".zip"
+                disabled={busy !== null}
+                onChange={(event) => {
+                  const selectedFile = event.target.files?.[0] ?? null
+                  setHpMhFiles((current) => ({ ...current, sales: selectedFile }))
+                  setHpMhPreview(null)
+                  setHpMhMessage(null)
+                }}
+              />
+              <small>
+                {hpMhFiles.sales
+                  ? `${hpMhFiles.sales.name} · ${number.format(hpMhFiles.sales.size / 1024)} KB`
+                  : 'ZIP ที่ภายในมี SalesData.csv'}
+              </small>
+            </label>
+            <button
+              className="primary-action hp-mh-preview-action"
+              type="button"
+              disabled={!hpMhFiles.inventory || !hpMhFiles.sales || busy !== null}
+              onClick={() => void inspectHpMh()}
+            >
+              {busy === 'preview' ? 'กำลังตรวจสอบ…' : 'ตรวจสอบคู่ไฟล์'}
+            </button>
+          </div>
+
+          {progress && <ImportProgress progress={progress} />}
+          {hpMhMessage && <div className="import-message" role="status">{hpMhMessage}</div>}
+
+          {hpMhPreview && (
+            <div className="preview-stage hp-mh-preview" data-blocked={!hpMhPreview.canImport || undefined}>
+              <header>
+                <div>
+                  <span className="stage-number">3</span>
+                  <div>
+                    <span className="eyebrow">ผลการตรวจสอบ</span>
+                    <h3>HP + MH · {formatDisplayDate(hpMhPreview.dataDate)}</h3>
+                  </div>
+                </div>
+                <span className={`preview-state ${hpMhPreview.canImport ? 'ready' : 'blocked'}`}>
+                  {hpMhPreview.canImport ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+                  {hpMhPreview.canImport ? 'พร้อมนำเข้า' : 'ไม่สามารถนำเข้า'}
+                </span>
+              </header>
+              <div className="hp-mh-summary-grid">
+                {(['HP', 'MH'] as const).map((code) => {
+                  const summary = hpMhPreview.summaries[code]
+                  return (
+                    <article key={code}>
+                      <strong>{code === 'HP' ? 'HomePro (HP)' : 'MegaHome (MH)'}</strong>
+                      <dl>
+                        <div><dt>รายการ</dt><dd>{number.format(summary.rowCount)}</dd></div>
+                        <div><dt>SKU</dt><dd>{number.format(summary.skuCount)}</dd></div>
+                        <div><dt>Branch</dt><dd>{number.format(summary.branchCount)}</dd></div>
+                        <div><dt>Amount</dt><dd>{number.format(summary.amount)}</dd></div>
+                        <div><dt>Sales Qty</dt><dd>{number.format(summary.salesQty)}</dd></div>
+                        <div><dt>Stock</dt><dd>{number.format(summary.stockOnHand)}</dd></div>
+                      </dl>
+                    </article>
+                  )
+                })}
+              </div>
+              {hpMhPreview.warnings.length > 0 && (
+                <div className="preview-warning">
+                  <AlertTriangle size={16} />{hpMhPreview.warnings.join(' · ')}
+                </div>
+              )}
+              {hpMhPreview.duplicateReason && (
+                <div className="preview-warning blocked">
+                  <AlertTriangle size={16} />{hpMhPreview.duplicateReason}
+                </div>
+              )}
+              <footer>
+                <small>ยืนยันครั้งเดียว ระบบจะบันทึก HP และ MH พร้อมกันจากคู่ไฟล์ที่ตรวจแล้ว</small>
+                <button
+                  className="primary-action"
+                  type="button"
+                  disabled={!hpMhPreview.canImport || busy !== null}
+                  onClick={() => void confirmHpMh()}
+                >
+                  {busy === 'confirm' ? 'กำลังนำเข้า…' : 'ยืนยันนำเข้า HP และ MH'}
+                </button>
+              </footer>
+            </div>
+          )}
         </section>
       )}
 
