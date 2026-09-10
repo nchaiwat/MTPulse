@@ -106,10 +106,9 @@ def _slow_queries(session: Session) -> tuple[bool, list[dict[str, object]]]:
             rows = session.execute(
                 text(
                     """
-                    SELECT query, calls, mean_exec_time, total_exec_time, rows
-                    FROM pg_stat_statements
+                    SELECT queryid, calls, mean_exec_time, total_exec_time, rows
+                    FROM pg_stat_statements(false)
                     WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database())
-                      AND query NOT ILIKE '%pg_stat_statements%'
                     ORDER BY total_exec_time DESC
                     LIMIT 10
                     """
@@ -119,7 +118,7 @@ def _slow_queries(session: Session) -> tuple[bool, list[dict[str, object]]]:
         return False, []
     return True, [
         {
-            "query": " ".join(str(row["query"]).split())[:500],
+            "query": f"Query ID {row['queryid']}",
             "calls": int(row["calls"] or 0),
             "meanTimeMs": round(float(row["mean_exec_time"] or 0), 3),
             "totalTimeMs": round(float(row["total_exec_time"] or 0), 3),
