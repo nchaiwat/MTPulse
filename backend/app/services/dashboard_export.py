@@ -118,14 +118,15 @@ def build_dashboard_workbook(report: dict, *, metric: str) -> bytes:
     ]
     row = _write_headers(sheet, row, monthly_headers, sky, navy)
     for item in report["monthly"]:
+        current_available = item.get("currentAvailable", True)
         values = [
             item["monthKey"],
             item["previousAmount"],
-            item["currentAmount"],
+            item["currentAmount"] if current_available else None,
             _percent(item["amountYoY"]),
             _percent(item["amountMoM"]),
             item["previousQty"],
-            item["currentQty"],
+            item["currentQty"] if current_available else None,
             _percent(item["qtyYoY"]),
         ]
         _write_values(sheet, row, values, thin_border)

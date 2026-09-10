@@ -98,3 +98,34 @@ def test_dashboard_export_filename_contains_active_filters() -> None:
         "qty",
         datetime(2026, 9, 9, 1, 2, 3, tzinfo=UTC),
     ) == "TWD_Dashboard_2026_H1_Qty_20260909_080203.xlsx"
+
+
+def test_dashboard_workbook_leaves_future_full_year_values_blank() -> None:
+    report = _dashboard()
+    report["meta"]["period"] = "full"
+    report["monthly"].append(
+        {
+            "month": 2,
+            "monthKey": "2026-02",
+            "currentAvailable": False,
+            "currentAmount": 0,
+            "previousAmount": 30_000_000,
+            "amountYoY": None,
+            "amountMoM": None,
+            "currentQty": 0,
+            "previousQty": 12_000,
+            "qtyYoY": None,
+        }
+    )
+
+    workbook = openpyxl.load_workbook(
+        BytesIO(build_dashboard_workbook(report, metric="amount")),
+        data_only=False,
+    )
+    sheet = workbook["Dashboard"]
+
+    assert sheet["B11"].value == 30_000_000
+    assert sheet["C11"].value is None
+    assert sheet["F11"].value == 12_000
+    assert sheet["G11"].value is None
+    workbook.close()

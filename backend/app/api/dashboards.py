@@ -39,7 +39,7 @@ def _period_months(period: Period, selected_year: int, latest_date: date) -> lis
         "h2": (7, 12),
         "full": (1, 12),
     }[period]
-    if selected_year == latest_date.year:
+    if selected_year == latest_date.year and period != "full":
         end = min(end, latest_date.month)
     return list(range(start, end + 1)) if end >= start else []
 
@@ -187,6 +187,9 @@ def _dashboard(
     monthly = []
     prior_current_amount: Decimal | None = None
     for month in months:
+        current_available = (
+            selected_year != latest_date.year or month <= latest_date.month
+        )
         current_amount = monthly_amount.get((selected_year, month), Decimal(0))
         previous_amount = monthly_amount.get((previous_year, month), Decimal(0))
         current_qty = monthly_qty.get((selected_year, month), Decimal(0))
@@ -195,20 +198,28 @@ def _dashboard(
             {
                 "month": month,
                 "monthKey": f"{selected_year}-{month:02d}",
+                "currentAvailable": current_available,
                 "currentAmount": _number(current_amount),
                 "previousAmount": _number(previous_amount),
-                "amountYoY": _change(current_amount, previous_amount),
+                "amountYoY": (
+                    _change(current_amount, previous_amount)
+                    if current_available
+                    else None
+                ),
                 "amountMoM": (
                     _change(current_amount, prior_current_amount)
-                    if prior_current_amount is not None
+                    if current_available and prior_current_amount is not None
                     else None
                 ),
                 "currentQty": _number(current_qty),
                 "previousQty": _number(previous_qty),
-                "qtyYoY": _change(current_qty, previous_qty),
+                "qtyYoY": (
+                    _change(current_qty, previous_qty) if current_available else None
+                ),
             }
         )
-        prior_current_amount = current_amount
+        if current_available:
+            prior_current_amount = current_amount
 
     current_amount = sum(
         (monthly_amount.get((selected_year, month), Decimal(0)) for month in months),
@@ -273,7 +284,11 @@ def _dashboard(
             months[-1],
             monthrange(selected_year, months[-1])[1],
         )
-        range_to = min(latest_date, period_end) if selected_year == latest_date.year else period_end
+        range_to = (
+            min(latest_date, period_end)
+            if selected_year == latest_date.year and period != "full"
+            else period_end
+        )
         loaded_days = session.scalar(
             select(func.count(distinct(ImportBatch.data_date))).where(
                 *batch_filter,

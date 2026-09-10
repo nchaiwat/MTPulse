@@ -10,6 +10,14 @@ function valueOf(row: DashboardMonth, metric: DashboardMetric, current: boolean)
   return current ? row.currentAmount : row.previousAmount
 }
 
+function currentAvailable(row: DashboardMonth) {
+  return row.currentAvailable !== false
+}
+
+function displayValue(row: DashboardMonth, metric: DashboardMetric, current: boolean) {
+  return current && !currentAvailable(row) ? '–' : exact.format(valueOf(row, metric, current))
+}
+
 export function TrendChart({
   rows,
   metric,
@@ -28,11 +36,18 @@ export function TrendChart({
   const right = 18
   const top = 20
   const bottom = 38
-  const values = rows.flatMap((row) => [valueOf(row, metric, true), valueOf(row, metric, false)])
+  const values = rows.flatMap((row) => [
+    valueOf(row, metric, false),
+    ...(currentAvailable(row) ? [valueOf(row, metric, true)] : []),
+  ])
   const maxValue = Math.max(...values, 1)
   const x = (index: number) => left + (index * (width - left - right)) / Math.max(rows.length - 1, 1)
   const y = (value: number) => top + (1 - value / maxValue) * (height - top - bottom)
-  const points = (current: boolean) => rows.map((row, index) => `${x(index)},${y(valueOf(row, metric, current))}`).join(' ')
+  const points = (current: boolean) => rows
+    .map((row, index) => ({ row, index }))
+    .filter(({ row }) => !current || currentAvailable(row))
+    .map(({ row, index }) => `${x(index)},${y(valueOf(row, metric, current))}`)
+    .join(' ')
 
   const activeRow = activeIndex === null ? null : rows[activeIndex]
   return (
@@ -50,14 +65,14 @@ export function TrendChart({
           key={row.monthKey}
           tabIndex={0}
           role="button"
-          aria-label={`${monthNames[row.month - 1]} ${currentYear}: ${exact.format(valueOf(row, metric, true))}, ${previousYear}: ${exact.format(valueOf(row, metric, false))}`}
+          aria-label={`${monthNames[row.month - 1]} ${currentYear}: ${displayValue(row, metric, true)}, ${previousYear}: ${displayValue(row, metric, false)}`}
           onMouseEnter={() => setActiveIndex(index)}
           onFocus={() => setActiveIndex(index)}
           onBlur={() => setActiveIndex(null)}
         >
-          <circle className="chart-hit-area" cx={x(index)} cy={Math.min(y(valueOf(row, metric, false)), y(valueOf(row, metric, true)))} r="13" />
+          <circle className="chart-hit-area" cx={x(index)} cy={currentAvailable(row) ? Math.min(y(valueOf(row, metric, false)), y(valueOf(row, metric, true))) : y(valueOf(row, metric, false))} r="13" />
           <circle className="previous-point" cx={x(index)} cy={y(valueOf(row, metric, false))} r="3" />
-          <circle className="current-point" cx={x(index)} cy={y(valueOf(row, metric, true))} r="3.5" />
+          {currentAvailable(row) && <circle className="current-point" cx={x(index)} cy={y(valueOf(row, metric, true))} r="3.5" />}
           <text className="month-label" x={x(index)} y={height - 12}>{monthNames[row.month - 1]}</text>
         </g>
       ))}
@@ -65,8 +80,8 @@ export function TrendChart({
     {activeRow && activeIndex !== null && (
       <div className="chart-tooltip line-tooltip" style={{ left: `clamp(96px, ${(x(activeIndex) / width) * 100}%, calc(100% - 96px))` }} role="status">
         <strong>{monthNames[activeRow.month - 1]} {currentYear}</strong>
-        <span><i className="current-swatch" />{currentYear}<b>{exact.format(valueOf(activeRow, metric, true))}</b></span>
-        <span><i className="previous-swatch" />{previousYear}<b>{exact.format(valueOf(activeRow, metric, false))}</b></span>
+        <span><i className="current-swatch" />{currentYear}<b>{displayValue(activeRow, metric, true)}</b></span>
+        <span><i className="previous-swatch" />{previousYear}<b>{displayValue(activeRow, metric, false)}</b></span>
       </div>
     )}
     </div>
@@ -85,19 +100,22 @@ export function MonthlyBars({
   previousYear: number
 }) {
   const maxValue = Math.max(
-    ...rows.flatMap((row) => [valueOf(row, metric, true), valueOf(row, metric, false)]),
+    ...rows.flatMap((row) => [
+      valueOf(row, metric, false),
+      ...(currentAvailable(row) ? [valueOf(row, metric, true)] : []),
+    ]),
     1,
   )
   return (
     <div className="monthly-bars" role="group" aria-label="กราฟแท่งเปรียบเทียบรายเดือน">
       {rows.map((row) => (
-        <button className="month-bar-group" type="button" key={row.monthKey} aria-label={`${monthNames[row.month - 1]} ${currentYear}: ${exact.format(valueOf(row, metric, true))}, ${previousYear}: ${exact.format(valueOf(row, metric, false))}`}>
+        <button className="month-bar-group" type="button" key={row.monthKey} aria-label={`${monthNames[row.month - 1]} ${currentYear}: ${displayValue(row, metric, true)}, ${previousYear}: ${displayValue(row, metric, false)}`}>
           <div className="bar-pair">
             <span className="previous-bar" style={{ height: `${(valueOf(row, metric, false) / maxValue) * 100}%` }} />
-            <span className="current-bar" style={{ height: `${(valueOf(row, metric, true) / maxValue) * 100}%` }} />
+            {currentAvailable(row) && <span className="current-bar" style={{ height: `${(valueOf(row, metric, true) / maxValue) * 100}%` }} />}
           </div>
           <small>{monthNames[row.month - 1]}</small>
-          <span className="chart-tooltip"><strong>{monthNames[row.month - 1]} {currentYear}</strong><span><i className="current-swatch" />{currentYear}<b>{exact.format(valueOf(row, metric, true))}</b></span><span><i className="previous-swatch" />{previousYear}<b>{exact.format(valueOf(row, metric, false))}</b></span></span>
+          <span className="chart-tooltip"><strong>{monthNames[row.month - 1]} {currentYear}</strong><span><i className="current-swatch" />{currentYear}<b>{displayValue(row, metric, true)}</b></span><span><i className="previous-swatch" />{previousYear}<b>{displayValue(row, metric, false)}</b></span></span>
         </button>
       ))}
     </div>

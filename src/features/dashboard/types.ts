@@ -28,6 +28,7 @@ export interface DashboardSummary {
 export interface DashboardMonth {
   month: number
   monthKey: string
+  currentAvailable?: boolean
   currentAmount: number
   previousAmount: number
   amountYoY: number | null

@@ -5,7 +5,7 @@ from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.api.dashboards import twd_dashboard
+from app.api.dashboards import _period_months, twd_dashboard
 from app.database import Base
 from app.models import BranchMapping, ImportBatch, ModernTrade, MonthlySalesSummary
 
@@ -100,6 +100,37 @@ def test_twd_dashboard_compares_same_h1_months_and_does_not_mix_mt() -> None:
     assert result["topBranches"][0]["displayName"] == "B2 - ภูเก็ต เฟสติวัล (CTW-0048)"
     assert result["topSkus"][0]["sku"] == "SKU2"
     assert all(row["branchCode"] != "B9" for row in result["topBranches"])
+
+
+def test_full_year_keeps_twelve_months_but_ytd_stops_at_latest_month() -> None:
+    latest = date(2026, 9, 8)
+
+    assert _period_months("ytd", 2026, latest) == list(range(1, 10))
+    assert _period_months("full", 2026, latest) == list(range(1, 13))
+
+
+def test_current_full_year_marks_future_months_unavailable() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add_all(
+            [
+                ModernTrade(id=1, code="TWD", name="ไทวัสดุ"),
+                _batch(1, 1, date(2025, 12, 31)),
+                _batch(2, 1, date(2026, 9, 8)),
+                _summary(1, 2025, 12, "B1", "SKU1", 100, 10),
+                _summary(1, 2026, 9, "B1", "SKU1", 120, 12),
+            ]
+        )
+        session.commit()
+        result = twd_dashboard(session=session, year=2026, period="full")
+
+    assert [row["month"] for row in result["monthly"]] == list(range(1, 13))
+    assert result["monthly"][8]["currentAvailable"] is True
+    assert result["monthly"][9]["currentAvailable"] is False
+    assert result["monthly"][9]["amountYoY"] is None
+    assert result["meta"]["rangeTo"] == date(2026, 12, 31)
+    assert result["meta"]["expectedDays"] == 365
 
 
 def test_twd_dashboard_returns_empty_contract_without_imports() -> None:

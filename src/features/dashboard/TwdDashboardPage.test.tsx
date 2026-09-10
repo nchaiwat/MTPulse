@@ -104,4 +104,36 @@ describe('TwdDashboardPage', () => {
     expect(chartTargets[0]).toHaveAttribute('tabindex', '0')
     expect(within(chartTargets[1]).getByText('ม.ค. 2026')).toBeInTheDocument()
   })
+
+  it('shows future full-year months as unavailable instead of zero', async () => {
+    const fullYearResponse = {
+      ...response,
+      meta: { ...response.meta, period: 'full' },
+      monthly: [
+        response.monthly[0],
+        {
+          ...response.monthly[0],
+          month: 2,
+          monthKey: '2026-02',
+          currentAvailable: false,
+          currentAmount: 0,
+          previousAmount: 900,
+          amountYoY: null,
+          amountMoM: null,
+          currentQty: 0,
+          previousQty: 9,
+          qtyYoY: null,
+        },
+      ],
+    }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(fullYearResponse), { status: 200 }),
+    )
+    render(<TwdDashboardPage onOpenReport={vi.fn()} />)
+
+    await screen.findByRole('heading', { name: 'ภาพรวม Performance ของ TWD' })
+    expect(screen.getAllByRole('button', { name: /ก.พ. 2026: –, 2025: 900/ })).toHaveLength(2)
+    const ledgerRow = screen.getByRole('row', { name: /ก.พ. 2026 900 –/ })
+    expect(within(ledgerRow).getAllByText('–').length).toBeGreaterThanOrEqual(2)
+  })
 })
