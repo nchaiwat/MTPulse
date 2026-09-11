@@ -235,6 +235,50 @@ def test_import_confirms_existing_pending_mapping_when_excel_is_confirmed() -> N
     )
 
 
+def test_import_updates_descriptions_without_changing_existing_item_code() -> None:
+    existing = ItemMapping(
+        modern_trade_id=1,
+        source_sku="111210",
+        source_description=None,
+        wa_item_code="FA00-W0113-120110",
+        wa_item_description=None,
+        status="confirmed",
+        effective_from=date(2026, 9, 11),
+        effective_to=None,
+        changed_by="original",
+    )
+    content = build_item_mapping_workbook(
+        [
+            ExportItem(
+                "111210",
+                "รายละเอียดสินค้า HH",
+                "FA00-W0113-120110",
+                "รายละเอียดสินค้า WA",
+                "confirmed",
+            )
+        ],
+        mt_code="HH",
+    )
+    session = _ExistingItemSession(existing)
+
+    report = import_item_mapping_workbook(
+        session,
+        content,
+        date(2026, 9, 11),
+        "hh-description.xlsx",
+        modern_trade_code="HH",
+    )
+
+    assert existing.wa_item_code == "FA00-W0113-120110"
+    assert existing.source_description == "รายละเอียดสินค้า HH"
+    assert existing.wa_item_description == "รายละเอียดสินค้า WA"
+    assert report.conflicts == 0
+    assert any(
+        isinstance(value, AuditEvent) and value.action == "update_mapping_descriptions"
+        for value in session.added
+    )
+
+
 def test_import_accepts_new_source_sku_as_pending_mapping() -> None:
     content = build_item_mapping_workbook(
         [ExportItem("099999999", "สินค้าใหม่", "WA-NEW", "รายละเอียดใหม่", "unmatched")]

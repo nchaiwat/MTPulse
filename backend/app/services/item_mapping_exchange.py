@@ -494,6 +494,39 @@ def import_item_mapping_workbook(
         current = existing.get(candidate.source_sku)
         if current:
             if current.wa_item_code == candidate.wa_item_code:
+                next_source_description = (
+                    candidate.source_description or current.source_description
+                )
+                next_wa_description = (
+                    candidate.wa_item_description or current.wa_item_description
+                )
+                if (
+                    next_source_description != current.source_description
+                    or next_wa_description != current.wa_item_description
+                ):
+                    before = {
+                        "source_description": current.source_description,
+                        "wa_item_description": current.wa_item_description,
+                    }
+                    current.source_description = next_source_description
+                    current.wa_item_description = next_wa_description
+                    current.changed_by = actor
+                    session.add(
+                        AuditEvent(
+                            entity_type="item_mapping",
+                            entity_id=candidate.source_sku,
+                            action="update_mapping_descriptions",
+                            actor=actor,
+                            before_json=json.dumps(before, ensure_ascii=False),
+                            after_json=json.dumps(
+                                {
+                                    "source_description": current.source_description,
+                                    "wa_item_description": current.wa_item_description,
+                                },
+                                ensure_ascii=False,
+                            ),
+                        )
+                    )
                 if candidate.status == "confirmed" and current.status != "confirmed":
                     before = {"status": current.status}
                     current.status = "confirmed"
