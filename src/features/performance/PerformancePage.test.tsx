@@ -13,6 +13,24 @@ afterEach(() => {
 
 
 describe('PerformancePage', () => {
+  it('distinguishes a confirmed mapping without WA description from an unmatched item', () => {
+    const confirmedWithoutDescription: PerformanceResponse = {
+      ...samplePerformanceResponse,
+      items: [{
+        ...samplePerformanceResponse.items[0],
+        waDescription: null,
+        mappingStatus: 'confirmed',
+      }],
+    }
+
+    render(<PerformancePage mtCode="HH" initialData={confirmedWithoutDescription} />)
+
+    const row = screen.getByRole('button', { name: confirmedWithoutDescription.items[0].sku }).closest('tr')
+    expect(row).not.toBeNull()
+    expect(within(row!).getByText('ยังไม่มี WA Description')).toBeInTheDocument()
+    expect(within(row!).queryByText('ยังไม่ได้เลือก Mapping')).not.toBeInTheDocument()
+  })
+
   it.each([
     ['HP', 'HomePro'],
     ['MH', 'MegaHome'],

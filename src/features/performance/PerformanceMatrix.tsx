@@ -43,6 +43,9 @@ const turnoverFormatter = new Intl.NumberFormat('en-US', { minimumFractionDigits
 
 const formatTurnover = (value: number | null | undefined) => value == null ? '—' : turnoverFormatter.format(value)
 
+const waDescriptionText = (item: PerformanceItem) => item.waDescription
+  ?? (item.mappingStatus === 'confirmed' ? 'ยังไม่มี WA Description' : 'ยังไม่ได้เลือก Mapping')
+
 const skuFlagState = (item: PerformanceItem) => item.isSho && item.isPro
   ? 'both'
   : item.isSho
@@ -118,7 +121,7 @@ const MatrixTable = memo(function MatrixTable({ items, branches, dates, branchId
           <td className="sticky-column col-sku"><span className="item-link-wrap"><button className={`item-link ${item.mappingStatus === 'unmatched' ? 'item-link-unmatched' : ''}`} type="button" onClick={() => onSelect({ sku: item.sku })}>{item.sku}</button>{item.itemType === 'trial' && <span className="trial-row-badge">สินค้าทดลอง</span>}</span></td>
           <td className="sticky-column col-twd-desc"><span className="truncate" title={item.twdDescription}>{item.twdDescription}</span></td>
           <td className="sticky-column col-wa-item mono">{item.waItem ?? '—'}</td>
-          <td className={`sticky-column col-wa-desc ${showTurnover ? '' : 'sticky-divider'}`}><span className="truncate" title={item.waDescription ?? 'ยังไม่ Mapping'}>{item.waDescription ?? 'ยังไม่ได้เลือก Mapping'}</span></td>
+          <td className={`sticky-column col-wa-desc ${showTurnover ? '' : 'sticky-divider'}`}><span className="truncate" title={waDescriptionText(item)}>{waDescriptionText(item)}</span></td>
           {showTurnover && <td className="sticky-column col-tom numeric-column turnover-column">{formatTurnover(item.tom)}</td>}
           {showTurnover && <td className="sticky-column col-tod numeric-column turnover-column sticky-divider">{formatTurnover(item.tod)}</td>}
           <td className={`numeric-column total-column ${total < 0 ? 'is-negative' : ''}`}><strong>{formatMetric(total, metric)}</strong></td>
