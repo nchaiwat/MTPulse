@@ -60,22 +60,24 @@
 }
 
 .import-workspace-tabs {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(150px, 1fr));
-  overflow: hidden;
+  display: flex;
+  overflow-x: auto;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--radius-shell);
+  border-radius: 8px;
   box-shadow: var(--shadow-soft);
+  scrollbar-width: thin;
 }
 
 .import-workspace-tabs button {
-  min-height: 54px;
+  position: relative;
+  min-width: 112px;
+  min-height: 46px;
   display: grid;
-  grid-template-columns: 20px 1fr auto;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
-  padding: 7px 12px;
+  gap: 7px;
+  padding: 6px 10px;
   color: var(--text-600);
   text-align: left;
   background: var(--surface);
@@ -627,7 +629,6 @@
   }
 
   .import-workspace-tabs {
-    grid-template-columns: repeat(4, minmax(118px, 1fr));
     overflow-x: auto;
   }
 
