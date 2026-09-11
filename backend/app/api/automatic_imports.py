@@ -11,6 +11,12 @@ from app.auth import require_system_admin
 from app.database import get_session
 from app.local_time import bangkok_now
 from app.models import AuditEvent, ImportRun, ModernTrade
+from app.modern_trade_registry import (
+    ModernTradeCapability,
+    active_capability_label,
+    active_modern_trade_codes,
+    modern_trade_definition,
+)
 from app.services.automatic_import import (
     ActiveRunError,
     create_run,
@@ -49,6 +55,26 @@ def _modern_trade(session: Session, code: str) -> ModernTrade:
     return mt
 
 
+def _require_capability(
+    mt: ModernTrade,
+    capability: ModernTradeCapability,
+    feature_name: str,
+) -> None:
+    if mt.code not in active_modern_trade_codes(capability):
+        supported = active_capability_label(capability)
+        raise HTTPException(
+            status_code=409,
+            detail=f"{feature_name} รองรับเฉพาะ {supported}",
+        )
+
+
+def _run_owner(session: Session, mt: ModernTrade) -> ModernTrade:
+    definition = modern_trade_definition(mt.code)
+    if definition is None:
+        raise HTTPException(status_code=409, detail=f"ยังไม่มี Package ของ {mt.code}")
+    return _modern_trade(session, definition.source_owner_code)
+
+
 @router.post("/modern-trades/{code}/runs", status_code=202)
 def run_now(
     code: str,
@@ -59,12 +85,8 @@ def run_now(
     if not request.confirmed:
         raise HTTPException(status_code=400, detail="กรุณายืนยัน Run ก่อนเริ่มงาน")
     mt = _modern_trade(session, code)
-    if mt.code not in {"TWD", "HP", "MH"}:
-        raise HTTPException(
-            status_code=409,
-            detail="Automatic Import รองรับเฉพาะ TWD, HP และ MH",
-        )
-    run_owner = _modern_trade(session, "HP") if mt.source_group_code == "HP_MH" else mt
+    _require_capability(mt, "automatic_import", "Automatic Import")
+    run_owner = _run_owner(session, mt)
     if not run_owner.source_enabled:
         raise HTTPException(
             status_code=409,
@@ -83,8 +105,7 @@ def sku_backfill_options(
     session: Annotated[Session, Depends(get_session)],
 ) -> dict:
     mt = _modern_trade(session, code)
-    if mt.code not in {"TWD", "HP", "MH"}:
-        raise HTTPException(status_code=409, detail="Backfill รองรับเฉพาะ TWD, HP และ MH")
+    _require_capability(mt, "sku_backfill", "Backfill")
     return backfill_options(session, mt)
 
 
@@ -98,11 +119,10 @@ def refresh_source_registry(
     if not request.confirmed:
         raise HTTPException(status_code=400, detail="กรุณายืนยันก่อนอัปเดต File Registry")
     mt = _modern_trade(session, code)
-    if mt.code not in {"TWD", "HP", "MH"}:
-        raise HTTPException(status_code=409, detail="รองรับเฉพาะ TWD, HP และ MH")
+    _require_capability(mt, "automatic_import", "File Registry")
     if not mt.source_enabled:
         raise HTTPException(status_code=409, detail=f"{mt.code} ปิดใช้งาน FileShare")
-    run_owner = _modern_trade(session, "HP") if mt.source_group_code == "HP_MH" else mt
+    run_owner = _run_owner(session, mt)
     try:
         run = create_run(
             session,
@@ -123,8 +143,7 @@ def preview_backfill(
     session: Annotated[Session, Depends(get_session)],
 ) -> dict:
     mt = _modern_trade(session, code)
-    if mt.code not in {"TWD", "HP", "MH"}:
-        raise HTTPException(status_code=409, detail="Backfill รองรับเฉพาะ TWD, HP และ MH")
+    _require_capability(mt, "sku_backfill", "Backfill")
     try:
         return preview_sku_backfill(
             session,
@@ -146,8 +165,7 @@ def start_backfill(
     if not request.confirmed:
         raise HTTPException(status_code=400, detail="กรุณายืนยัน Backfill ก่อนเริ่มงาน")
     mt = _modern_trade(session, code)
-    if mt.code not in {"TWD", "HP", "MH"}:
-        raise HTTPException(status_code=409, detail="Backfill รองรับเฉพาะ TWD, HP และ MH")
+    _require_capability(mt, "sku_backfill", "Backfill")
     if not mt.source_enabled:
         raise HTTPException(status_code=409, detail=f"{mt.code} ปิดใช้งาน FileShare")
     try:

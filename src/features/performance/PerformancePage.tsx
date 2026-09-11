@@ -7,17 +7,12 @@ import { downloadPerformanceReport, fetchPerformance, fetchPerformanceItemDetail
 import { formatMetric, metricLabel, monthKey, monthKeys, pointsForView, sumMetric } from './performanceMath'
 import type { Branch, BranchPeriod, DateRange, Dimension, Metric, Mode, ModernTradeCode, PerformanceItem, PerformanceResponse, SalesBasis, SelectedCell, SkuAnalysisFlagName, SkuFlagFilter, SkuOption } from './types'
 import { formatDisplayDate } from '../../shared/dateFormat'
+import { MODERN_TRADES } from '../../config/modernTrades'
 
 const emptyDates: string[] = []
 const emptyBranches: Branch[] = []
 const emptyItems: PerformanceItem[] = []
 const performanceViewStorageKey = (mtCode: ModernTradeCode) => `mtpulse.performance.${mtCode.toLowerCase()}.current-view`
-
-const modernTrades: Record<ModernTradeCode, { name: string; inventoryMetrics: Metric[] }> = {
-  TWD: { name: 'TWD', inventoryMetrics: ['stockOh', 'stockOnOrder'] },
-  HP: { name: 'HomePro (HP)', inventoryMetrics: ['stockOh', 'stockValue'] },
-  MH: { name: 'MegaHome (MH)', inventoryMetrics: ['stockOh', 'stockValue'] },
-}
 
 interface PerformanceViewState {
   mode: Mode
@@ -116,7 +111,11 @@ interface PerformancePageProps {
 }
 
 export function PerformancePage({ initialData, mtCode = 'TWD' }: PerformancePageProps) {
-  const mt = modernTrades[mtCode]
+  const definition = MODERN_TRADES[mtCode]
+  const mt = {
+    name: definition.displayName,
+    inventoryMetrics: [...definition.inventoryMetrics] as Metric[],
+  }
   const [savedView] = useState(() => loadPerformanceView(mtCode))
   const [data, setData] = useState<PerformanceResponse | null>(initialData ?? null)
   const [loadError, setLoadError] = useState<string | null>(null)

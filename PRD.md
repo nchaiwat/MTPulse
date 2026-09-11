@@ -1207,3 +1207,92 @@ Discovery สำหรับ Frontend UX Milestone ได้รับอนุ�
 - Product Owner ยืนยัน Implementation Plan แล้ว
 - Phase 1 Contracts, Detection และ Additive Migration เสร็จใน Local เมื่อ 10 กันยายน 2026
 - ยังไม่เปลี่ยนหน้า Import เดิม, UX/UI เดิม หรือ Import Logic ปัจจุบัน; Phase 2 ยังไม่เริ่ม
+
+# Requirement เพิ่มเติม: HomeHub (HH) Full Modern Trade Package — 11 กันยายน 2026
+
+## Objective
+
+- เปิดใช้งาน HomeHub (`HH`) เป็น Modern Trade package เต็มรูปแบบใน MT Pulse ไม่ใช่เพียงเพิ่ม Dashboard, Report หรือเมนู
+- ใช้ TWD เป็น Master ของบริบท, Concept, workflow, interaction, status, audit และ operational behavior ทุกส่วนที่เกี่ยวข้อง
+- แยกเฉพาะ source adapter, field mapping, metric capability, data validation และ Master Data ที่ต้องยึดไฟล์ HH จริง
+
+## Users And Roles
+
+- User ใช้ Dashboard/Report, Filter, Detail, Excel, Sho/Pro และ single-file import ตามสิทธิ์เดียวกับ MT อื่น
+- Admin จัดการ Folder import, Mapping, FileShare, Schedule, Run ทันที, corrective action และ data-quality issues
+- Monitoring เป็นภาพรวมสุขภาพระบบ; การแก้ import issue อยู่หน้า Import เช่นเดียวกับ Concept หลักของระบบ
+- Sho/Pro เป็นสถานะส่วนกลางระดับ `HH × SKU` และทุก User เห็นค่าเดียวกัน
+
+## Must-have Scope
+
+- HH Dashboard และ Report ใช้ shared component/layout/behavior เดียวกับ TWD รวม loading, empty, error, filters, pagination, drawer และ responsive states
+- Sales รองรับ Amount Ex.VAT และ Qty; Inventory รองรับ Stock On Hand และ Stock Value ตาม source จริง
+- Branch/Date/Month capability ใช้กติกาเดียวกับ TWD เมื่อ metric และ source รองรับ
+- TOM/TOD ใช้สูตรและ reference-period contract เดียวกับ TWD โดยคำนวณจากยอดขาย HH และ stock HH เท่านั้น
+- Excel ต้อง represent screen/filter/status เดียวกับ App และมี Sho/Pro, Mapping status, TOM/TOD และข้อมูล identity ของ HH
+- Manual Import รองรับไฟล์คู่ `StockReport.xlsx` + `SaleReport.xlsx`; ตรวจวัน, structure, duplicate, business fingerprint และ reconciliation ก่อนยืนยัน
+- Automatic FileShare รองรับ scan, catch-up, schedule และ Run ทันทีผ่าน shared import orchestration เดียวกับ MT อื่น
+- Import history, corrective/re-import, audit, notification, data completeness, monitoring snapshot และ deep link ต้องรู้จัก HH
+- Settings ต้องมี HH profile, source path, schedule, expected lag, mapping/export/import และ readiness/status ที่ทำงานจริง
+- Item/Branch Mapping แยก namespace ตาม Modern Trade; SKU ที่ยังไม่ Mapping ยังคงแสดงและระบุ `ยังไม่ Mapping`
+- Manual workbook `KPI - HH 2026.xlsx` เป็น source สำหรับ initial HH item mapping ที่ตรวจสอบได้; mapping ที่ไม่มีในไฟล์ยังคง unmatched
+- Navigation, page identity, permissions, API allowlist, configuration registry, backup/deployment และ smoke checks ต้องรวม HH
+
+## Core Workflows
+
+1. Source discovery พบโฟลเดอร์/ไฟล์ HH และจับคู่ Stock/Sale ของวันเดียวกัน
+2. HH strict validator ตรวจ workbook structure, data date, 5 branch dimensions, SKU set, totals และ duplicate identity
+3. Import transaction เขียน HH facts/summaries/coverage/interest โดยไม่ fallback หรือปะปนกับ MT อื่น
+4. Mapping และ Sho/Pro enrichment เกิดหลัง source identity โดยไม่ใช้รูปแบบหรือความยาว SKU ตัดสิน
+5. Dashboard, Report, Detail, Excel และ Monitoring อ่าน HH ผ่าน shared query contract ที่ส่ง `mt_code=HH` เสมอ
+6. เมื่อเกิดปัญหา Monitoring แสดง summary และพาไป Import issue/corrective workflow ที่ลงมือแก้ได้
+
+## Business And Data Rules
+
+- Fact grain คือ `Data Date × HH Branch × HH SKU`; source of truth คือข้อมูลใน workbook ไม่ใช่ชื่อไฟล์หรือชื่อโฟลเดอร์
+- SKU เป็น opaque text: ห้ามกำหนดจำนวนหลัก, ตัดเลขศูนย์นำหน้า, เติมเลขศูนย์ หรือใช้ pattern เป็นมาตรฐานข้าม MT
+- HH Amount เป็น Exclude VAT จึงเก็บ source amount ตามค่าเดิม; ห้ามใช้สูตร VAT ของ TWD
+- หนึ่งวันต้องใช้ Stock/Sale pair ที่ data date ตรงกัน; missing/mismatched pair ต้องไม่สร้าง Fact
+- ทุก SKU ใน source ต้องแสดง แม้ไม่มี WA mapping; mapping ไม่ใช่เงื่อนไขในการนำเข้า Fact
+- Duplicate ตรวจทั้ง checksum และ business identity/date; corrected re-import ใช้ corrective workflow และ audit เดิม
+- Total ที่แสดงต้องคำนวณจาก branch detail ที่ผ่าน validation และ reconcile กับ source ตามกติกา HH
+- TOM/TOD, Sho/Pro, filter scope, summary และ Excel ต้องใช้ predicate/สูตรร่วมชุดเดียวกับ screen API
+- การเพิ่ม HH ต้องไม่เปลี่ยนผลลัพธ์หรือ behavior ของ TWD, HP และ MH
+
+## Architecture Direction
+
+- ใช้ Modern Trade registry/capability configuration กลางแทนการกระจาย `if TWD/HP/MH/HH` ในหลายหน้า
+- Shared application services รับ MT context; HH importer/validator เป็น adapter เฉพาะ source
+- Automatic และ Manual import ต้องเรียก HH domain service เดียวกันเพื่อให้ validation, idempotency และ transaction parity
+- Dashboard/Performance/Excel/Mapping/Monitoring/Settings ใช้ projection และ filter contract กลาง โดยไม่มี TWD fallback
+- Background run, audit และ monitoring เก็บ `modern_trade_id/source_group` ทุกครั้งเพื่อแยกข้อมูลอย่างเด็ดขาด
+
+## Success Criteria
+
+- HH ใช้งานครบตั้งแต่รับไฟล์จนถึง Dashboard/Report/Excel โดยไม่ต้องแก้ฐานข้อมูลหรือรัน script นอก workflow ปกติ
+- Real pair หนึ่งวันนำเข้าได้ครบ 158 SKU × 5 Branch = 790 grain rows และ reconcile metric จาก source
+- Automatic Run ทันทีและ Schedule อ่านข้อมูล HH ย้อนหลัง/วันใหม่ได้ พร้อม duplicate protection และ progress ที่ติดตามได้
+- Unmapped SKU ไม่หาย, mapped SKU แสดง WA identity ถูกต้อง และ Sho/Pro คงอยู่ทุก view/filter/export
+- TOM/TOD แสดงเมื่อมีช่วงข้อมูลย้อนหลังครบ และใช้ผลเดียวกันบน App/Excel
+- Monitoring/Settings/Import History แสดง HH แยกจาก MT อื่นและ corrective action ทำงานจริง
+- Backend/frontend/migration/build และ regression suite ของ TWD/HP/MH ผ่านทั้งหมด
+
+## Non-scope
+
+- ไม่สร้าง metric ที่ HH source ไม่มี เช่น Stock On Order
+- ไม่ใช้ TWD/HP/MH facts, mapping, branch หรือ settings เป็น fallback ให้ HH
+- ไม่เปลี่ยน UI/Logic ของ MT อื่นนอกจุด shared ที่จำเป็นและมี regression test รองรับ
+- ไม่อนุมาน mapping ใหม่จากความคล้ายของรหัสหรือคำอธิบายโดยไม่มี source ที่ผู้ใช้รับรอง
+
+## Risks And Mitigations
+
+- Shared component อาจเกิด regression: เพิ่ม contract/regression matrix แยกทุก MT ก่อน deploy
+- Stock/Sale pair ขาดหรือวันไม่ตรง: quarantine ทั้งคู่และแจ้งเหตุผลที่หน้า Import
+- Mapping manual ไม่ครบ: seed เฉพาะรายการที่ตรวจสอบได้และคง unmatched visibility
+- Automatic import กับ manual import ชนกัน: lock/idempotency ระดับ HH และ data date
+- Hard-coded allowlist กระจายหลายจุด: รวม capability registry และทดสอบ route/job/export coverage
+
+## Status And Priority
+
+- Status: Discovery complete; รอ Product Owner ยืนยัน implementation plan ก่อนเริ่ม Full Package implementation
+- Priority: (1) package registry และ gap tests, (2) import/automation parity, (3) mapping/corrective/monitoring/settings parity, (4) end-to-end UI/Excel parity, (5) deployment and real-data reconciliation

@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_session
+from app.importers.hh import HhFormatError, HhPairExtract, extract_hh_pair
 from app.importers.hp_mh import HpMhFormatError, HpMhPairExtract, extract_hp_mh_pair
 from app.importers.twd import TwdExtract, TwdFormatError, extract_twd_file
 from app.models import AuditEvent, ImportBatch, ModernTrade, SkuInterest, SourceFile
@@ -28,6 +29,7 @@ from app.services.fileshare import (
     FileShareSettingsError,
     safe_fileshare_error,
 )
+from app.services.hh_import import HhImportError, import_hh_pair
 from app.services.hp_mh_import import HpMhImportError, import_hp_mh_pair
 from app.services.manual_upload_contracts import MAX_UPLOAD_BYTES
 from app.services.monitoring import capture_monitoring_snapshot
@@ -177,6 +179,50 @@ def _hp_mh_duplicate_reason(session: Session, pair: HpMhPairExtract) -> str | No
     ):
         return "ข้อมูลธุรกิจชุดนี้ถูกนำเข้าแล้ว แม้ชื่อไฟล์อาจต่างกัน"
     return None
+
+
+def _extract_hh_uploads(
+    stock_content: bytes,
+    stock_filename: str,
+    sales_content: bytes,
+    sales_filename: str,
+) -> HhPairExtract:
+    stock_name = Path(stock_filename).name or "StockReport.xlsx"
+    sales_name = Path(sales_filename).name or "SaleReport.xlsx"
+    if Path(stock_name).suffix.lower() != ".xlsx" or Path(sales_name).suffix.lower() != ".xlsx":
+        raise HhFormatError("HomeHub ต้องใช้ไฟล์ Stock และ Sale นามสกุล .xlsx")
+    with tempfile.TemporaryDirectory(prefix="mtpulse-hh-manual-") as temp_dir:
+        stock_path = Path(temp_dir) / f"stock-{stock_name}"
+        sales_path = Path(temp_dir) / f"sales-{sales_name}"
+        stock_path.write_bytes(stock_content)
+        sales_path.write_bytes(sales_content)
+        pair = extract_hh_pair(stock_path, sales_path)
+    return replace(
+        pair,
+        inventory_path=f"manual-upload:{stock_name}",
+        sales_path=f"manual-upload:{sales_name}",
+        inventory_filename=stock_name,
+        sales_filename=sales_name,
+    )
+
+
+def _hh_duplicate_reason(session: Session, pair: HhPairExtract) -> str | None:
+    batch = _hh_existing_batch(session, pair)
+    if batch and batch.business_fingerprint == pair.business_fingerprint:
+        return "ข้อมูลธุรกิจ HomeHub ชุดนี้ถูกนำเข้าแล้ว แม้ชื่อไฟล์อาจต่างกัน"
+    return None
+
+
+def _hh_existing_batch(session: Session, pair: HhPairExtract) -> ImportBatch | None:
+    modern_trade = session.scalar(select(ModernTrade).where(ModernTrade.code == "HH"))
+    if modern_trade is None:
+        return None
+    return session.scalar(
+        select(ImportBatch).where(
+            ImportBatch.modern_trade_id == modern_trade.id,
+            ImportBatch.data_date == pair.data_date,
+        )
+    )
 
 
 def _hp_mh_preview(
@@ -747,6 +793,137 @@ async def confirm_hp_mh_import(
         "notification": {
             "status": delivery.status,
             "message": delivery.message,
+        },
+    }
+
+
+@router.post("/hh/preview")
+async def preview_hh_import(
+    session: Annotated[Session, Depends(get_session)],
+    stock_file: Annotated[UploadFile, File()],
+    sales_file: Annotated[UploadFile, File()],
+) -> dict:
+    read_started = perf_counter()
+    stock_name, stock_content, sales_name, sales_content = await _read_hp_mh_files(
+        stock_file, sales_file
+    )
+    read_finished = perf_counter()
+    try:
+        parse_started = perf_counter()
+        pair = _extract_hh_uploads(
+            stock_content, stock_name, sales_content, sales_name
+        )
+        parse_finished = perf_counter()
+    except (HhFormatError, OSError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"ตรวจสอบคู่ไฟล์ HomeHub ไม่ผ่าน: {exc}",
+        ) from exc
+    duplicate_started = perf_counter()
+    duplicate_reason = _hh_duplicate_reason(session, pair)
+    existing_batch = _hh_existing_batch(session, pair)
+    duplicate_finished = perf_counter()
+    _record(
+        session,
+        checksum=pair.business_fingerprint,
+        action="hh_preview",
+        status="duplicate" if duplicate_reason else "validated",
+        message=duplicate_reason or "ตรวจสอบคู่ไฟล์ HomeHub ผ่าน รอผู้ใช้ยืนยัน Import",
+        filename=f"{pair.inventory_filename} + {pair.sales_filename}",
+        data_date=pair.data_date.isoformat(),
+        mt_code="HH",
+    )
+    summary = pair.summary
+    return {
+        "detectedSourceGroup": "HH",
+        "detectedMtCode": "HH",
+        "dataDate": pair.data_date.isoformat(),
+        "stockFilename": pair.inventory_filename,
+        "salesFilename": pair.sales_filename,
+        "businessFingerprint": pair.business_fingerprint,
+        "summary": {
+            "rowCount": summary.row_count,
+            "skuCount": summary.sku_count,
+            "branchCount": summary.store_count,
+            "amount": float(summary.amount),
+            "salesQty": float(summary.sales_qty),
+            "stockOnHand": float(summary.stock_on_hand),
+            "stockValue": float(summary.stock_value),
+            "negativeRowCount": summary.negative_row_count,
+        },
+        "warnings": list(pair.reconciliation_errors),
+        "canImport": duplicate_reason is None,
+        "duplicateReason": duplicate_reason,
+        "operation": "replace" if existing_batch and not duplicate_reason else "import",
+        "replacementBatchId": (
+            existing_batch.id if existing_batch and not duplicate_reason else None
+        ),
+        "timings": {
+            "serverReadMs": round((read_finished - read_started) * 1000, 1),
+            "parseMs": round((parse_finished - parse_started) * 1000, 1),
+            "duplicateCheckMs": round(
+                (duplicate_finished - duplicate_started) * 1000, 1
+            ),
+        },
+    }
+
+
+@router.post("/hh/confirm")
+async def confirm_hh_import(
+    session: Annotated[Session, Depends(get_session)],
+    stock_file: Annotated[UploadFile, File()],
+    sales_file: Annotated[UploadFile, File()],
+    expected_fingerprint: Annotated[str, Form(max_length=64)],
+) -> dict:
+    stock_name, stock_content, sales_name, sales_content = await _read_hp_mh_files(
+        stock_file, sales_file
+    )
+    try:
+        pair = _extract_hh_uploads(
+            stock_content, stock_name, sales_content, sales_name
+        )
+        if pair.business_fingerprint != expected_fingerprint:
+            raise ValueError("คู่ไฟล์เปลี่ยนจากรอบ Preview กรุณาตรวจสอบใหม่")
+        existing_batch = _hh_existing_batch(session, pair)
+        replacing = existing_batch is not None
+        import_started = perf_counter()
+        batch = import_hh_pair(session, pair, actor="manual-upload")
+        import_finished = perf_counter()
+        session.commit()
+    except (HhFormatError, HhImportError, OSError, ValueError) as exc:
+        session.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    message = (
+        f"แทนที่ข้อมูล HomeHub วันที่ {format_thai_date(pair.data_date)} สำเร็จ"
+        if replacing
+        else f"นำเข้าข้อมูล HomeHub วันที่ {format_thai_date(pair.data_date)} สำเร็จ"
+    )
+    _record(
+        session,
+        checksum=pair.business_fingerprint,
+        action="batch_replaced" if replacing else "import_completed",
+        status=batch.status,
+        message=message,
+        filename=f"{pair.inventory_filename} + {pair.sales_filename}",
+        data_date=pair.data_date.isoformat(),
+        batch_id=batch.id,
+        mt_code="HH",
+    )
+    try:
+        capture_monitoring_snapshot(session, trigger="import", upsert_today=True)
+    except Exception:
+        session.rollback()
+        logger.exception(
+            "HH import completed, but the daily monitoring snapshot could not be saved"
+        )
+    return {
+        "batchId": batch.id,
+        "status": batch.status,
+        "message": message,
+        "dataDate": pair.data_date.isoformat(),
+        "timings": {
+            "importMs": round((import_finished - import_started) * 1000, 1),
         },
     }
 

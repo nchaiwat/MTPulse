@@ -28,7 +28,7 @@ export function FolderImportPanel({
   expectedSourceGroup,
   onCompleted,
 }: {
-  expectedSourceGroup: 'TWD' | 'HP_MH'
+  expectedSourceGroup: 'TWD' | 'HP_MH' | 'HH'
   onCompleted: () => void
 }) {
   const [files, setFiles] = useState<File[]>([])
@@ -169,6 +169,8 @@ export function FolderImportPanel({
           <small>
             {expectedSourceGroup === 'TWD'
               ? 'ระบบต้องตรวจพบไฟล์ TWD .xls/.xlsx เท่านั้น'
+              : expectedSourceGroup === 'HH'
+                ? 'ระบบจะจับคู่ StockReport.xlsx และ SaleReport.xlsx ของ HH ตามวันที่ข้อมูล'
               : 'ระบบจะจับคู่ Inventory ZIP และ Sales ZIP ของ HP/MH'}
           </small>
         </div>

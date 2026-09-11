@@ -92,6 +92,33 @@ const response = {
 describe('MonitoringPage', () => {
   afterEach(() => vi.restoreAllMocks())
 
+  it('renders HH in data readiness even before its first import', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      ...response,
+      current: {
+        ...response.current,
+        modernTrades: [
+          ...response.current.modernTrades,
+          {
+            code: 'HH',
+            name: 'HomeHub',
+            enabled: false,
+            status: 'inactive',
+            latestDataDate: null,
+            lagDays: null,
+            recordCount: 0,
+            latestImport: null,
+          },
+        ],
+      },
+    }), { status: 200 }))
+
+    render(<MonitoringPage />)
+
+    expect(await screen.findByText('HomeHub')).toBeInTheDocument()
+    expect(screen.getByText('HH')).toBeInTheDocument()
+  })
+
   it('shows current health, database workload, slow queries, and refreshes on demand', async () => {
     const onOpenImports = vi.fn()
     const fetchMock = vi.spyOn(globalThis, 'fetch')

@@ -91,9 +91,15 @@ MT Pulse ใช้แนวคิด **Operations Ledger** สำหรับท
 
 - Visual Direction: Modern/Clean/Premium Internal SaaS Tool โดยคง Operations Ledger และ Density เดิม
 - ใช้ Soft Shadow และ Radius 12–16px เฉพาะ Surface/Control ที่เหมาะสม ไม่ทำทุกส่วนเป็น Card
-- หน้า TWD Performance เป็น Visual Template ของ Report สำหรับ TWD, HP และ MH โดยทั้งสามหน้าต้องใช้ Layout, Typography, Density, Surface และ Interaction pattern เดียวกันผ่าน shared component/CSS
+- หน้า TWD Performance เป็น Visual Template ของ Report สำหรับ TWD, HP, MH และ HH โดยทุกหน้าต้องใช้ Layout, Typography, Density, Surface และ Interaction pattern เดียวกันผ่าน shared component/CSS
 - ความสามารถและ Business Logic เฉพาะ MT เช่น Metric capability, Sho/Pro, TOM/TOD, Inventory Month, Mapping และ Data source ให้คงแยกตาม MT เดิม ห้ามเพิ่มหรือลดเพื่อให้หน้าตาเหมือนกัน
 - ห้ามเปลี่ยนตำแหน่ง Control, Matrix, Column, Pagination, Drawer หรือ Data Workflow ของ TWD
 - รอบนี้ไม่สร้าง Dashboard, Chart, Top SKU หรือ Top Branch
 - ไม่เพิ่ม Responsive Behavior ใหม่; Matrix ยังคง Desktop-first และ Horizontal Scroll
 - Tailwind/Shadcn ใช้แบบ Incremental โดยห้าม Preflight หรือ Component replacement กระทบหน้า TWD
+
+## HomeHub rollout — 11 กันยายน 2026
+
+- ข้อกำหนดเฉพาะ HH อยู่ที่ `pages/hh-performance.md`
+- HH เปิด Dashboard, Report, Excel Export, Mapping และ Sho/Pro ผ่าน shared components เดิม
+- ความเหมือนกับ TWD หมายถึง Pattern และ Interaction; Metric/Data parser ต้องยึด Source HH จริงและไม่เปลี่ยน Logic ของ MT อื่น

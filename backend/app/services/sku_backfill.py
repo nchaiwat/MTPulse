@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.importers.hh import HhFormatError
 from app.importers.twd import TwdFormatError
 from app.local_time import bangkok_now
 from app.models import (
@@ -31,6 +32,7 @@ from app.services.automatic_import import (
     _credentials,
     download_twd_extract,
 )
+from app.services.hh_import import append_hh_sku_facts
 from app.services.hp_mh_import import append_hp_mh_sku_facts
 from app.services.telegram import send_telegram
 from app.services.twd_import import append_twd_sku_facts
@@ -142,8 +144,8 @@ def _plan(
     range_start: date,
     range_end: date,
 ) -> tuple[ItemMapping, list[dict[str, object]], bool]:
-    if mt.source_group_code == "HP_MH":
-        return _plan_hp_mh(session, mt, source_sku, range_start, range_end)
+    if mt.source_group_code in {"HP_MH", "HH"}:
+        return _plan_paired_sources(session, mt, source_sku, range_start, range_end)
     mapping = _mapping(session, mt.id, source_sku, range_end)
     source_rows = session.scalars(
         select(SourceFile)
@@ -241,7 +243,7 @@ def _plan(
     return mapping, items, conflict
 
 
-def _plan_hp_mh(
+def _plan_paired_sources(
     session: Session,
     mt: ModernTrade,
     source_sku: str,
@@ -249,7 +251,9 @@ def _plan_hp_mh(
     range_end: date,
 ) -> tuple[ItemMapping, list[dict[str, object]], bool]:
     mapping = _mapping(session, mt.id, source_sku, range_end)
-    owner_id = session.scalar(select(ModernTrade.id).where(ModernTrade.code == "HP")) or mt.id
+    owner_id = mt.id
+    if mt.source_group_code == "HP_MH":
+        owner_id = session.scalar(select(ModernTrade.id).where(ModernTrade.code == "HP")) or mt.id
     source_rows = session.scalars(
         select(SourceFile)
         .where(
@@ -634,38 +638,65 @@ def process_sku_backfill_run(session: Session, run_id: int) -> None:
                     batch = session.get(ImportBatch, int(item["batchId"]))
                     if source is None or batch is None:
                         raise ValueError("File Registry หรือ Batch เปลี่ยนระหว่าง Run")
-                    if mt.source_group_code == "HP_MH":
-                        from app.services.hp_mh_automatic_import import (
-                            HpMhPairCandidate,
-                            _download_pair,
-                        )
-
+                    if mt.source_group_code in {"HP_MH", "HH"}:
                         inventory = session.get(SourceFile, int(item["inventorySourceFileId"]))
                         sales = session.get(SourceFile, int(item["salesSourceFileId"]))
                         if inventory is None or sales is None:
                             raise ValueError("คู่ไฟล์ใน Registry เปลี่ยนระหว่าง Run")
-                        pair_extract = _download_pair(
-                            HpMhPairCandidate(
-                                key=inventory.pair_key or str(inventory.detected_data_date),
-                                inventory=SourceCandidate(
-                                    inventory.source_path,
-                                    inventory.source_filename,
-                                    inventory.size_bytes,
-                                    inventory.modified_at,
-                                ),
-                                sales=SourceCandidate(
-                                    sales.source_path,
-                                    sales.source_filename,
-                                    sales.size_bytes,
-                                    sales.modified_at,
-                                ),
-                                superseded=(),
-                            ),
-                            username=username,
-                            password=password,
+                        key = inventory.pair_key or str(inventory.detected_data_date)
+                        inventory_candidate = SourceCandidate(
+                            inventory.source_path,
+                            inventory.source_filename,
+                            inventory.size_bytes,
+                            inventory.modified_at,
                         )
-                        extract = pair_extract.hp if mt.code == "HP" else pair_extract.mh
-                        count = append_hp_mh_sku_facts(session, batch, extract, run.target_sku)
+                        sales_candidate = SourceCandidate(
+                            sales.source_path,
+                            sales.source_filename,
+                            sales.size_bytes,
+                            sales.modified_at,
+                        )
+                        if mt.source_group_code == "HH":
+                            from app.services.hh_automatic_import import (
+                                HhPairCandidate,
+                            )
+                            from app.services.hh_automatic_import import (
+                                _download_pair as download_hh_pair,
+                            )
+
+                            pair_extract = download_hh_pair(
+                                HhPairCandidate(
+                                    key=key,
+                                    inventory=inventory_candidate,
+                                    sales=sales_candidate,
+                                    superseded=(),
+                                ),
+                                username=username,
+                                password=password,
+                            )
+                            count = append_hh_sku_facts(
+                                session, batch, pair_extract, run.target_sku
+                            )
+                        else:
+                            from app.services.hp_mh_automatic_import import (
+                                HpMhPairCandidate,
+                                _download_pair,
+                            )
+
+                            pair_extract = _download_pair(
+                                HpMhPairCandidate(
+                                    key=key,
+                                    inventory=inventory_candidate,
+                                    sales=sales_candidate,
+                                    superseded=(),
+                                ),
+                                username=username,
+                                password=password,
+                            )
+                            extract = pair_extract.hp if mt.code == "HP" else pair_extract.mh
+                            count = append_hp_mh_sku_facts(
+                                session, batch, extract, run.target_sku
+                            )
                     else:
                         candidate = SourceCandidate(
                             path=source.source_path,
@@ -689,7 +720,7 @@ def process_sku_backfill_run(session: Session, run_id: int) -> None:
                     results.append(outcome)
                     _save_progress(session, run, results, total, str(outcome["message"]))
                     session.commit()
-                except (TwdFormatError, OSError, ValueError) as exc:
+                except (HhFormatError, TwdFormatError, OSError, ValueError) as exc:
                     session.rollback()
                     run = session.get(ImportRun, run_id)
                     assert run is not None

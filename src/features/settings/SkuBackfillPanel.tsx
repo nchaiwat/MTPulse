@@ -22,6 +22,7 @@ import {
   type SkuBackfillOptions,
   type SkuBackfillPreview,
 } from './skuBackfillApi'
+import type { ActiveModernTradeCode } from '../../config/modernTrades'
 
 const activeStatuses = new Set(['queued', 'running', 'stop_requested'])
 const interestStatusLabels = {
@@ -55,7 +56,7 @@ function runStatus(run: ImportRun) {
   return 'ไม่สำเร็จ'
 }
 
-export function SkuBackfillPanel({ mtCode = 'TWD' }: { mtCode?: 'TWD' | 'HP' | 'MH' }) {
+export function SkuBackfillPanel({ mtCode = 'TWD' }: { mtCode?: ActiveModernTradeCode }) {
   const [expanded, setExpanded] = useState(false)
   const [options, setOptions] = useState<SkuBackfillOptions | null>(null)
   const [sourceSku, setSourceSku] = useState('')

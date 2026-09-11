@@ -1,7 +1,9 @@
+import type { ActiveModernTradeCode } from '../../config/modernTrades'
+
 export type Mode = 'sales' | 'inventory'
 export type SalesBasis = 'net' | 'gross'
 export type Metric = 'amount' | 'qty' | 'stockOh' | 'stockOnOrder' | 'stockValue'
-export type ModernTradeCode = 'TWD' | 'HP' | 'MH'
+export type ModernTradeCode = ActiveModernTradeCode
 export type Dimension = 'branch' | 'day' | 'month'
 export type BranchPeriod = 'month' | 'day'
 export type MappingStatus = 'confirmed' | 'pending' | 'unmatched'

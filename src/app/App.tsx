@@ -15,25 +15,30 @@ import { TwdDashboardPage } from '../features/dashboard/TwdDashboardPage'
 import { MonitoringPage } from '../features/monitoring/MonitoringPage'
 import { PerformancePage } from '../features/performance/PerformancePage'
 import { SettingsPage } from '../features/settings/SettingsPage'
+import { MODERN_TRADES } from '../config/modernTrades'
 
 type AppPage =
   | 'dashboard'
   | 'dashboard-hp'
   | 'dashboard-mh'
+  | 'dashboard-hh'
   | 'performance'
   | 'performance-hp'
   | 'performance-mh'
+  | 'performance-hh'
   | 'imports'
   | 'monitoring'
   | 'settings'
 
 const pageMeta: Record<AppPage, { eyebrow: string; title: string }> = {
-  dashboard: { eyebrow: 'แดชบอร์ด / ไทวัสดุ', title: 'แดชบอร์ดไทวัสดุ' },
-  'dashboard-hp': { eyebrow: 'แดชบอร์ด / HomePro', title: 'แดชบอร์ด HomePro' },
-  'dashboard-mh': { eyebrow: 'แดชบอร์ด / MegaHome', title: 'แดชบอร์ด MegaHome' },
-  performance: { eyebrow: 'รายงาน / ไทวัสดุ', title: 'รายงานไทวัสดุ' },
-  'performance-hp': { eyebrow: 'รายงาน / HomePro', title: 'รายงาน HomePro' },
-  'performance-mh': { eyebrow: 'รายงาน / MegaHome', title: 'รายงาน MegaHome' },
+  dashboard: { eyebrow: `แดชบอร์ด / ${MODERN_TRADES.TWD.navigationLabel}`, title: `แดชบอร์ด${MODERN_TRADES.TWD.navigationLabel}` },
+  'dashboard-hp': { eyebrow: `แดชบอร์ด / ${MODERN_TRADES.HP.navigationLabel}`, title: `แดชบอร์ด ${MODERN_TRADES.HP.navigationLabel}` },
+  'dashboard-mh': { eyebrow: `แดชบอร์ด / ${MODERN_TRADES.MH.navigationLabel}`, title: `แดชบอร์ด ${MODERN_TRADES.MH.navigationLabel}` },
+  'dashboard-hh': { eyebrow: `แดชบอร์ด / ${MODERN_TRADES.HH.navigationLabel}`, title: `แดชบอร์ด ${MODERN_TRADES.HH.navigationLabel}` },
+  performance: { eyebrow: `รายงาน / ${MODERN_TRADES.TWD.navigationLabel}`, title: `รายงาน${MODERN_TRADES.TWD.navigationLabel}` },
+  'performance-hp': { eyebrow: `รายงาน / ${MODERN_TRADES.HP.navigationLabel}`, title: `รายงาน ${MODERN_TRADES.HP.navigationLabel}` },
+  'performance-mh': { eyebrow: `รายงาน / ${MODERN_TRADES.MH.navigationLabel}`, title: `รายงาน ${MODERN_TRADES.MH.navigationLabel}` },
+  'performance-hh': { eyebrow: `รายงาน / ${MODERN_TRADES.HH.navigationLabel}`, title: `รายงาน ${MODERN_TRADES.HH.navigationLabel}` },
   imports: { eyebrow: 'สถานะข้อมูล / นำเข้าข้อมูล', title: 'นำเข้าข้อมูล' },
   monitoring: { eyebrow: 'System health', title: 'Monitoring' },
   settings: { eyebrow: 'การตั้งค่า', title: 'การตั้งค่า' },
@@ -78,6 +83,7 @@ export function App() {
                 <button className="nav-item nav-subitem" aria-label="แดชบอร์ด ไทวัสดุ" data-active={page === 'dashboard' || undefined} aria-current={page === 'dashboard' ? 'page' : undefined} type="button" onClick={() => setPage('dashboard')}><span>ไทวัสดุ</span></button>
                 <button className="nav-item nav-subitem" aria-label="แดชบอร์ด HomePro" data-active={page === 'dashboard-hp' || undefined} aria-current={page === 'dashboard-hp' ? 'page' : undefined} type="button" onClick={() => setPage('dashboard-hp')}><span>HomePro</span></button>
                 <button className="nav-item nav-subitem" aria-label="แดชบอร์ด MegaHome" data-active={page === 'dashboard-mh' || undefined} aria-current={page === 'dashboard-mh' ? 'page' : undefined} type="button" onClick={() => setPage('dashboard-mh')}><span>MegaHome</span></button>
+                <button className="nav-item nav-subitem" aria-label="แดชบอร์ด HomeHub" data-active={page === 'dashboard-hh' || undefined} aria-current={page === 'dashboard-hh' ? 'page' : undefined} type="button" onClick={() => setPage('dashboard-hh')}><span>HomeHub</span></button>
               </div>
             )}
           </section>
@@ -91,6 +97,7 @@ export function App() {
                 <button className="nav-item nav-subitem" aria-label="รายงาน ไทวัสดุ" data-active={page === 'performance' || undefined} aria-current={page === 'performance' ? 'page' : undefined} type="button" onClick={() => setPage('performance')}><span>ไทวัสดุ</span></button>
                 <button className="nav-item nav-subitem" aria-label="รายงาน HomePro" data-active={page === 'performance-hp' || undefined} aria-current={page === 'performance-hp' ? 'page' : undefined} type="button" onClick={() => setPage('performance-hp')}><span>HomePro</span></button>
                 <button className="nav-item nav-subitem" aria-label="รายงาน MegaHome" data-active={page === 'performance-mh' || undefined} aria-current={page === 'performance-mh' ? 'page' : undefined} type="button" onClick={() => setPage('performance-mh')}><span>MegaHome</span></button>
+                <button className="nav-item nav-subitem" aria-label="รายงาน HomeHub" data-active={page === 'performance-hh' || undefined} aria-current={page === 'performance-hh' ? 'page' : undefined} type="button" onClick={() => setPage('performance-hh')}><span>HomeHub</span></button>
               </div>
             )}
           </section>
@@ -126,9 +133,11 @@ export function App() {
         {page === 'dashboard' && <TwdDashboardPage onOpenReport={() => setPage('performance')} />}
         {page === 'dashboard-hp' && <TwdDashboardPage mtCode="HP" onOpenReport={() => setPage('performance-hp')} />}
         {page === 'dashboard-mh' && <TwdDashboardPage mtCode="MH" onOpenReport={() => setPage('performance-mh')} />}
+        {page === 'dashboard-hh' && <TwdDashboardPage mtCode="HH" onOpenReport={() => setPage('performance-hh')} />}
         {page === 'performance' && <PerformancePage />}
         {page === 'performance-hp' && <PerformancePage mtCode="HP" />}
         {page === 'performance-mh' && <PerformancePage mtCode="MH" />}
+        {page === 'performance-hh' && <PerformancePage mtCode="HH" />}
         {page === 'imports' && <ImportPage correctiveBatchId={correctiveBatchId} />}
         {page === 'monitoring' && <MonitoringPage onOpenImports={(batchId) => { setCorrectiveBatchId(batchId); setPage('imports') }} onOpenCoverage={() => { setSettingsFocusKey(Date.now()); setPage('settings') }} />}
         {page === 'settings' && <SettingsPage focusCoverageKey={settingsFocusKey} />}

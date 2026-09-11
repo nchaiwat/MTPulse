@@ -13,9 +13,10 @@ import type { LucideIcon } from 'lucide-react'
 import { FileShareSettingsCard } from './FileShareSettingsCard'
 import { SystemSettingsPage } from './SystemSettingsPage'
 import { TwdSettingsPage } from './TwdSettingsPage'
+import { MODERN_TRADES, type ModernTradeCode } from '../../config/modernTrades'
 import './settingsControlPlane.css'
 
-type SettingsScope = 'global' | 'TWD' | 'HP' | 'MH' | 'GH' | 'SCG' | 'HH' | 'TA'
+type SettingsScope = 'global' | ModernTradeCode
 
 type ScopeDefinition = {
   code: SettingsScope
@@ -27,13 +28,15 @@ type ScopeDefinition = {
 
 const scopes: ScopeDefinition[] = [
   { code: 'global', label: 'Global', name: 'Global Settings', status: 'ready' },
-  { code: 'TWD', label: 'TWD', name: 'Thai Watsadu', status: 'ready' },
-  { code: 'HP', label: 'HP', name: 'HomePro', status: 'partial', sharedWith: 'MH' },
-  { code: 'MH', label: 'MH', name: 'MegaHome', status: 'partial', sharedWith: 'HP' },
-  { code: 'GH', label: 'GH', name: 'Modern Trade GH', status: 'planned' },
-  { code: 'SCG', label: 'SCG', name: 'Modern Trade SCG', status: 'planned' },
-  { code: 'HH', label: 'HH', name: 'Modern Trade HH', status: 'planned' },
-  { code: 'TA', label: 'TA', name: 'Modern Trade TA', status: 'planned' },
+  ...Object.values(MODERN_TRADES).map((definition): ScopeDefinition => ({
+    code: definition.code,
+    label: definition.code,
+    name: definition.name,
+    status: definition.activeCapabilities.includes('settings')
+      ? definition.plannedCapabilities.length > 0 ? 'partial' : 'ready'
+      : 'planned',
+    sharedWith: definition.code === 'HP' ? 'MH' : definition.code === 'MH' ? 'HP' : undefined,
+  })),
 ]
 
 const statusLabel = {
@@ -179,7 +182,14 @@ export function SettingsPage({ focusCoverageKey = 0 }: { focusCoverageKey?: numb
           </>
         )}
 
-        {['GH', 'SCG', 'HH', 'TA'].includes(activeScope) && (
+        {activeScope === 'HH' && (
+          <>
+            <FileShareSettingsCard view="profile" profileCode="HH" showSaveAction onDirtyChange={(dirty) => setDirtyScope(dirty ? 'HH' : null)} />
+            <TwdSettingsPage embedded mtCode="HH" mtName="HomeHub" />
+          </>
+        )}
+
+        {['GH', 'SCG', 'TA'].includes(activeScope) && (
           <>
             <UnavailableSection icon={Bell} eyebrow="Data source & automation" title="Source Connection and Schedule" description="Source profile สำหรับ Modern Trade นี้ยังไม่ถูกกำหนด" />
             <CapabilityTemplate />

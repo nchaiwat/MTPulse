@@ -23,6 +23,7 @@ import {
   type FileShareTestResult,
   type ImportRun,
 } from './fileShareSettingsApi'
+import { isModernTradeCapabilityActive } from '../../config/modernTrades'
 import { runProgressView } from './runProgress'
 
 type SettingsMessage = { text: string; tone: 'success' | 'error' }
@@ -384,6 +385,7 @@ export const FileShareSettingsCard = forwardRef<FileShareSettingsHandle, {
             ? 'warning'
             : currentRunStatus.tone
           const hasUnsavedSettings = isDirty
+          const isPairSource = profile.sourceGroup === 'HP_MH' || profile.sourceGroup === 'HH'
           const sharedMembers = profile.sourceGroup === 'HP_MH'
             ? profiles.filter((item) => item.sourceGroup === 'HP_MH')
             : []
@@ -436,7 +438,7 @@ export const FileShareSettingsCard = forwardRef<FileShareSettingsHandle, {
                     <input
                       type="checkbox"
                       checked={profile.scheduleEnabled}
-                      disabled={!profile.enabled || !['TWD', 'HP', 'MH'].includes(profile.code)}
+                      disabled={!profile.enabled || !isModernTradeCapabilityActive(profile.code, 'automaticImport')}
                       onChange={(event) => updateProfile(profile.code, {
                         scheduleEnabled: event.target.checked,
                       })}
@@ -449,7 +451,7 @@ export const FileShareSettingsCard = forwardRef<FileShareSettingsHandle, {
                       aria-label={`เวลา Schedule ${profile.code}`}
                       type="time"
                       value={profile.scheduleTime ?? ''}
-                      disabled={!profile.enabled || !profile.scheduleEnabled || !['TWD', 'HP', 'MH'].includes(profile.code)}
+                      disabled={!profile.enabled || !profile.scheduleEnabled || !isModernTradeCapabilityActive(profile.code, 'automaticImport')}
                       onChange={(event) => updateProfile(profile.code, {
                         scheduleTime: event.target.value || null,
                       })}
@@ -487,8 +489,8 @@ export const FileShareSettingsCard = forwardRef<FileShareSettingsHandle, {
                         <span>{progressView.phaseLabel}</span>
                         <strong>
                           {progress?.total
-                            ? `${progress.processed.toLocaleString()} / ${progress.total.toLocaleString()} ${profile.sourceGroup === 'HP_MH' ? 'คู่ไฟล์' : 'ไฟล์'}`
-                            : `กำลังนับ${profile.sourceGroup === 'HP_MH' ? 'คู่ไฟล์' : 'ไฟล์'}…`}
+                            ? `${progress.processed.toLocaleString()} / ${progress.total.toLocaleString()} ${isPairSource ? 'คู่ไฟล์' : 'ไฟล์'}`
+                            : `กำลังนับ${isPairSource ? 'คู่ไฟล์' : 'ไฟล์'}…`}
                         </strong>
                       </div>
                       <div
@@ -500,7 +502,7 @@ export const FileShareSettingsCard = forwardRef<FileShareSettingsHandle, {
                         aria-valuemax={progress?.total || undefined}
                         aria-valuenow={progress?.total ? progress.processed : undefined}
                         aria-valuetext={progress?.total
-                          ? `${progress.percent}% · ${progress.processed} จาก ${progress.total} ${profile.sourceGroup === 'HP_MH' ? 'คู่ไฟล์' : 'ไฟล์'}`
+                          ? `${progress.percent}% · ${progress.processed} จาก ${progress.total} ${isPairSource ? 'คู่ไฟล์' : 'ไฟล์'}`
                           : 'กำลังสำรวจรายการไฟล์'}
                       >
                         <span
@@ -565,7 +567,7 @@ export const FileShareSettingsCard = forwardRef<FileShareSettingsHandle, {
                       disabled
                       || busy !== null
                       || !profile.enabled
-                      || !['TWD', 'HP', 'MH'].includes(profile.code)
+                      || !isModernTradeCapabilityActive(profile.code, 'automaticImport')
                       || isRunActive
                       || hasUnsavedSettings
                     }

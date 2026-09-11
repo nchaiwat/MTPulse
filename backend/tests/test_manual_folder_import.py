@@ -3,6 +3,7 @@ from decimal import Decimal
 from itertools import count
 from types import SimpleNamespace
 
+from openpyxl import Workbook
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -32,6 +33,28 @@ def _detection(group: str = "TWD"):
         source_kind="workbook" if group == "TWD" else "inventory",
         reason=None,
     )
+
+
+def _hh_report(path, *, report_date: str = "10-09-2026") -> None:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.cell(1, 1, f"Report date {report_date}")
+    for column, heading in enumerate(["#", "Category", "Group", "SKU", "Description", "Unit"], 1):
+        sheet.cell(2, column, heading)
+    for index, branch in enumerate(["Ubon", "Chayangkun", "Warin", "Khon Kaen", "Amnat", "Total"]):
+        sheet.cell(2, 7 + index * 2, branch)
+        sheet.cell(3, 7 + index * 2, "Qty")
+        sheet.cell(3, 8 + index * 2, "Value")
+    for row_number, sku in enumerate(["00001", "SKU-A7"], 4):
+        sheet.cell(row_number, 1, row_number - 3)
+        sheet.cell(row_number, 2, "Category")
+        sheet.cell(row_number, 3, "Group")
+        sheet.cell(row_number, 4, sku)
+        sheet.cell(row_number, 5, f"Product {sku}")
+        for branch_index in range(5):
+            sheet.cell(row_number, 7 + branch_index * 2, row_number + branch_index)
+            sheet.cell(row_number, 8 + branch_index * 2, (row_number + branch_index) * 10)
+    workbook.save(path)
 
 
 def test_folder_batch_uploads_independently_and_finalizes_one_mt(tmp_path, monkeypatch) -> None:
@@ -213,3 +236,58 @@ def test_hp_mh_folder_completion_is_visible_in_both_mt_audit_streams(
     payloads = [event.after_json or "" for event in events]
     assert any('"mtCode": "HP"' in payload for payload in payloads)
     assert any('"mtCode": "MH"' in payload for payload in payloads)
+
+
+def test_hh_folder_import_pairs_stock_and_sales_without_sku_pattern(
+    tmp_path, monkeypatch
+) -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(manual_upload_batches, "get_settings", lambda: _settings(tmp_path))
+    stock = tmp_path / "source-StockReport.xlsx"
+    sales = tmp_path / "source-SaleReport.xlsx"
+    _hh_report(stock)
+    _hh_report(sales)
+    imported_pairs = []
+    audit_ids = count(1)
+    monkeypatch.setattr(
+        manual_upload_batches,
+        "AuditEvent",
+        lambda **values: AuditEvent(id=next(audit_ids), **values),
+    )
+
+    def import_pair(_session, pair, *, actor):
+        imported_pairs.append((pair, actor))
+        return SimpleNamespace(id=77)
+
+    monkeypatch.setattr(manual_upload_batches, "import_hh_pair", import_pair)
+
+    with Session(engine) as session:
+        batch = create_folder_batch(session, file_count=2, actor="admin")
+        store_folder_file(
+            session,
+            batch,
+            filename="2026-09-10-StockReport.xlsx",
+            content=stock.read_bytes(),
+            idempotency_key="hh-stock",
+        )
+        store_folder_file(
+            session,
+            batch,
+            filename="2026-09-10-SaleReport.xlsx",
+            content=sales.read_bytes(),
+            idempotency_key="hh-sales",
+        )
+        finalize_folder_batch(session, batch, expected_source_group="HH")
+        queue_folder_batch(session, batch)
+        process_folder_batch(session, batch.id)
+        stored_batch = session.get(ManualUploadBatch, batch.id)
+        files = session.query(ManualUploadFile).order_by(ManualUploadFile.id).all()
+
+    assert stored_batch is not None
+    assert stored_batch.status == "completed"
+    assert stored_batch.imported_count == 2
+    assert [row.status for row in files] == ["imported", "imported"]
+    assert [row.source_kind for row in files] == ["inventory", "sales"]
+    assert {row.sku for row in imported_pairs[0][0].rows} == {"00001", "SKU-A7"}
+    assert imported_pairs[0][1] == "admin"

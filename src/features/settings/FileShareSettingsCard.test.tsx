@@ -6,6 +6,34 @@ import { FileShareSettingsCard } from './FileShareSettingsCard'
 describe('FileShareSettingsCard progress', () => {
   afterEach(() => vi.restoreAllMocks())
 
+  it('renders the independent HH source profile in the HH settings scope', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      baseUnc: '\\\\server\\share',
+      domain: 'WA',
+      username: 'user',
+      passwordConfigured: true,
+      passwordMasked: '********',
+      lastTestAt: null,
+      lastTestStatus: null,
+      lastTestResults: [],
+      profiles: [{
+        code: 'HH', name: 'HomeHub', subfolder: 'HomeHub', enabled: true,
+        fullPath: '\\\\server\\share\\HomeHub', scheduleEnabled: false,
+        scheduleTime: null, initialScanCompleted: false, nextRunAt: null,
+        sourceGroup: 'HH', sharedProfileOwner: true, sharedWith: [], lastRun: null,
+      }],
+    }), { status: 200 }))
+
+    const { container } = render(
+      <FileShareSettingsCard view="profile" profileCode="HH" />,
+    )
+
+    expect(await screen.findByRole('heading', { name: 'FileShare · HH' })).toBeInTheDocument()
+    expect(screen.getByText('HomeHub')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('HomeHub')).toBeInTheDocument()
+    expect(container.querySelectorAll('article[data-source-group="HH"]')).toHaveLength(1)
+  })
+
   it('shows live progress, activity and the latest issue for an active run', async () => {
     const now = Date.now()
     vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(

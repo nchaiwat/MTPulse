@@ -1,9 +1,10 @@
 import type { DashboardMetric, DashboardPeriod, TwdDashboardResponse } from './types'
+import type { ActiveModernTradeCode } from '../../config/modernTrades'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
 
 export async function fetchDashboard(
-  mtCode: 'TWD' | 'HP' | 'MH',
+  mtCode: ActiveModernTradeCode,
   period: DashboardPeriod,
   year?: number,
   signal?: AbortSignal,
@@ -30,7 +31,7 @@ export function fetchTwdDashboard(
 }
 
 export async function downloadDashboard(
-  mtCode: 'TWD' | 'HP' | 'MH',
+  mtCode: ActiveModernTradeCode,
   period: DashboardPeriod,
   metric: DashboardMetric,
   year?: number,

@@ -15,6 +15,7 @@ from app.models import (
     ModernTrade,
     SalesInventoryFact,
 )
+from app.modern_trade_registry import active_modern_trade_codes
 
 router = APIRouter(prefix="/api/settings/twd", tags=["TWD settings"])
 modern_trade_router = APIRouter(
@@ -41,7 +42,7 @@ def _twd(session: Session) -> ModernTrade:
 
 def _modern_trade(session: Session, code: str) -> ModernTrade:
     normalized = code.strip().upper()
-    if normalized not in {"TWD", "HP", "MH"}:
+    if normalized not in active_modern_trade_codes("settings"):
         raise HTTPException(status_code=404, detail=f"ไม่รองรับ Modern Trade รหัส {normalized}")
     modern_trade = session.scalar(select(ModernTrade).where(ModernTrade.code == normalized))
     if modern_trade is None:

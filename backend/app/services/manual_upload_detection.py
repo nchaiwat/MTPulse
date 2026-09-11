@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Literal
 from zipfile import BadZipFile, ZipFile
 
+from app.importers.hh import HhFormatError, extract_hh_pair, inspect_hh_workbook
 from app.importers.hp_mh import HpMhFormatError, extract_hp_mh_pair
 from app.importers.twd import TwdFormatError, extract_twd_file
 
@@ -44,6 +45,26 @@ def _detect_twd_workbook(path: Path) -> UploadDetection:
         evidence=(
             "ผ่าน Strict Validation ของ TWD importer",
             f"Data date {extract.data_date.isoformat()}",
+        ),
+    )
+
+
+def _detect_excel_workbook(path: Path) -> UploadDetection:
+    twd = _detect_twd_workbook(path)
+    if twd.status == "detected":
+        return twd
+    try:
+        kind, data_date = inspect_hh_workbook(path)
+    except (HhFormatError, OSError, ValueError):
+        return twd
+    return UploadDetection(
+        status="detected",
+        source_group_code="HH",
+        mt_codes=("HH",),
+        source_kind=kind,
+        evidence=(
+            "ผ่าน Strict Validation ของ HH workbook",
+            f"Data date {data_date.isoformat()}",
         ),
     )
 
@@ -105,6 +126,33 @@ def validate_hp_mh_pair(
     )
 
 
+def validate_hh_pair(
+    inventory_path: str | Path,
+    sales_path: str | Path,
+) -> UploadDetection:
+    try:
+        extract = extract_hh_pair(inventory_path, sales_path)
+    except (HhFormatError, OSError, ValueError) as exc:
+        return UploadDetection(
+            status="conflict",
+            source_group_code="HH",
+            mt_codes=("HH",),
+            source_kind="pair",
+            evidence=(),
+            reason=f"คู่ไฟล์ HH ไม่ผ่าน Strict Validation: {exc}",
+        )
+    return UploadDetection(
+        status="detected",
+        source_group_code="HH",
+        mt_codes=("HH",),
+        source_kind="pair",
+        evidence=(
+            "ผ่าน Strict Validation ของ HH pair importer",
+            f"Data date {extract.data_date.isoformat()}",
+        ),
+    )
+
+
 def _detect_hp_mh_archive(path: Path) -> UploadDetection:
     try:
         with ZipFile(path) as archive:
@@ -136,7 +184,7 @@ def _detect_hp_mh_archive(path: Path) -> UploadDetection:
 Detector = Callable[[Path], UploadDetection]
 DETECTOR_REGISTRY: dict[str, Detector] = {
     ".xls": _detect_twd_workbook,
-    ".xlsx": _detect_twd_workbook,
+    ".xlsx": _detect_excel_workbook,
     ".zip": _detect_hp_mh_archive,
 }
 

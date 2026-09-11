@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.database import get_session
 from app.local_time import bangkok_today
 from app.models import BranchMapping, ItemMapping, ModernTrade, SalesInventoryFact
+from app.modern_trade_registry import active_modern_trade_codes
 from app.services.item_mapping_exchange import (
     ExportBranch,
     ExportItem,
@@ -32,7 +33,7 @@ def export_item_mappings(
     date_to: Annotated[date | None, Query()] = None,
 ) -> StreamingResponse:
     normalized_code = mt_code.strip().upper()
-    if normalized_code not in {"TWD", "HP", "MH"}:
+    if normalized_code not in active_modern_trade_codes("mapping"):
         raise HTTPException(status_code=404, detail=f"ไม่รองรับ Modern Trade รหัส {normalized_code}")
     modern_trade = session.scalar(select(ModernTrade).where(ModernTrade.code == normalized_code))
     if modern_trade is None:
@@ -145,7 +146,7 @@ async def import_item_mappings(
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="ไฟล์มีขนาดเกิน 10 MB")
     normalized_code = mt_code.strip().upper()
-    if normalized_code not in {"TWD", "HP", "MH"}:
+    if normalized_code not in active_modern_trade_codes("mapping"):
         raise HTTPException(status_code=404, detail=f"ไม่รองรับ Modern Trade รหัส {normalized_code}")
     modern_trade = session.scalar(select(ModernTrade).where(ModernTrade.code == normalized_code))
     if modern_trade is None:

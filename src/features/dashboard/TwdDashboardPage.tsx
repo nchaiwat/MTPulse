@@ -22,6 +22,7 @@ import type {
   TwdDashboardResponse,
 } from './types'
 import './twd-dashboard.css'
+import { MODERN_TRADES, type ActiveModernTradeCode } from '../../config/modernTrades'
 
 const amount = new Intl.NumberFormat('th-TH', { maximumFractionDigits: 0 })
 const quantity = new Intl.NumberFormat('th-TH', { maximumFractionDigits: 0 })
@@ -50,15 +51,9 @@ function Change({ value }: { value: number | null }) {
 }
 
 interface TwdDashboardPageProps {
-  mtCode?: 'TWD' | 'HP' | 'MH'
+  mtCode?: ActiveModernTradeCode
   onOpenReport?: () => void
 }
-
-const dashboardNames = {
-  TWD: { short: 'TWD', name: 'TWD' },
-  HP: { short: 'HP', name: 'HomePro (HP)' },
-  MH: { short: 'MH', name: 'MegaHome (MH)' },
-} as const
 
 export function TwdDashboardPage({
   mtCode = 'TWD',
@@ -94,7 +89,10 @@ export function TwdDashboardPage({
     }
   }, [mtCode, period, year, reloadKey])
 
-  const dashboardName = dashboardNames[mtCode]
+  const dashboardName = {
+    short: MODERN_TRADES[mtCode].code,
+    name: MODERN_TRADES[mtCode].displayName,
+  }
 
   if (!data && busy) {
     return (

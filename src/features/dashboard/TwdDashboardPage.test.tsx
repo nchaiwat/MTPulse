@@ -62,6 +62,23 @@ const response = {
 describe('TwdDashboardPage', () => {
   afterEach(() => vi.restoreAllMocks())
 
+  it('loads HH through the shared dashboard route as a first-class MT', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({
+        ...response,
+        meta: { ...response.meta, mtCode: 'HH', mtName: 'HomeHub' },
+      }), { status: 200 }),
+    )
+
+    render(<TwdDashboardPage mtCode="HH" onOpenReport={vi.fn()} />)
+
+    expect(await screen.findByRole('heading', { name: 'ภาพรวม Performance ของ HomeHub (HH)' })).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/dashboards/hh?'),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    )
+  })
+
   it('uses mapped branch labels, separate SKU columns, and non-overlapping chart details', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify(response), { status: 200 }),

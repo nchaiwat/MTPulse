@@ -9,6 +9,7 @@ import {
   updateReportPageSize,
   type UnmatchedVisibility,
 } from './twdSettingsApi'
+import type { ActiveModernTradeCode } from '../../config/modernTrades'
 import { SkuBackfillPanel } from './SkuBackfillPanel'
 
 const defaultSettings: UnmatchedVisibility = {
@@ -29,7 +30,7 @@ export function TwdSettingsPage({
   mtName = 'ไทวัสดุ',
 }: {
   embedded?: boolean
-  mtCode?: 'TWD' | 'HP' | 'MH'
+  mtCode?: ActiveModernTradeCode
   mtName?: string
 }) {
   const [settings, setSettings] = useState(defaultSettings)

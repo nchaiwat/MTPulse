@@ -10,6 +10,7 @@ from app.config import get_settings
 from app.database import SessionLocal
 from app.local_time import bangkok_now
 from app.models import ImportRun, ManualUploadBatch, ModernTrade
+from app.modern_trade_registry import active_source_owner_codes
 from app.services.automatic_import import ActiveRunError, create_run, process_run
 from app.services.manual_upload_batches import process_folder_batch
 from app.services.sku_backfill import process_sku_backfill_run
@@ -25,7 +26,7 @@ def enqueue_due_runs(now: datetime | None = None) -> int:
     with SessionLocal() as session:
         modern_trades = session.scalars(
             select(ModernTrade).where(
-                ModernTrade.code.in_(("TWD", "HP")),
+                ModernTrade.code.in_(active_source_owner_codes("automatic_import")),
                 ModernTrade.source_enabled.is_(True),
                 ModernTrade.schedule_enabled.is_(True),
                 ModernTrade.schedule_time.is_not(None),

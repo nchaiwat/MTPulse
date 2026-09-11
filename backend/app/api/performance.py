@@ -22,6 +22,7 @@ from app.models import (
     SalesInventoryFact,
     SkuAnalysisFlag,
 )
+from app.modern_trade_registry import ActiveReportingModernTradeCode
 from app.services.performance_export import (
     build_performance_workbook,
     performance_export_filename,
@@ -211,7 +212,7 @@ def _daily_summary_covers_dates(
 @router.get("/performance")
 def performance(
     session: Annotated[Session, Depends(get_session)],
-    mt_code: Annotated[Literal["TWD", "HP", "MH"], Query()] = "TWD",
+    mt_code: Annotated[ActiveReportingModernTradeCode, Query()] = "TWD",
     date_from: Annotated[date | None, Query()] = None,
     date_to: Annotated[date | None, Query()] = None,
     date_range: Annotated[list[str] | None, Query()] = None,
@@ -1070,7 +1071,7 @@ def performance(
 @router.get("/performance/sku-options")
 def sku_options(
     session: Annotated[Session, Depends(get_session)],
-    mt_code: Annotated[Literal["TWD", "HP", "MH"], Query()] = "TWD",
+    mt_code: Annotated[ActiveReportingModernTradeCode, Query()] = "TWD",
 ) -> dict:
     modern_trade = session.scalar(select(ModernTrade).where(ModernTrade.code == mt_code))
     if modern_trade is None:
@@ -1159,7 +1160,7 @@ def sku_options(
 @router.get("/performance/export")
 def export_performance(
     session: Annotated[Session, Depends(get_session)],
-    mt_code: Annotated[Literal["TWD", "HP", "MH"], Query()] = "TWD",
+    mt_code: Annotated[ActiveReportingModernTradeCode, Query()] = "TWD",
     date_from: Annotated[date | None, Query()] = None,
     date_to: Annotated[date | None, Query()] = None,
     date_range: Annotated[list[str] | None, Query()] = None,

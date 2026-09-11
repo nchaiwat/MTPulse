@@ -1642,3 +1642,146 @@ Final migration naming และ reuse กับ `ImportRun`/`SourceFile` ให
 - Added frontend API contracts and limits only; Import page components, layout, styles and current interaction behavior were not changed
 - Backend 147 tests, Frontend 87 tests, Ruff, ESLint, production build and offline PostgreSQL migration SQL generation passed
 - Phase 2 staging upload, endpoints and background worker have not started
+
+# HomeHub (HH) Full Modern Trade Package — Implementation Plan (11 September 2026)
+
+## Project Summary
+
+ยกระดับ HH จาก route/page integration เบื้องต้นเป็น package ที่ใช้งานได้ครบวงจร โดยใช้ TWD เป็น Master ของ Concept และ shared workflow ทั้ง Import, Mapping, Data Quality, Automation, Dashboard, Report, Excel, Monitoring, Settings, Audit และ Operations แต่คง parser/metric/business rules เฉพาะ HH และไม่เปลี่ยนผลลัพธ์ของ TWD/HP/MH
+
+## Goals And Non-goals
+
+### Goals
+
+- ทุก capability ที่เปิดจริงใน TWD และเกี่ยวข้องกับ Modern Trade ต้องประเมินและ implement สำหรับ HH หรือประกาศ unsupported ด้วยเหตุผลจาก source จริง
+- Manual/Automatic/Corrective import ใช้ validation และ transaction service ของ HH ชุดเดียวกัน
+- ใช้ configuration/registry เป็นจุดรวม identity, labels, metrics, source adapter และ capability ของ MT
+- แสดง 158 HH SKU ทั้ง mapped/unmapped และรักษา opaque SKU identity
+- App, API, Excel, Audit และ Monitoring ให้ผลสอดคล้องกัน
+
+### Non-goals
+
+- ไม่สร้าง Stock On Order หรือ field ที่ไม่มีใน HH source
+- ไม่ยืม TWD facts/mapping/settings เป็น fallback
+- ไม่ redesign หน้าอื่นหรือเปลี่ยนสูตร/UX ของ TWD/HP/MH
+- ไม่ auto-map SKU จากรูปแบบรหัส
+
+## Technical Architecture
+
+- เพิ่ม shared `ModernTradeDefinition/Capability` registry สำหรับ code/name/source group/VAT/metrics/import pairing/dashboard/report/export/automation support
+- ให้ HH source adapter รับ Stock/Sale workbook pair, คืน normalized extract และ strict reconciliation result
+- ให้ import orchestrator ทั้ง manual, folder, FileShare, schedule, catch-up และ corrective เรียก adapter/service ผ่าน registry
+- ให้ query/export services ใช้ `modern_trade_id` scope และ capability validation; ไม่มี default TWD fallback
+- ให้ monitoring/audit/notification project HH จาก run/batch/fact stateเดียวกับ MT อื่น
+
+## File And Module Plan
+
+- Backend registry/config: รวม MT identity และ capability ที่ปัจจุบันกระจายใน API/services
+- `app/importers/hh.py`: strict parsing, date/pair/branch/SKU/metric reconciliation
+- `app/services/hh_import.py`: idempotent transaction, corrected re-import, summaries, coverage และ interests
+- FileShare/import-run services: เพิ่ม HH discovery/pairing/run/schedule/catch-up/progress
+- Import/corrective/mapping/performance/dashboard/monitoring/settings APIs: เพิ่ม HH ผ่าน registry และ shared predicates
+- Frontend app/import/settings/monitoring/dashboard/performance: ใช้ shared definition และ HH-specific labels/metrics เท่านั้น
+- Excel exporters: เพิ่ม HH metadata/status/mapping/Sho-Pro/TOM-TOD/filter parity
+- Alembic/data bootstrap: HH trade/profile/indexes และ initial verified mappings โดยไม่แตะ facts ของ MT อื่น
+- Tests: HH unit/contract/integration/E2E และ cross-MT regression matrix
+
+## Data Model And Migration Plan
+
+- Reuse `modern_trades`, facts, daily/monthly summaries, coverage, mappings, interests, analysis flags, import batches/runs, audit และ monitoring tables
+- เพิ่ม schema เฉพาะเมื่อ shared model ยังเก็บ pair identity, stock value หรือ capability ไม่ได้; migration ต้อง additive
+- Modern Trade `HH`: Ex VAT, unmatched item/branch visible, source group/subfolder และ schedule profile แยก
+- Mapping unique/effective-date scope ต้องมี `modern_trade_id`; initial seed ใช้ข้อมูล HH ที่ตรวจสอบจาก Manual workbook เท่านั้น
+- ตรวจ indexes ของ facts/summaries/mapping/flags/runs สำหรับ query ด้วย `modern_trade_id + date + sku/branch`
+
+## API And Integration Plan
+
+- HH manual preview/confirm รองรับ Stock/Sale pair และผล validation รายไฟล์
+- FileShare settings/test/run-now/run-status รองรับ HH ผ่าน profile จริง
+- Folder detector รู้จัก HH จาก workbook invariants ไม่พึ่ง filename/SKU length
+- Performance/dashboard/detail/SKU options/export/mapping/flags endpoints รับ `mt_code=HH`
+- Monitoring health/snapshot/history แสดง HH counts, latest date, records, run state และ deep link
+- Corrective endpoints รองรับ acknowledge/replace/retry ภายใต้ HH validator; ข้อความ notification ระบุ HomeHub (HH)
+- Error contract แยก missing pair, date mismatch, invalid structure, reconciliation, duplicate และ corrected source
+
+## Phased Implementation
+
+### Phase 1 — Package Registry And Gap-lock Tests
+
+1. สร้าง inventory checklist เทียบ TWD routes/services/jobs/UI/exports/settings กับ HH
+2. เพิ่ม failing coverage tests ที่ตรวจทุก shared registry consumer และห้าม TWD fallback
+3. รวม MT definition/capability registry แบบ backward-compatible
+4. ปรับ HH bootstrap/migration และ test opaque SKU/cross-MT isolation
+
+### Phase 2 — HH Import, Automation And Corrective Parity
+
+1. ทำ HH pair validator/reconciliation ให้ใช้กับ real Stock/Sale fixtures
+2. เชื่อม manual/folder detection และ background batch orchestration
+3. เชื่อม FileShare scan, schedule, catch-up, Run ทันที, lock, duplicate และ progress
+4. เชื่อม corrective replace/retry/acknowledge, audit และ notifications
+
+### Phase 3 — Mapping, Settings And Monitoring Parity
+
+1. เพิ่ม initial verified HH mappings และคง unmapped SKU visibility
+2. ตรวจ Item/Branch mapping export/import/effective-date/audit ของ HH
+3. ทำ HH Settings profile/source/schedule/test/run status ให้ทำงานจริง
+4. เพิ่ม HH monitoring snapshot, latest data, record/branch/SKU counts, issue summary และ deep links
+
+### Phase 4 — Dashboard, Report, Excel And Interaction Parity
+
+1. ตรวจ Dashboard full-year/YTD/H1/H2, KPI, charts, completeness และ Excel
+2. ตรวจ Report ทุก Sales/Inventory metric และ Branch/Date/Month capability
+3. ตรวจ TOM/TOD, Sho/Pro persistence/filter, description, heatmap, drawer, loading/error/empty และ pagination
+4. ตรวจ Excel represent screen/filter/status และ unmapped rows แบบ page-independent
+
+### Phase 5 — End-to-end Verification And Deployment
+
+1. Import real HH pair และประวัติย้อนหลังที่มี; reconcile source totals/facts/summaries
+2. รัน Backend full suite/Ruff, Frontend full suite/ESLint/build และ migration upgrade/downgrade SQL review
+3. Browser QA ทุก workflow/role และ cross-MT navigation
+4. Backup DB, deploy WA-MTPULSE-TEST, migrate, smoke Run ทันที/Monitoring/Dashboard/Report/Excel
+5. ตรวจ server performance/logs แล้วจึงเปิด schedule; เตรียม rollback ที่ไม่ลบ HH facts/mappings
+
+## Test And Acceptance Matrix
+
+- Import: valid pair, missing pair, mismatched date, duplicate checksum/business date, corrected file, malformed sheet/header และ zero/negative values
+- Identity: leading zero, 5/7/9/11 digits, alphanumeric SKU และรหัสซ้ำข้าม MT ต้องไม่ปะปน
+- Automation: scan, catch-up, schedule, run-now, restart, concurrent manual run และ stale heartbeat
+- Mapping: verified/unmapped, effective date, re-import, export/import และ Sho/Pro persistence
+- Views: Dashboard periods/metrics; Report Sales/Inventory × Branch/Date/Month × all filters
+- Parity: KPI/SUM/AVG TOM-TOD/row count/Excel เท่ากับ API scope และ screen
+- Regression: TWD/HP/MH imports, calculations, UI and exports unchanged
+- Performance: Monitoring bounded payload, summary fast paths, request cancellation/loading และ query plans use intended indexes
+
+## Security And Error Handling
+
+- ใช้ role enforcement เดิมสำหรับ Admin folder/settings/corrective และ User single-file/report actions
+- ไม่เก็บ client absolute path; source FileShare เป็น read-only และ staging cleanup ตาม policy
+- ทุก mutation มี actor/audit; ไม่มี force import ข้าม strict validation
+- Error รายไฟล์อยู่ Import; Monitoring แสดง summary/deep link เท่านั้น
+
+## Deployment Checklist
+
+- Freeze baseline counts/checksums ของ TWD/HP/MH ก่อน migration
+- Backup PostgreSQL และตรวจ restore metadata
+- Deploy migration/API/worker/web versionเดียวกัน
+- Apply/verify HH profile และ mapping seed แบบ idempotent
+- Smoke health, FileShare test, Run ทันที, import pair, monitoring, dashboard, report, Sho/Pro และ Excel
+- เทียบ baseline MT เดิมหลัง deploy; เปิด HH schedule เมื่อ reconciliation ผ่าน
+- Rollback app ได้โดยไม่ downgrade/delete HH business dataจน Product Owner อนุมัติ
+
+## Open Decisions
+
+- ไม่มี decision เชิง Concept ค้าง: HH ใช้ Pattern/บริบทเดียวกับ TWD/HP/MH และใช้ source-specific adapter ตามข้อมูลจริง
+- รายละเอียด filename/folder เป็น configuration/evidence ของ source discovery ไม่ใช่กฎ identity ที่ hard-code จาก SKU
+
+## Confirmation Gate
+
+- สิ่งที่จะสร้างคือ HH package ครบวงจร ไม่ใช่เฉพาะหน้า Report/Dashboard/Import/Monitoring/Settings
+- จุดที่จงใจไม่ทำคือ metric/source field ที่ HH ไม่มี และการ fallback ไปใช้ข้อมูลของ MT อื่น
+- Phase 1 complete: shared backend/frontend registry ระบุ capability ของ TWD/HP/MH/HH และเตรียม GH/SCG/TA เป็น package เดียวกัน
+- Phase 2 complete: HH manual/folder/FileShare/Run ทันที/corrective import ใช้ pair validator และ HH transaction path เดียวกัน
+- Phase 3 complete: Settings, Mapping, SKU Backfill และ Monitoring รองรับ HH; seed เฉพาะ 73 Item และ 4 Branch ที่ยืนยันจาก workbook
+- Phase 4 complete: Dashboard, Report, Excel, TOM/TOD, Sho/Pro และ interaction ใช้ shared TWD pattern โดยคง metric/source rule ของ HH
+- Phase 5 local verification complete: Backend 169 tests, Frontend 97 tests, ESLint, Ruff, production build และ offline migration SQL ผ่าน
+- Deployment ไป WA-MTPULSE-TEST ยังไม่รวมอยู่ในรอบนี้จนกว่า Product Owner จะสั่ง Push/Deploy โดยตรง

@@ -12,6 +12,7 @@ from starlette.responses import StreamingResponse
 
 from app.database import get_session
 from app.models import BranchMapping, ImportBatch, ModernTrade, MonthlySalesSummary
+from app.modern_trade_registry import active_modern_trade_codes
 from app.services.dashboard_export import (
     build_dashboard_workbook,
     dashboard_export_filename,
@@ -351,7 +352,7 @@ def modern_trade_dashboard(
     period: Annotated[Period, Query()] = "ytd",
 ) -> dict:
     normalized = code.strip().upper()
-    if normalized not in {"HP", "MH"}:
+    if normalized not in active_modern_trade_codes("dashboard") - {"TWD"}:
         raise HTTPException(status_code=404, detail=f"ไม่รองรับ Dashboard {normalized}")
     return _dashboard(normalized, session, year, period)
 
@@ -365,7 +366,7 @@ def export_modern_trade_dashboard(
     metric: Annotated[Literal["amount", "qty"], Query()] = "amount",
 ) -> StreamingResponse:
     normalized = code.strip().upper()
-    if normalized not in {"TWD", "HP", "MH"}:
+    if normalized not in active_modern_trade_codes("excel"):
         raise HTTPException(status_code=404, detail=f"ไม่รองรับ Dashboard {normalized}")
     report = _dashboard(normalized, session, year, period)
     selected_year = report["meta"]["year"]

@@ -117,6 +117,22 @@ export interface HpMhImportPreview {
   timings?: ImportTimings
 }
 
+export interface HhImportPreview {
+  detectedSourceGroup: 'HH'
+  detectedMtCode: 'HH'
+  dataDate: string
+  stockFilename: string
+  salesFilename: string
+  businessFingerprint: string
+  summary: HpMhImportSummary
+  warnings: string[]
+  canImport: boolean
+  duplicateReason: string | null
+  operation: 'import' | 'replace'
+  replacementBatchId: number | null
+  timings?: ImportTimings
+}
+
 export interface ImportTimings {
   serverReadMs?: number
   downloadMs?: number
@@ -305,6 +321,36 @@ export async function confirmHpMhImport(
   }>('/api/imports/hp-mh/confirm', form, onProgress)
 }
 
+export async function previewHhImport(
+  stockFile: File,
+  salesFile: File,
+  onProgress?: (progress: UploadProgress) => void,
+): Promise<HhImportPreview> {
+  const form = new FormData()
+  form.append('stock_file', stockFile)
+  form.append('sales_file', salesFile)
+  return uploadForm<HhImportPreview>('/api/imports/hh/preview', form, onProgress)
+}
+
+export async function confirmHhImport(
+  stockFile: File,
+  salesFile: File,
+  fingerprint: string,
+  onProgress?: (progress: UploadProgress) => void,
+) {
+  const form = new FormData()
+  form.append('stock_file', stockFile)
+  form.append('sales_file', salesFile)
+  form.append('expected_fingerprint', fingerprint)
+  return uploadForm<{
+    batchId: number
+    status: string
+    message: string
+    dataDate: string
+    timings?: ImportTimings
+  }>('/api/imports/hh/confirm', form, onProgress)
+}
+
 async function jsonRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, init)
   if (!response.ok) throw new Error(await errorMessage(response))
@@ -338,7 +384,7 @@ export function uploadFolderImportFile(
 
 export function finalizeFolderImportBatch(
   batchId: number,
-  expectedSourceGroup: 'TWD' | 'HP_MH',
+  expectedSourceGroup: 'TWD' | 'HP_MH' | 'HH',
 ) {
   return jsonRequest<ManualUploadBatchContract>(
     `/api/admin/imports/manual-batches/${batchId}/finalize`,

@@ -28,12 +28,14 @@ import {
 } from './importApi'
 import { ImportCorrectivePanel } from './ImportCorrectivePanel'
 import { FolderImportPanel } from './FolderImportPanel'
+import { HhImportPanel } from './HhImportPanel'
 import { formatDisplayDate, formatDisplayDateTime } from '../../shared/dateFormat'
+import { ACTIVE_MODERN_TRADES, type ActiveModernTradeCode } from '../../config/modernTrades'
 
 const number = new Intl.NumberFormat('th-TH', { maximumFractionDigits: 2 })
 type SourceMode = 'upload' | 'fileshare'
 type ManualMode = 'single' | 'folder'
-type ImportWorkspaceTab = 'overview' | 'TWD' | 'HP' | 'MH'
+type ImportWorkspaceTab = 'overview' | ActiveModernTradeCode
 
 const workspaceTabs: Array<{
   code: ImportWorkspaceTab
@@ -41,9 +43,11 @@ const workspaceTabs: Array<{
   name: string
 }> = [
   { code: 'overview', label: 'ภาพรวม', name: 'ทุก Modern Trade' },
-  { code: 'TWD', label: 'TWD', name: 'Thai Watsadu' },
-  { code: 'HP', label: 'HP', name: 'HomePro' },
-  { code: 'MH', label: 'MH', name: 'MegaHome' },
+  ...ACTIVE_MODERN_TRADES.map((definition) => ({
+    code: definition.code as ActiveModernTradeCode,
+    label: definition.code,
+    name: definition.name,
+  })),
 ]
 type WorkProgress = UploadProgress | {
   phase: 'fileshare' | 'importing'
@@ -652,6 +656,13 @@ export function ImportPage({ correctiveBatchId = null }: { correctiveBatchId?: n
           )}
           </>}
         </section>
+      )}
+
+      {activeTab === 'HH' && (
+        <>
+          <HhImportPanel onCompleted={() => void loadActivity()} />
+          <FolderImportPanel expectedSourceGroup="HH" onCompleted={() => void loadActivity()} />
+        </>
       )}
 
       <section className="activity-panel" aria-labelledby="activity-heading">

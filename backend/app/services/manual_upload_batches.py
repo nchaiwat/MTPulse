@@ -4,16 +4,19 @@ import hashlib
 import json
 import re
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.importers.hh import HhFormatError, extract_hh_pair, inspect_hh_workbook
 from app.importers.hp_mh import HpMhFormatError, extract_hp_mh_pair
 from app.importers.twd import TwdFormatError, extract_twd_file
 from app.models import AuditEvent, ManualUploadBatch, ManualUploadFile
+from app.modern_trade_registry import source_group_member_codes
+from app.services.hh_import import HhImportError, import_hh_pair
 from app.services.hp_mh_import import HpMhImportError, import_hp_mh_pair
 from app.services.manual_upload_contracts import STAGING_RETENTION_DAYS
 from app.services.manual_upload_detection import detect_upload_file
@@ -230,6 +233,8 @@ def process_folder_batch(session: Session, batch_id: int) -> None:
         _process_twd_folder(session, batch)
     elif batch.detected_source_group == "HP_MH":
         _process_hp_mh_folder(session, batch)
+    elif batch.detected_source_group == "HH":
+        _process_hh_folder(session, batch)
     else:
         batch.status = "failed"
         batch.error_message = "ไม่พบ Source Group ที่รองรับ"
@@ -359,6 +364,77 @@ def _process_hp_mh_folder(session: Session, batch: ManualUploadBatch) -> None:
             session.commit()
 
 
+def _process_hh_folder(session: Session, batch: ManualUploadBatch) -> None:
+    rows = _files(session, batch)
+    grouped: dict[date, dict[str, ManualUploadFile]] = {}
+    for row in rows:
+        try:
+            kind, data_date = inspect_hh_workbook(staging_root() / str(row.staging_key))
+            row.source_kind = kind
+            row.data_date = data_date
+            same_date = grouped.setdefault(data_date, {})
+            existing = same_date.get(kind)
+            if existing is not None:
+                reason = f"ข้อมูลวันที่ {data_date:%d/%m/%Y} มีไฟล์ {kind} มากกว่าหนึ่งไฟล์"
+                for duplicate in (existing, row):
+                    duplicate.status = "failed"
+                    duplicate.validation_status = "invalid"
+                    duplicate.status_reason = reason
+                    duplicate.processed_at = datetime.now(UTC)
+                same_date.pop(kind, None)
+                continue
+            same_date[kind] = row
+        except (HhFormatError, OSError, ValueError) as exc:
+            row.status = "failed"
+            row.validation_status = "invalid"
+            row.status_reason = str(exc)
+            row.processed_at = datetime.now(UTC)
+    session.commit()
+    for data_date, pair_rows in sorted(grouped.items()):
+        inventory_row = pair_rows.get("inventory")
+        sales_row = pair_rows.get("sales")
+        if inventory_row is None or sales_row is None:
+            missing = "StockReport.xlsx" if inventory_row is None else "SaleReport.xlsx"
+            for row in pair_rows.values():
+                row.status = "failed"
+                row.validation_status = "invalid"
+                row.status_reason = f"ข้อมูลวันที่ {data_date:%d/%m/%Y} ไม่พบ {missing}"
+                row.processed_at = datetime.now(UTC)
+            session.commit()
+            continue
+        try:
+            pair = extract_hh_pair(
+                staging_root() / str(inventory_row.staging_key),
+                staging_root() / str(sales_row.staging_key),
+            )
+            pair = replace(
+                pair,
+                inventory_path=f"manual-folder:{inventory_row.display_filename}",
+                sales_path=f"manual-folder:{sales_row.display_filename}",
+                inventory_filename=inventory_row.display_filename,
+                sales_filename=sales_row.display_filename,
+            )
+            imported = import_hh_pair(session, pair, actor=batch.requested_by)
+            for row in (inventory_row, sales_row):
+                row.status = "imported"
+                row.validation_status = "valid"
+                row.business_fingerprint = pair.business_fingerprint
+                row.import_batch_id = imported.id
+                row.processed_at = datetime.now(UTC)
+            session.commit()
+        except (HhFormatError, HhImportError, OSError, ValueError) as exc:
+            session.rollback()
+            for row_id in (inventory_row.id, sales_row.id):
+                row = session.get(ManualUploadFile, row_id)
+                if row is None:
+                    continue
+                row.status = "duplicate" if isinstance(exc, HhImportError) else "failed"
+                row.validation_status = "invalid"
+                row.status_reason = str(exc)
+                row.processed_at = datetime.now(UTC)
+            session.commit()
+
+
 def _finish_batch(session: Session, batch: ManualUploadBatch) -> None:
     rows = session.scalars(
         select(ManualUploadFile).where(ManualUploadFile.upload_batch_id == batch.id)
@@ -375,7 +451,7 @@ def _finish_batch(session: Session, batch: ManualUploadBatch) -> None:
         f"นำเข้าสำเร็จ {batch.imported_count} · ซ้ำ {batch.duplicate_count} · "
         f"ผิดพลาด {batch.failed_count} · รอตรวจสอบ {batch.needs_review_count}"
     )
-    mt_codes = ("TWD",) if batch.detected_source_group == "TWD" else ("HP", "MH")
+    mt_codes = source_group_member_codes(batch.detected_source_group or "")
     for mt_code in mt_codes:
         session.add(
             AuditEvent(
