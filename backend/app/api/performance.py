@@ -1021,6 +1021,8 @@ def performance(
                 "id": code,
                 "name": (
                     branch_mapping_by_code[code].wa_branch_description
+                    or branch_mapping_by_code[code].source_branch_description
+                    or name
                     or branch_mapping_by_code[code].wa_branch_code
                 )
                 if code in branch_mapping_by_code

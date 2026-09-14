@@ -1018,6 +1018,13 @@ def test_performance_unmatched_visibility_controls_rows_and_every_total() -> Non
             )
 
         hidden = report()
+        mapped_branch = session.get(BranchMapping, 20)
+        assert mapped_branch is not None
+        mapped_branch.wa_branch_description = None
+        session.commit()
+        source_description_fallback = report()
+        mapped_branch.wa_branch_description = "สาขาที่ Mapping"
+        session.commit()
         modern_trade.show_unmatched_items = True
         modern_trade.show_unmatched_branches = True
         session.commit()
@@ -1059,6 +1066,9 @@ def test_performance_unmatched_visibility_controls_rows_and_every_total() -> Non
     assert hidden["meta"]["totalSkus"] == 1
     assert hidden["meta"]["totalBranches"] == 1
     assert hidden["branches"] == [{"id": "MAPPED-BRANCH", "name": "สาขาที่ Mapping"}]
+    assert source_description_fallback["branches"] == [
+        {"id": "MAPPED-BRANCH", "name": "Mapped source branch"}
+    ]
 
     assert shown["summary"] == {"amount": 1000.0, "qty": 4.0, "mappingAttention": 1}
     assert shown["meta"]["totalSkus"] == 2
