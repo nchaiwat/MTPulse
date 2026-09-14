@@ -162,3 +162,39 @@ def test_refresh_daily_sku_summary_replaces_only_selected_mt_and_date() -> None:
         (1, second_date, 300.0),
         (2, first_date, 900.0),
     ]
+
+
+def test_rolling_sales_are_not_added_to_daily_sales_but_stock_is_retained() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    data_date = date(2026, 9, 11)
+    with Session(engine) as session:
+        rolling_fact = _fact(1, 1, 1, data_date, "B1", 3000)
+        rolling_fact.sales_grain = "rolling_30d"
+        rolling_fact.sales_window_days = 30
+        session.add_all(
+            [
+                ModernTrade(id=1, code="GH", name="Global House"),
+                BranchMapping(
+                    id=1,
+                    modern_trade_id=1,
+                    source_branch_code="B1",
+                    wa_branch_code="WA-B1",
+                    status="confirmed",
+                    effective_from=data_date,
+                    changed_by="test",
+                ),
+                _batch(1, 1, data_date),
+                rolling_fact,
+            ]
+        )
+        session.flush()
+        refresh_daily_sku_summary(session, 1, data_date)
+        session.commit()
+        summary = session.scalar(select(DailySkuSummary))
+
+    assert summary is not None
+    assert float(summary.amount) == 0
+    assert float(summary.sales_qty) == 0
+    assert float(summary.stock_on_hand) == 10
+    assert float(summary.stock_on_order) == 2

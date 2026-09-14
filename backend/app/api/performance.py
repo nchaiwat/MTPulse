@@ -23,6 +23,7 @@ from app.models import (
     SkuAnalysisFlag,
 )
 from app.modern_trade_registry import ActiveReportingModernTradeCode
+from app.sales_grain import SALES_GRAIN_DAILY
 from app.services.performance_export import (
     build_performance_workbook,
     performance_export_filename,
@@ -375,6 +376,8 @@ def performance(
     report_stock_on_order = getattr(report_model, "stock_on_order", literal(0))
     report_stock_value = getattr(report_model, "stock_value", literal(0))
     filters = [report_model.modern_trade_id == modern_trade_id]
+    if report_mode == "sales" and report_model is SalesInventoryFact:
+        filters.append(SalesInventoryFact.sales_grain == SALES_GRAIN_DAILY)
     report_sku_flag_predicate = _sku_flag_predicate(
         report_model.source_sku,
         modern_trade_id,
@@ -641,6 +644,9 @@ def performance(
             )
             if not use_turnover_summary:
                 sales_filters.append(SalesInventoryFact.sales_qty > 0)
+                sales_filters.append(
+                    SalesInventoryFact.sales_grain == SALES_GRAIN_DAILY
+                )
             if not use_turnover_summary and not modern_trade.show_unmatched_branches:
                 stock_filters.append(
                     SalesInventoryFact.source_branch_code.in_(mapped_branches)

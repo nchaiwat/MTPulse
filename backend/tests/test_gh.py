@@ -160,6 +160,8 @@ def test_extract_gh_file_uses_filename_date_and_preserves_source_metrics(tmp_pat
     extract = extract_gh_file(source)
 
     assert extract.data_date == date(2026, 9, 11)
+    assert extract.sales_grain == "rolling_30d"
+    assert extract.sales_window_days == 30
     assert extract.summary.row_count == 2
     assert extract.summary.store_count == 2
     assert extract.summary.sku_count == 2
@@ -186,6 +188,8 @@ def test_extract_gh_file_supports_legacy_wide_branch_layout(tmp_path: Path) -> N
     extract = extract_gh_file(source)
 
     assert extract.data_date == date(2026, 8, 2)
+    assert extract.sales_grain == "daily"
+    assert extract.sales_window_days is None
     assert extract.summary.row_count == 3
     assert extract.summary.store_count == 2
     assert extract.summary.sku_count == 2

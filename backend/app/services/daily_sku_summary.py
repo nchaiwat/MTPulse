@@ -4,6 +4,7 @@ from sqlalchemy import case, delete, func, insert, select
 from sqlalchemy.orm import Session
 
 from app.models import BranchMapping, DailySkuSummary, ImportBatch, SalesInventoryFact
+from app.sales_grain import SALES_GRAIN_DAILY
 
 AVAILABLE_BATCH_STATUSES = ("imported", "imported_with_warnings")
 
@@ -50,18 +51,39 @@ def _insert_daily_sku_summaries(
             SalesInventoryFact.data_date,
             SalesInventoryFact.source_sku,
             func.min(SalesInventoryFact.source_description),
-            func.sum(SalesInventoryFact.amount),
-            func.sum(SalesInventoryFact.sales_qty),
             func.sum(
                 case(
-                    (SalesInventoryFact.amount > 0, SalesInventoryFact.amount),
+                    (
+                        SalesInventoryFact.sales_grain == SALES_GRAIN_DAILY,
+                        SalesInventoryFact.amount,
+                    ),
                     else_=0,
                 )
             ),
             func.sum(
                 case(
                     (
-                        SalesInventoryFact.sales_qty > 0,
+                        SalesInventoryFact.sales_grain == SALES_GRAIN_DAILY,
+                        SalesInventoryFact.sales_qty,
+                    ),
+                    else_=0,
+                )
+            ),
+            func.sum(
+                case(
+                    (
+                        (SalesInventoryFact.sales_grain == SALES_GRAIN_DAILY)
+                        & (SalesInventoryFact.amount > 0),
+                        SalesInventoryFact.amount,
+                    ),
+                    else_=0,
+                )
+            ),
+            func.sum(
+                case(
+                    (
+                        (SalesInventoryFact.sales_grain == SALES_GRAIN_DAILY)
+                        & (SalesInventoryFact.sales_qty > 0),
                         SalesInventoryFact.sales_qty,
                     ),
                     else_=0,

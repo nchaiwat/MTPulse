@@ -63,6 +63,10 @@ class ImportBatch(Base):
     modern_trade_id: Mapped[int] = mapped_column(ForeignKey("modern_trades.id"))
     status: Mapped[str] = mapped_column(String(32), index=True)
     data_date: Mapped[date] = mapped_column(Date, index=True)
+    sales_grain: Mapped[str] = mapped_column(
+        String(20), default="daily", server_default="daily", index=True
+    )
+    sales_window_days: Mapped[int | None] = mapped_column(Integer)
     source_path: Mapped[str] = mapped_column(Text)
     source_filename: Mapped[str] = mapped_column(String(255))
     checksum_sha256: Mapped[str] = mapped_column(String(64))
@@ -274,6 +278,10 @@ class SalesInventoryFact(Base):
     modern_trade_id: Mapped[int] = mapped_column(ForeignKey("modern_trades.id"))
     batch_id: Mapped[int] = mapped_column(ForeignKey("import_batches.id", ondelete="CASCADE"))
     data_date: Mapped[date] = mapped_column(Date)
+    sales_grain: Mapped[str] = mapped_column(
+        String(20), default="daily", server_default="daily", index=True
+    )
+    sales_window_days: Mapped[int | None] = mapped_column(Integer)
     source_branch_code: Mapped[str] = mapped_column(String(30))
     source_branch_name: Mapped[str] = mapped_column(String(300))
     category: Mapped[str | None] = mapped_column(String(300))

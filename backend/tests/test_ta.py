@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from itertools import count
 from pathlib import Path
@@ -17,9 +17,12 @@ from app.models import (
     ItemMapping,
     ModernTrade,
     SalesInventoryFact,
+    SourceFile,
 )
 from app.services import ta_import
+from app.services.automatic_import import SourceCandidate
 from app.services.manual_upload_detection import detect_upload_file
+from app.services.ta_automatic_import import _ta_unchanged_outcome
 from app.services.ta_import import TaImportError, import_ta_file
 
 HEADERS = [
@@ -78,6 +81,51 @@ def _report(path: Path, *, footer_sale_amount: object = 0) -> None:
     workbook.save(path)
 
 
+def _legacy_report(path: Path) -> None:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.merge_cells("H2:L2")
+    sheet["H2"] = "GH-003"
+    sheet.merge_cells("M2:O3")
+    sheet["M2"] = "Grand Total"
+    sheet.merge_cells("H3:L3")
+    sheet["H3"] = "TA Branch"
+    sheet.merge_cells("A4:B4")
+    sheet["A4"] = "Product Code"
+    sheet.merge_cells("C4:E4")
+    sheet["C4"] = "Product Name"
+    sheet["G4"] = "Inactive"
+    sheet.merge_cells("H4:I4")
+    sheet["H4"] = "Stock"
+    sheet.merge_cells("J4:K4")
+    sheet["J4"] = "Sale Quantity"
+    sheet["L4"] = "Net Sale"
+    for offset, label in enumerate(("Stock", "Sale Quantity", "Net Sale")):
+        sheet.cell(4, 13 + offset, label)
+    sheet.merge_cells("A5:B5")
+    sheet["A5"] = "00001234"
+    sheet.merge_cells("C5:E5")
+    sheet["C5"] = "Window A"
+    sheet["G5"] = "A"
+    sheet.merge_cells("H5:I5")
+    sheet["H5"] = 2
+    sheet.merge_cells("J5:K5")
+    sheet["J5"] = 1
+    sheet["L5"] = 107
+    for column, value in enumerate((2, 1, 107), start=13):
+        sheet.cell(5, column, value)
+    sheet.merge_cells("A6:G6")
+    sheet["A6"] = "Grand Total"
+    sheet.merge_cells("H6:I6")
+    sheet["H6"] = 2
+    sheet.merge_cells("J6:K6")
+    sheet["J6"] = 1
+    sheet["L6"] = 107
+    for column, value in enumerate((2, 1, 107), start=13):
+        sheet.cell(6, column, value)
+    workbook.save(path)
+
+
 def test_extract_ta_file_uses_filename_date_and_preserves_source_metrics(tmp_path: Path) -> None:
     source = tmp_path / "Runglawan-2026-09-12-074128.xlsx"
     _report(source)
@@ -85,6 +133,8 @@ def test_extract_ta_file_uses_filename_date_and_preserves_source_metrics(tmp_pat
     extract = extract_ta_file(source)
 
     assert extract.data_date == date(2026, 9, 11)
+    assert extract.sales_grain == "rolling_30d"
+    assert extract.sales_window_days == 30
     assert extract.summary.row_count == 2
     assert extract.summary.store_count == 2
     assert extract.summary.sku_count == 2
@@ -101,6 +151,23 @@ def test_extract_ta_file_uses_filename_date_and_preserves_source_metrics(tmp_pat
     assert extract.rows[0].unit_cost_ex_vat == Decimal("100")
     assert extract.rows[0].stock_amount_in_vat == Decimal("214")
     assert extract.rows[0].product_status == "A"
+    assert extract.reconciliation_errors == ()
+
+
+def test_extract_ta_file_supports_legacy_wide_branch_layout(tmp_path: Path) -> None:
+    source = tmp_path / "Runglawan-2026-08-03-080548.xlsx"
+    _legacy_report(source)
+
+    extract = extract_ta_file(source)
+
+    assert extract.data_date == date(2026, 8, 2)
+    assert extract.sales_grain == "daily"
+    assert extract.sales_window_days is None
+    assert extract.summary.row_count == 1
+    assert extract.summary.source_amount == Decimal("107")
+    assert extract.summary.sales_qty == Decimal("1")
+    assert extract.summary.stock_on_hand == Decimal("2")
+    assert extract.inventory_branches == frozenset({"GH-003"})
     assert extract.reconciliation_errors == ()
 
 
@@ -259,6 +326,27 @@ def test_import_ta_file_rejects_same_business_fingerprint(tmp_path: Path, monkey
         session.commit()
         with pytest.raises(TaImportError, match="ถูกนำเข้าแล้ว"):
             import_ta_file(session, extract)
+
+
+def test_ta_automatic_import_retries_unchanged_failed_source() -> None:
+    modified_at = datetime(2026, 9, 14, tzinfo=UTC)
+    source = SourceFile(
+        modern_trade_id=1,
+        source_path=r"\\server\TA\Runglawan-2025-02-11.xlsx",
+        source_filename="Runglawan-2025-02-11.xlsx",
+        size_bytes=100,
+        modified_at=modified_at,
+        status="failed",
+        error_message="legacy layout was unsupported",
+    )
+    candidate = SourceCandidate(
+        path=source.source_path,
+        filename=source.source_filename,
+        size_bytes=source.size_bytes,
+        modified_at=modified_at,
+    )
+
+    assert _ta_unchanged_outcome(source, candidate) is None
 
 
 def test_local_compose_applies_migrations_before_starting_api() -> None:

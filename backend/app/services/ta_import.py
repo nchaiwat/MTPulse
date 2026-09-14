@@ -98,6 +98,8 @@ def import_ta_file(
     batch.source_filename = extract.source_filename
     batch.checksum_sha256 = _checksum(extract.business_fingerprint)
     batch.business_fingerprint = extract.business_fingerprint
+    batch.sales_grain = extract.sales_grain
+    batch.sales_window_days = extract.sales_window_days
     batch.source_pair_json = json.dumps(
         {
             "source": {
@@ -106,6 +108,8 @@ def import_ta_file(
             },
             "productStatusCounts": dict(extract.product_status_counts),
             "footerTotals": {key: str(value) for key, value in extract.footer_totals},
+            "salesGrain": extract.sales_grain,
+            "salesWindowDays": extract.sales_window_days,
         },
         ensure_ascii=False,
     )
@@ -160,6 +164,8 @@ def import_ta_file(
             modern_trade_id=modern_trade.id,
             batch_id=batch.id,
             data_date=extract.data_date,
+            sales_grain=extract.sales_grain,
+            sales_window_days=extract.sales_window_days,
             source_branch_code=row.branch_code,
             source_branch_name=row.branch_name,
             category=None,
@@ -231,6 +237,8 @@ def append_ta_sku_facts(
             modern_trade_id=batch.modern_trade_id,
             batch_id=batch.id,
             data_date=extract.data_date,
+            sales_grain=extract.sales_grain,
+            sales_window_days=extract.sales_window_days,
             source_branch_code=row.branch_code,
             source_branch_name=row.branch_name,
             source_sku=row.sku,

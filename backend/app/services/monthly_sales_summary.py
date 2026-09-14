@@ -5,6 +5,7 @@ from sqlalchemy import case, delete, func, insert, literal, select
 from sqlalchemy.orm import Session
 
 from app.models import MonthlySalesSummary, SalesInventoryFact
+from app.sales_grain import SALES_GRAIN_DAILY
 
 
 def month_bounds(value: date) -> tuple[date, date]:
@@ -55,6 +56,7 @@ def refresh_monthly_sales_summary(
             SalesInventoryFact.modern_trade_id == modern_trade_id,
             SalesInventoryFact.data_date >= month_start,
             SalesInventoryFact.data_date <= month_end,
+            SalesInventoryFact.sales_grain == SALES_GRAIN_DAILY,
         )
         .group_by(
             SalesInventoryFact.modern_trade_id,

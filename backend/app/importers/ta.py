@@ -11,6 +11,8 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
+from app.sales_grain import SALES_GRAIN_DAILY, flat_sales_grain
+
 STORAGE_SCALE = Decimal("0.000000000001")
 VAT_DIVISOR = Decimal("1.07")
 RECONCILIATION_TOLERANCE = Decimal("0.02")
@@ -18,6 +20,7 @@ FILENAME_PATTERN = re.compile(
     r"^Runglawan-(\d{4})-(\d{2})-(\d{2})(?:[-_].*)?\.xlsx$",
     re.IGNORECASE,
 )
+LEGACY_BRANCH_PATTERN = re.compile(r"^GH-\d+$", re.IGNORECASE)
 HEADERS = (
     "Product Code",
     "Product Name",
@@ -71,6 +74,8 @@ class TaSummary:
 @dataclass(frozen=True)
 class TaExtract:
     data_date: date
+    sales_grain: str
+    sales_window_days: int | None
     source_path: str
     source_filename: str
     checksum_sha256: str
@@ -95,12 +100,13 @@ def extract_ta_file(source_path: str | Path) -> TaExtract:
     if not path.is_file() or path.stat().st_size == 0:
         raise TaFormatError(f"ไม่พบไฟล์หรือไฟล์ว่าง: {path.name}")
 
-    workbook = load_workbook(path, read_only=True, data_only=True)
+    workbook = load_workbook(path, read_only=False, data_only=True)
     try:
         sheet = workbook.active
         actual_headers = tuple(_text(cell.value) for cell in sheet[1][: len(HEADERS)])
         if actual_headers != HEADERS:
-            raise TaFormatError(f"โครงสร้าง column ของ TA ไม่ถูกต้อง: ต้องเป็น {', '.join(HEADERS)}")
+            return _extract_ta_legacy_file(path, data_date, sheet)
+        sales_grain, sales_window_days = flat_sales_grain(data_date)
 
         rows: list[TaRow] = []
         keys: set[tuple[str, str]] = set()
@@ -224,6 +230,8 @@ def extract_ta_file(source_path: str | Path) -> TaExtract:
     )
     return TaExtract(
         data_date=data_date,
+        sales_grain=sales_grain,
+        sales_window_days=sales_window_days,
         source_path=str(path),
         source_filename=path.name,
         checksum_sha256=_sha256(path),
@@ -235,6 +243,236 @@ def extract_ta_file(source_path: str | Path) -> TaExtract:
         product_status_counts=tuple(sorted(statuses.items())),
         footer_totals=tuple(footer.items()),
         reconciliation_errors=tuple(warnings),
+    )
+
+
+def _extract_ta_legacy_file(path: Path, data_date: date, sheet) -> TaExtract:
+    allow_empty = _is_empty_legacy_sheet(sheet)
+    rows, statuses, footer, warnings = _extract_legacy_rows(sheet)
+    if not rows and not allow_empty:
+        raise TaFormatError("ไม่พบข้อมูล Detail ในไฟล์ TA")
+
+    detail_totals = {
+        "Stock (Qty)": sum((row.stock_on_hand for row in rows), Decimal("0")),
+        "Sale Quantity": sum((row.sales_qty for row in rows), Decimal("0")),
+        "Sale Amount": sum((row.source_amount for row in rows), Decimal("0")),
+    }
+    for label, expected in footer.items():
+        _compare(warnings, f"Footer {label}", detail_totals[label], expected)
+
+    fingerprint_rows = [
+        [
+            row.branch_code,
+            row.branch_name,
+            row.sku,
+            row.description,
+            row.product_status,
+            str(row.source_amount),
+            str(row.sales_qty),
+            str(row.stock_on_hand),
+        ]
+        for row in sorted(rows, key=lambda item: (item.branch_code, item.sku))
+    ]
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            [data_date.isoformat(), fingerprint_rows],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    summary = TaSummary(
+        row_count=len(rows),
+        store_count=len({row.branch_code for row in rows}),
+        sku_count=len({row.sku for row in rows}),
+        negative_row_count=sum(
+            row.source_amount < 0 or row.sales_qty < 0 for row in rows
+        ),
+        source_amount=detail_totals["Sale Amount"],
+        amount=sum((row.amount for row in rows), Decimal("0")),
+        sales_qty=detail_totals["Sale Quantity"],
+        stock_on_hand=detail_totals["Stock (Qty)"],
+        stock_value=Decimal("0"),
+    )
+    return TaExtract(
+        data_date=data_date,
+        sales_grain=SALES_GRAIN_DAILY,
+        sales_window_days=None,
+        source_path=str(path),
+        source_filename=path.name,
+        checksum_sha256=_sha256(path),
+        business_fingerprint=fingerprint,
+        rows=tuple(rows),
+        summary=summary,
+        inventory_skus=frozenset(row.sku for row in rows),
+        inventory_branches=frozenset(row.branch_code for row in rows),
+        product_status_counts=tuple(sorted(statuses.items())),
+        footer_totals=tuple(footer.items()),
+        reconciliation_errors=tuple(warnings),
+    )
+
+
+def _extract_legacy_rows(
+    sheet,
+) -> tuple[list[TaRow], Counter[str], dict[str, Decimal], list[str]]:
+    if _is_empty_legacy_sheet(sheet):
+        return (
+            [],
+            Counter(),
+            {
+                "Stock (Qty)": Decimal("0"),
+                "Sale Quantity": Decimal("0"),
+                "Sale Amount": Decimal("0"),
+            },
+            [],
+        )
+    if sheet.max_column < 12 or _text(sheet.cell(4, 7).value).casefold() != "inactive":
+        raise TaFormatError(
+            "โครงสร้าง column ของ TA ไม่ถูกต้อง: "
+            f"ต้องเป็น {', '.join(HEADERS)} หรือ TA Legacy Branch Matrix"
+        )
+
+    branch_starts: list[tuple[int, str, str]] = []
+    grand_total_start: int | None = None
+    for column in range(8, sheet.max_column + 1):
+        value = _text(sheet.cell(2, column).value)
+        if LEGACY_BRANCH_PATTERN.fullmatch(value):
+            branch_name = _text(sheet.cell(3, column).value)
+            if not branch_name:
+                raise TaFormatError(f"ข้อมูล TA Legacy column {column} ขาด Branch Name")
+            branch_starts.append((column, value, branch_name))
+        elif value.casefold() == "grand total":
+            grand_total_start = column
+
+    if not branch_starts or grand_total_start is None:
+        raise TaFormatError("โครงสร้าง TA Legacy ไม่พบ Branch หรือ Grand Total")
+
+    group_starts = [column for column, _, _ in branch_starts] + [grand_total_start]
+    branch_groups: list[tuple[str, str, tuple[int, int, int]]] = []
+    for index, (start, branch_code, branch_name) in enumerate(branch_starts):
+        end = group_starts[index + 1] - 1
+        metric_columns = tuple(
+            column
+            for column in range(start, end + 1)
+            if _text(sheet.cell(4, column).value)
+        )
+        if len(metric_columns) != 3:
+            raise TaFormatError(
+                f"โครงสร้าง TA Legacy ของ Branch {branch_code} ต้องมี 3 Metrics"
+            )
+        branch_groups.append((branch_code, branch_name, metric_columns))
+
+    total_columns = tuple(
+        column
+        for column in range(grand_total_start, sheet.max_column + 1)
+        if _text(sheet.cell(4, column).value)
+    )
+    if len(total_columns) != 3:
+        raise TaFormatError("โครงสร้าง TA Legacy ของ Grand Total ต้องมี 3 Metrics")
+
+    footer_row = next(
+        (
+            row_number
+            for row_number in range(5, sheet.max_row + 1)
+            if _text(sheet.cell(row_number, 1).value).casefold() == "grand total"
+        ),
+        None,
+    )
+    if footer_row is None:
+        raise TaFormatError("ไม่พบ Footer สำหรับตรวจสอบยอดรวมของ TA Legacy")
+
+    rows: list[TaRow] = []
+    keys: set[tuple[str, str]] = set()
+    statuses: Counter[str] = Counter()
+    warnings: list[str] = []
+    branch_totals = {
+        branch_code: [Decimal("0"), Decimal("0"), Decimal("0")]
+        for branch_code, _, _ in branch_groups
+    }
+    for row_number in range(5, footer_row):
+        sku = _identifier(sheet.cell(row_number, 1))
+        if not sku:
+            continue
+        description = _text(sheet.cell(row_number, 3).value) or None
+        product_status = _text(sheet.cell(row_number, 7).value) or None
+        if not description:
+            raise TaFormatError(f"ข้อมูล TA Legacy แถว {row_number} ขาด Product Name")
+        for branch_code, branch_name, metric_columns in branch_groups:
+            stock_qty, sales_qty, source_amount = (
+                _decimal(sheet.cell(row_number, column).value, row_number, column)
+                for column in metric_columns
+            )
+            if stock_qty == sales_qty == source_amount == 0:
+                continue
+            key = (branch_code, sku)
+            if key in keys:
+                raise TaFormatError(
+                    f"พบ SKU × Branch ซ้ำที่แถว {row_number}: {sku} × {branch_code}"
+                )
+            keys.add(key)
+            if product_status:
+                statuses[product_status] += 1
+            totals = branch_totals[branch_code]
+            totals[0] += stock_qty
+            totals[1] += sales_qty
+            totals[2] += source_amount
+            rows.append(
+                TaRow(
+                    branch_code=branch_code,
+                    branch_name=branch_name,
+                    sku=sku,
+                    description=description,
+                    product_status=product_status,
+                    source_amount=source_amount,
+                    amount=(source_amount / VAT_DIVISOR).quantize(STORAGE_SCALE),
+                    sales_qty=sales_qty,
+                    stock_on_hand=stock_qty,
+                    stock_value=Decimal("0"),
+                    stock_amount_in_vat=Decimal("0"),
+                    unit_cost_ex_vat=Decimal("0"),
+                    unit_cost_in_vat=Decimal("0"),
+                )
+            )
+
+    for branch_code, _, metric_columns in branch_groups:
+        for label, column, actual in zip(
+            ("Stock (Qty)", "Sale Quantity", "Sale Amount"),
+            metric_columns,
+            branch_totals[branch_code],
+            strict=True,
+        ):
+            _compare(
+                warnings,
+                f"Footer {branch_code} {label}",
+                actual,
+                _decimal(sheet.cell(footer_row, column).value, footer_row, column),
+            )
+
+    footer = {
+        "Stock (Qty)": _decimal(
+            sheet.cell(footer_row, total_columns[0]).value,
+            footer_row,
+            total_columns[0],
+        ),
+        "Sale Quantity": _decimal(
+            sheet.cell(footer_row, total_columns[1]).value,
+            footer_row,
+            total_columns[1],
+        ),
+        "Sale Amount": _decimal(
+            sheet.cell(footer_row, total_columns[2]).value,
+            footer_row,
+            total_columns[2],
+        ),
+    }
+    return rows, statuses, footer, warnings
+
+
+def _is_empty_legacy_sheet(sheet) -> bool:
+    return (
+        sheet.max_row == 4
+        and _text(sheet.cell(2, 8).value).casefold() == "grand total"
+        and _text(sheet.cell(3, 7).value).casefold() == "inactive"
+        and _text(sheet.cell(4, 1).value).casefold() == "grand total"
     )
 
 

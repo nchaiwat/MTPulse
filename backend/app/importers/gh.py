@@ -11,6 +11,8 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
+from app.sales_grain import SALES_GRAIN_DAILY, flat_sales_grain
+
 STORAGE_SCALE = Decimal("0.000000000001")
 VAT_DIVISOR = Decimal("1.07")
 RECONCILIATION_TOLERANCE = Decimal("0.02")
@@ -72,6 +74,8 @@ class GhSummary:
 @dataclass(frozen=True)
 class GhExtract:
     data_date: date
+    sales_grain: str
+    sales_window_days: int | None
     source_path: str
     source_filename: str
     checksum_sha256: str
@@ -102,8 +106,10 @@ def extract_gh_file(source_path: str | Path) -> GhExtract:
         actual_headers = tuple(_text(cell.value) for cell in sheet[1][: len(HEADERS)])
         allow_empty = False
         if actual_headers == HEADERS:
+            sales_grain, sales_window_days = flat_sales_grain(data_date)
             rows, statuses, footer, warnings = _extract_flat_rows(sheet)
         else:
+            sales_grain, sales_window_days = SALES_GRAIN_DAILY, None
             allow_empty = _is_empty_legacy_sheet(sheet)
             rows, statuses, footer, warnings = _extract_legacy_rows(sheet)
     finally:
@@ -167,6 +173,8 @@ def extract_gh_file(source_path: str | Path) -> GhExtract:
     )
     return GhExtract(
         data_date=data_date,
+        sales_grain=sales_grain,
+        sales_window_days=sales_window_days,
         source_path=str(path),
         source_filename=path.name,
         checksum_sha256=_sha256(path),
