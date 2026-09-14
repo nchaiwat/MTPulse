@@ -161,3 +161,27 @@ def test_twd_dashboard_rejects_year_without_data() -> None:
             twd_dashboard(session=session, year=2025, period="ytd")
 
     assert error.value.status_code == 422
+
+
+def test_dashboard_uses_latest_daily_sales_date_when_newer_source_is_rolling() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        rolling_batch = _batch(2, 1, date(2026, 9, 13))
+        rolling_batch.sales_grain = "rolling_30d"
+        rolling_batch.sales_window_days = 30
+        session.add_all(
+            [
+                ModernTrade(id=1, code="TWD", name="Thai Watsadu"),
+                _batch(1, 1, date(2026, 8, 3)),
+                rolling_batch,
+                _summary(1, 2026, 8, "B1", "SKU1", 100, 10),
+            ]
+        )
+        session.commit()
+        result = twd_dashboard(session=session, year=2026, period="ytd")
+
+    assert result["meta"]["latestDataDate"] == date(2026, 9, 13)
+    assert result["meta"]["latestSalesDataDate"] == date(2026, 8, 3)
+    assert [row["month"] for row in result["monthly"]] == list(range(1, 9))
+    assert result["summary"]["currentAmount"] == 100

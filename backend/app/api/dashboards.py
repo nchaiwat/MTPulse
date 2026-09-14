@@ -13,6 +13,7 @@ from starlette.responses import StreamingResponse
 from app.database import get_session
 from app.models import BranchMapping, ImportBatch, ModernTrade, MonthlySalesSummary
 from app.modern_trade_registry import active_modern_trade_codes
+from app.sales_grain import SALES_GRAIN_DAILY
 from app.services.dashboard_export import (
     build_dashboard_workbook,
     dashboard_export_filename,
@@ -73,6 +74,7 @@ def _dashboard(
                 "previousYear": year - 1 if year else None,
                 "period": period,
                 "latestDataDate": None,
+                "latestSalesDataDate": None,
                 "availableYears": [],
                 "loadedDays": 0,
                 "expectedDays": 0,
@@ -98,7 +100,14 @@ def _dashboard(
     if selected_year not in available_years:
         raise HTTPException(status_code=422, detail=f"ปีที่เลือกยังไม่มีข้อมูล {code}")
 
-    months = _period_months(period, selected_year, latest_date)
+    latest_sales_date = session.scalar(
+        select(func.max(ImportBatch.data_date)).where(
+            *batch_filter,
+            ImportBatch.sales_grain == SALES_GRAIN_DAILY,
+        )
+    )
+    sales_reference_date = latest_sales_date or latest_date
+    months = _period_months(period, selected_year, sales_reference_date)
     previous_year = selected_year - 1
     summary_year = func.extract("year", MonthlySalesSummary.month_start)
     summary_month = func.extract("month", MonthlySalesSummary.month_start)
@@ -189,7 +198,11 @@ def _dashboard(
     prior_current_amount: Decimal | None = None
     for month in months:
         current_available = (
-            selected_year != latest_date.year or month <= latest_date.month
+            latest_sales_date is not None
+            and (
+                selected_year != latest_sales_date.year
+                or month <= latest_sales_date.month
+            )
         )
         current_amount = monthly_amount.get((selected_year, month), Decimal(0))
         previous_amount = monthly_amount.get((previous_year, month), Decimal(0))
@@ -286,13 +299,14 @@ def _dashboard(
             monthrange(selected_year, months[-1])[1],
         )
         range_to = (
-            min(latest_date, period_end)
-            if selected_year == latest_date.year and period != "full"
+            min(sales_reference_date, period_end)
+            if selected_year == sales_reference_date.year and period != "full"
             else period_end
         )
         loaded_days = session.scalar(
             select(func.count(distinct(ImportBatch.data_date))).where(
                 *batch_filter,
+                ImportBatch.sales_grain == SALES_GRAIN_DAILY,
                 ImportBatch.data_date >= range_from,
                 ImportBatch.data_date <= range_to,
             )
@@ -314,6 +328,7 @@ def _dashboard(
             "rangeFrom": range_from,
             "rangeTo": range_to,
             "latestDataDate": latest_date,
+            "latestSalesDataDate": latest_sales_date,
             "availableYears": available_years,
             "loadedDays": loaded_days,
             "expectedDays": expected_days,

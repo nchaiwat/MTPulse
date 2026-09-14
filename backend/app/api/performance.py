@@ -248,7 +248,17 @@ def performance(
         )
         .order_by(ImportBatch.data_date)
     ).all()
-    available_months = sorted({value.strftime("%Y-%m") for value in all_dates})
+    if report_mode == "sales" and grain in {"month", "branch_month"}:
+        available_months = [
+            value.strftime("%Y-%m")
+            for value in session.scalars(
+                select(distinct(MonthlySalesSummary.month_start))
+                .where(MonthlySalesSummary.modern_trade_id == modern_trade_id)
+                .order_by(MonthlySalesSummary.month_start)
+            ).all()
+        ]
+    else:
+        available_months = sorted({value.strftime("%Y-%m") for value in all_dates})
     min_date = all_dates[0] if all_dates else None
     max_date = all_dates[-1] if all_dates else None
     selected_ranges = _normalized_date_ranges(date_range, date_from, date_to)
