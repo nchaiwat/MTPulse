@@ -8,7 +8,13 @@ const performanceResponse = {
   dates: [],
   months: [],
   items: [],
-  meta: { page: 1, pageSize: 25, totalSkus: 0, totalPages: 1, totalBranches: 0 },
+  meta: {
+    page: 1,
+    pageSize: 25,
+    totalSkus: 0,
+    totalPages: 1,
+    totalBranches: 0,
+  },
   summary: { amount: 0, qty: 0, mappingAttention: 0 },
   latestImport: null,
 }
@@ -20,37 +26,48 @@ describe('App navigation', () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input)
       if (url.includes('/api/settings/twd/unmatched-visibility')) {
-        return new Response(JSON.stringify({
-          showUnmatchedItems: false,
-          showUnmatchedBranches: false,
-        }), { status: 200 })
+        return new Response(
+          JSON.stringify({
+            showUnmatchedItems: false,
+            showUnmatchedBranches: false,
+          }),
+          { status: 200 },
+        )
       }
       if (url.includes('/api/settings/system/telegram/token')) {
-        return new Response(JSON.stringify({ botToken: '123456:test-token' }), { status: 200 })
+        return new Response(JSON.stringify({ botToken: '123456:test-token' }), {
+          status: 200,
+        })
       }
       if (url.includes('/api/settings/system/telegram')) {
-        return new Response(JSON.stringify({
-          telegramConfigured: true,
-          maskedToken: null,
-          groupId: '',
-          notifyManualImport: true,
-        }), { status: 200 })
+        return new Response(
+          JSON.stringify({
+            telegramConfigured: true,
+            maskedToken: null,
+            groupId: '',
+            notifyManualImport: true,
+          }),
+          { status: 200 },
+        )
       }
       if (url.includes('/api/settings/system/technical-notifications')) {
-        return new Response(JSON.stringify({
-          dailyEnabled: true,
-          dailyTime: '07:00',
-          criticalEnabled: true,
-          recoveryEnabled: true,
-          cooldownMinutes: 60,
-          thresholds: {
-            cpu: { warning: 80, critical: 95 },
-            memory: { warning: 80, critical: 90 },
-            disk: { warning: 80, critical: 90 },
-            connections: { warning: 80, critical: 95 },
-            deadTuples: { warning: 10, critical: 20 },
-          },
-        }), { status: 200 })
+        return new Response(
+          JSON.stringify({
+            dailyEnabled: true,
+            dailyTime: '07:00',
+            criticalEnabled: true,
+            recoveryEnabled: true,
+            cooldownMinutes: 60,
+            thresholds: {
+              cpu: { warning: 80, critical: 95 },
+              memory: { warning: 80, critical: 90 },
+              disk: { warning: 80, critical: 90 },
+              connections: { warning: 80, critical: 95 },
+              deadTuples: { warning: 10, critical: 20 },
+            },
+          }),
+          { status: 200 },
+        )
       }
       return new Response(JSON.stringify(performanceResponse), { status: 200 })
     })
@@ -72,9 +89,7 @@ describe('App navigation', () => {
     expect(screen.getByRole('button', { name: 'รายงาน ไทวัสดุ' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('button', { name: 'Monitoring' })).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'การตั้งค่า' })).toHaveLength(1)
-    expect(
-      within(screen.getByRole('navigation', { name: 'Primary navigation' })).queryByText('Mapping'),
-    ).not.toBeInTheDocument()
+    expect(within(screen.getByRole('navigation', { name: 'Primary navigation' })).queryByText('Mapping')).not.toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: 'รายงาน' }))
     expect(screen.queryByRole('button', { name: 'รายงาน ไทวัสดุ' })).not.toBeInTheDocument()
@@ -84,7 +99,7 @@ describe('App navigation', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'การตั้งค่าระบบ' })).toBeInTheDocument()
     expect(screen.getByLabelText('ขอบเขตการตั้งค่าปัจจุบัน')).toHaveTextContent('Global Settings')
     expect(screen.getByLabelText('ผู้ใช้งานปัจจุบัน')).toHaveTextContent('Chaiwat N.')
-    expect(screen.getByRole('tab', { name: /Global/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: /^GlobalShared by all MT$/ })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('tab', { name: /TWD/ })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: /HP/ })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: /MH/ })).toBeInTheDocument()
@@ -100,7 +115,9 @@ describe('App navigation', () => {
     expect(tokenInput).toHaveAttribute('type', 'text')
     expect(tokenInput).toHaveValue('123456:test-token')
 
-    const globalTab = screen.getByRole('tab', { name: /Global/ })
+    const globalTab = screen.getByRole('tab', {
+      name: /^GlobalShared by all MT$/,
+    })
     globalTab.focus()
     await userEvent.keyboard('{ArrowRight}')
     expect(screen.getByRole('tab', { name: /TWD/ })).toHaveAttribute('aria-selected', 'true')
@@ -119,29 +136,50 @@ describe('App navigation', () => {
   it('opens the TWD dashboard from its own navigation group', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       if (!String(input).includes('/api/dashboards/twd')) {
-        return new Response(JSON.stringify(performanceResponse), { status: 200 })
+        return new Response(JSON.stringify(performanceResponse), {
+          status: 200,
+        })
       }
-      return new Response(JSON.stringify({
-        meta: {
-          mtCode: 'TWD', mtName: 'ไทวัสดุ', year: 2026, previousYear: 2025,
-          period: 'ytd', latestDataDate: '2026-06-30', availableYears: [2025, 2026],
-          loadedDays: 181, expectedDays: 181, completenessPercent: 100,
-        },
-        summary: {
-          currentAmount: 230736315, previousAmount: 233979658, amountYoY: -1.4,
-          currentQty: 83140, previousQty: 86801, qtyYoY: -4.2,
-        },
-        monthly: [],
-        topBranches: [],
-        topSkus: [],
-      }), { status: 200 })
+      return new Response(
+        JSON.stringify({
+          meta: {
+            mtCode: 'TWD',
+            mtName: 'ไทวัสดุ',
+            year: 2026,
+            previousYear: 2025,
+            period: 'ytd',
+            latestDataDate: '2026-06-30',
+            availableYears: [2025, 2026],
+            loadedDays: 181,
+            expectedDays: 181,
+            completenessPercent: 100,
+          },
+          summary: {
+            currentAmount: 230736315,
+            previousAmount: 233979658,
+            amountYoY: -1.4,
+            currentQty: 83140,
+            previousQty: 86801,
+            qtyYoY: -4.2,
+          },
+          monthly: [],
+          topBranches: [],
+          topSkus: [],
+        }),
+        { status: 200 },
+      )
     })
 
     render(<App />)
     await userEvent.click(screen.getByRole('button', { name: 'แดชบอร์ด ไทวัสดุ' }))
 
     expect(screen.queryByRole('heading', { level: 1, name: 'แดชบอร์ดไทวัสดุ' })).not.toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 2, name: 'ภาพรวม Performance ของ TWD' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', {
+        level: 2,
+        name: 'ภาพรวม Performance ของ TWD',
+      }),
+    ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'แดชบอร์ด ไทวัสดุ' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('button', { name: /เปิดรายงานรายละเอียด/ })).toBeInTheDocument()
   })
@@ -152,37 +190,52 @@ describe('App navigation', () => {
       const url = String(input)
       requested.push(url)
       if (!url.includes('/api/dashboards/')) {
-        return new Response(JSON.stringify(performanceResponse), { status: 200 })
+        return new Response(JSON.stringify(performanceResponse), {
+          status: 200,
+        })
       }
       const code = url.includes('/api/dashboards/mh') ? 'MH' : 'HP'
-      return new Response(JSON.stringify({
-        meta: {
-          mtCode: code,
-          mtName: code === 'HP' ? 'HomePro' : 'MegaHome',
-          year: null,
-          previousYear: null,
-          period: 'ytd',
-          latestDataDate: null,
-          availableYears: [],
-          loadedDays: 0,
-          expectedDays: 0,
-          completenessPercent: 0,
-        },
-        summary: null,
-        monthly: [],
-        topBranches: [],
-        topSkus: [],
-      }), { status: 200 })
+      return new Response(
+        JSON.stringify({
+          meta: {
+            mtCode: code,
+            mtName: code === 'HP' ? 'HomePro' : 'MegaHome',
+            year: null,
+            previousYear: null,
+            period: 'ytd',
+            latestDataDate: null,
+            availableYears: [],
+            loadedDays: 0,
+            expectedDays: 0,
+            completenessPercent: 0,
+          },
+          summary: null,
+          monthly: [],
+          topBranches: [],
+          topSkus: [],
+        }),
+        { status: 200 },
+      )
     })
 
     render(<App />)
     await userEvent.click(screen.getByRole('button', { name: 'แดชบอร์ด HomePro' }))
-    expect(await screen.findByRole('heading', { level: 2, name: 'ภาพรวม Performance ของ HomePro (HP)' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', {
+        level: 2,
+        name: 'ภาพรวม Performance ของ HomePro (HP)',
+      }),
+    ).toBeInTheDocument()
     expect(requested.some((url) => url.includes('/api/dashboards/hp'))).toBe(true)
     expect(screen.getByRole('button', { name: /เปิดรายงานรายละเอียด/ })).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: 'แดชบอร์ด MegaHome' }))
-    expect(await screen.findByRole('heading', { level: 2, name: 'ภาพรวม Performance ของ MegaHome (MH)' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', {
+        level: 2,
+        name: 'ภาพรวม Performance ของ MegaHome (MH)',
+      }),
+    ).toBeInTheDocument()
     expect(requested.some((url) => url.includes('/api/dashboards/mh'))).toBe(true)
   })
 
@@ -195,18 +248,26 @@ describe('App navigation', () => {
 
     render(<App />)
     await userEvent.click(screen.getByRole('button', { name: 'รายงาน HomePro' }))
-    expect(await screen.findByRole('heading', { level: 2, name: 'Matrix Performance ของ HomePro (HP)' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', {
+        level: 2,
+        name: 'Matrix Performance ของ HomePro (HP)',
+      }),
+    ).toBeInTheDocument()
     expect(requested.some((url) => url.includes('mt_code=HP'))).toBe(true)
 
     await userEvent.click(screen.getByRole('button', { name: 'รายงาน MegaHome' }))
-    expect(await screen.findByRole('heading', { level: 2, name: 'Matrix Performance ของ MegaHome (MH)' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', {
+        level: 2,
+        name: 'Matrix Performance ของ MegaHome (MH)',
+      }),
+    ).toBeInTheDocument()
     expect(requested.some((url) => url.includes('mt_code=MH'))).toBe(true)
   })
 
   it('uses the compact Import-owned header without rendering the duplicate shell header', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ items: [] }), { status: 200 }),
-    )
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ items: [] }), { status: 200 }))
 
     render(<App />)
     await userEvent.click(screen.getByRole('button', { name: 'สถานะข้อมูล นำเข้าข้อมูล' }))

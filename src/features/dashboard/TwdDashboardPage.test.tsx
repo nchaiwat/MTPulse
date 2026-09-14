@@ -62,19 +62,23 @@ const response = {
 describe('TwdDashboardPage', () => {
   afterEach(() => vi.restoreAllMocks())
 
-  it('loads HH through the shared dashboard route as a first-class MT', async () => {
+  it.each([
+    ['HH', 'HomeHub'],
+    ['GH', 'Global House'],
+    ['TA', 'Thai-Aust'],
+  ] as const)('loads %s through the shared dashboard route as a first-class MT', async (mtCode, mtName) => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({
         ...response,
-        meta: { ...response.meta, mtCode: 'HH', mtName: 'HomeHub' },
+        meta: { ...response.meta, mtCode, mtName },
       }), { status: 200 }),
     )
 
-    render(<TwdDashboardPage mtCode="HH" onOpenReport={vi.fn()} />)
+    render(<TwdDashboardPage mtCode={mtCode} onOpenReport={vi.fn()} />)
 
-    expect(await screen.findByRole('heading', { name: 'ภาพรวม Performance ของ HomeHub (HH)' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: `ภาพรวม Performance ของ ${mtName} (${mtCode})` })).toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining('/api/dashboards/hh?'),
+      expect.stringContaining(`/api/dashboards/${mtCode.toLowerCase()}?`),
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     )
   })

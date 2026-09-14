@@ -15,8 +15,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_session
+from app.importers.gh import GhExtract, GhFormatError, extract_gh_file
 from app.importers.hh import HhFormatError, HhPairExtract, extract_hh_pair
 from app.importers.hp_mh import HpMhFormatError, HpMhPairExtract, extract_hp_mh_pair
+from app.importers.ta import TaExtract, TaFormatError, extract_ta_file
 from app.importers.twd import TwdExtract, TwdFormatError, extract_twd_file
 from app.models import AuditEvent, ImportBatch, ModernTrade, SkuInterest, SourceFile
 from app.services.automatic_import import (
@@ -29,10 +31,12 @@ from app.services.fileshare import (
     FileShareSettingsError,
     safe_fileshare_error,
 )
+from app.services.gh_import import GhImportError, import_gh_file
 from app.services.hh_import import HhImportError, import_hh_pair
 from app.services.hp_mh_import import HpMhImportError, import_hp_mh_pair
 from app.services.manual_upload_contracts import MAX_UPLOAD_BYTES
 from app.services.monitoring import capture_monitoring_snapshot
+from app.services.ta_import import TaImportError, import_ta_file
 from app.services.telegram import (
     TelegramDelivery,
     format_thai_date,
@@ -51,9 +55,7 @@ logger = logging.getLogger(__name__)
 def _extract_upload(content: bytes, filename: str) -> TwdExtract:
     safe_name = Path(filename).name or "twd-upload.xls"
     if Path(safe_name).suffix.lower() not in {".xls", ".xlsx"}:
-        raise TwdFormatError(
-            "รองรับไฟล์ Raw Data TWD นามสกุล .xls และ .xlsx เท่านั้น"
-        )
+        raise TwdFormatError("รองรับไฟล์ Raw Data TWD นามสกุล .xls และ .xlsx เท่านั้น")
     with tempfile.TemporaryDirectory(prefix="mtpulse-manual-upload-") as temp_dir:
         path = Path(temp_dir) / safe_name
         path.write_bytes(content)
@@ -156,9 +158,7 @@ def _extract_hp_mh_uploads(
 def _hp_mh_duplicate_reason(session: Session, pair: HpMhPairExtract) -> str | None:
     trades = {
         mt.code: mt
-        for mt in session.scalars(
-            select(ModernTrade).where(ModernTrade.code.in_(("HP", "MH")))
-        )
+        for mt in session.scalars(select(ModernTrade).where(ModernTrade.code.in_(("HP", "MH"))))
     }
     existing = {
         code: session.scalar(
@@ -221,6 +221,60 @@ def _hh_existing_batch(session: Session, pair: HhPairExtract) -> ImportBatch | N
         select(ImportBatch).where(
             ImportBatch.modern_trade_id == modern_trade.id,
             ImportBatch.data_date == pair.data_date,
+        )
+    )
+
+
+def _extract_gh_upload(content: bytes, filename: str) -> GhExtract:
+    safe_name = Path(filename).name or "Piyawat-YYYY-MM-DD.xlsx"
+    if Path(safe_name).suffix.lower() != ".xlsx":
+        raise GhFormatError("Global House ต้องใช้ไฟล์ Piyawat นามสกุล .xlsx")
+    with tempfile.TemporaryDirectory(prefix="mtpulse-gh-manual-") as temp_dir:
+        path = Path(temp_dir) / safe_name
+        path.write_bytes(content)
+        extract = extract_gh_file(path)
+    return replace(
+        extract,
+        source_path=f"manual-upload:{safe_name}",
+        source_filename=safe_name,
+    )
+
+
+def _gh_existing_batch(session: Session, extract: GhExtract) -> ImportBatch | None:
+    modern_trade = session.scalar(select(ModernTrade).where(ModernTrade.code == "GH"))
+    if modern_trade is None:
+        return None
+    return session.scalar(
+        select(ImportBatch).where(
+            ImportBatch.modern_trade_id == modern_trade.id,
+            ImportBatch.data_date == extract.data_date,
+        )
+    )
+
+
+def _extract_ta_upload(content: bytes, filename: str) -> TaExtract:
+    safe_name = Path(filename).name or "Runglawan-YYYY-MM-DD.xlsx"
+    if Path(safe_name).suffix.lower() != ".xlsx":
+        raise TaFormatError("Thai-Aust ต้องใช้ไฟล์ Runglawan นามสกุล .xlsx")
+    with tempfile.TemporaryDirectory(prefix="mtpulse-ta-manual-") as temp_dir:
+        path = Path(temp_dir) / safe_name
+        path.write_bytes(content)
+        extract = extract_ta_file(path)
+    return replace(
+        extract,
+        source_path=f"manual-upload:{safe_name}",
+        source_filename=safe_name,
+    )
+
+
+def _ta_existing_batch(session: Session, extract: TaExtract) -> ImportBatch | None:
+    modern_trade = session.scalar(select(ModernTrade).where(ModernTrade.code == "TA"))
+    if modern_trade is None:
+        return None
+    return session.scalar(
+        select(ImportBatch).where(
+            ImportBatch.modern_trade_id == modern_trade.id,
+            ImportBatch.data_date == extract.data_date,
         )
     )
 
@@ -369,11 +423,7 @@ def _record_fileshare_failure(
         status="failed",
         message=message,
         filename=source.source_filename,
-        data_date=(
-            source.detected_data_date.isoformat()
-            if source.detected_data_date
-            else None
-        ),
+        data_date=(source.detected_data_date.isoformat() if source.detected_data_date else None),
         notification=delivery,
         actor="fileshare-import",
     )
@@ -384,9 +434,7 @@ def fileshare_ready_imports(
     session: Annotated[Session, Depends(get_session)],
     limit: Annotated[int, Query(ge=1, le=1000)] = 1000,
 ) -> dict:
-    modern_trade = session.scalar(
-        select(ModernTrade).where(ModernTrade.code == "TWD")
-    )
+    modern_trade = session.scalar(select(ModernTrade).where(ModernTrade.code == "TWD"))
     if modern_trade is None:
         return {"count": 0, "items": []}
     sources = session.scalars(
@@ -408,9 +456,7 @@ def fileshare_ready_imports(
                 "id": source.id,
                 "filename": source.source_filename,
                 "dataDate": (
-                    source.detected_data_date.isoformat()
-                    if source.detected_data_date
-                    else None
+                    source.detected_data_date.isoformat() if source.detected_data_date else None
                 ),
                 "sizeBytes": source.size_bytes,
                 "discoveredAt": source.discovered_at.isoformat(),
@@ -482,11 +528,7 @@ def _completed_import_response(
     actor: str,
     timings: dict[str, float] | None = None,
 ) -> dict:
-    status_label = (
-        "สำเร็จพร้อมคำเตือน"
-        if batch.status == "imported_with_warnings"
-        else "สำเร็จ"
-    )
+    status_label = "สำเร็จพร้อมคำเตือน" if batch.status == "imported_with_warnings" else "สำเร็จ"
     pending_skus = session.scalars(
         select(SkuInterest.source_sku)
         .where(
@@ -512,9 +554,7 @@ def _completed_import_response(
         f"↩️ รายการติดลบ: {batch.negative_row_count:,}",
     ]
     if pending_skus:
-        notification_lines.append(
-            f"🆕 SKU ใหม่รอตัดสินใจ: {len(pending_skus):,} SKU"
-        )
+        notification_lines.append(f"🆕 SKU ใหม่รอตัดสินใจ: {len(pending_skus):,} SKU")
     delivery = send_telegram(
         session,
         "✅ นำเข้าข้อมูลไทวัสดุสำเร็จ",
@@ -522,10 +562,7 @@ def _completed_import_response(
     )
     message = f"นำเข้าข้อมูล TWD วันที่ {format_thai_date(batch.data_date)} สำเร็จ"
     if pending_skus:
-        message += (
-            f" · พบ SKU ใหม่ {len(pending_skus):,} SKU "
-            "กรุณา Accept หรือ Ignore ที่หน้า Monitoring"
-        )
+        message += f" · พบ SKU ใหม่ {len(pending_skus):,} SKU กรุณา Accept หรือ Ignore ที่หน้า Monitoring"
     _record(
         session,
         checksum=batch.checksum_sha256,
@@ -546,9 +583,7 @@ def _completed_import_response(
         )
     except Exception:
         session.rollback()
-        logger.exception(
-            "Import completed, but the daily monitoring snapshot could not be saved"
-        )
+        logger.exception("Import completed, but the daily monitoring snapshot could not be saved")
     return {
         "batchId": batch.id,
         "status": batch.status,
@@ -573,16 +608,10 @@ def confirm_fileshare_import(
     source = _twd_source_file(session, source_file_id)
     try:
         extract, timings = _extract_fileshare_source(session, source)
-        if (
-            extract.checksum_sha256 != expected_checksum
-            or (
-                source.checksum_sha256
-                and extract.checksum_sha256 != source.checksum_sha256
-            )
+        if extract.checksum_sha256 != expected_checksum or (
+            source.checksum_sha256 and extract.checksum_sha256 != source.checksum_sha256
         ):
-            raise ValueError(
-                "ไฟล์มีการเปลี่ยนแปลงหลัง Preview กรุณา Run Scan และตรวจสอบใหม่"
-            )
+            raise ValueError("ไฟล์มีการเปลี่ยนแปลงหลัง Preview กรุณา Run Scan และตรวจสอบใหม่")
         import_started = perf_counter()
         batch = import_twd_extract(session, extract)
         timings["importMs"] = round((perf_counter() - import_started) * 1000, 1)
@@ -678,8 +707,8 @@ async def preview_hp_mh_import(
     sales_file: Annotated[UploadFile, File()],
 ) -> dict:
     read_started = perf_counter()
-    inventory_name, inventory_content, sales_name, sales_content = (
-        await _read_hp_mh_files(inventory_file, sales_file)
+    inventory_name, inventory_content, sales_name, sales_content = await _read_hp_mh_files(
+        inventory_file, sales_file
     )
     read_finished = perf_counter()
     try:
@@ -727,8 +756,8 @@ async def confirm_hp_mh_import(
     sales_file: Annotated[UploadFile, File()],
     expected_fingerprint: Annotated[str, Form(max_length=64)],
 ) -> dict:
-    inventory_name, inventory_content, sales_name, sales_content = (
-        await _read_hp_mh_files(inventory_file, sales_file)
+    inventory_name, inventory_content, sales_name, sales_content = await _read_hp_mh_files(
+        inventory_file, sales_file
     )
     try:
         pair = _extract_hp_mh_uploads(
@@ -761,11 +790,7 @@ async def confirm_hp_mh_import(
         ],
     )
     message = f"นำเข้าข้อมูล HP และ MH วันที่ {format_thai_date(pair.data_date)} สำเร็จ"
-    import_status = (
-        "imported_with_warnings"
-        if pair.reconciliation_errors
-        else "imported"
-    )
+    import_status = "imported_with_warnings" if pair.reconciliation_errors else "imported"
     _record_hp_mh_pair(
         session,
         pair,
@@ -810,9 +835,7 @@ async def preview_hh_import(
     read_finished = perf_counter()
     try:
         parse_started = perf_counter()
-        pair = _extract_hh_uploads(
-            stock_content, stock_name, sales_content, sales_name
-        )
+        pair = _extract_hh_uploads(stock_content, stock_name, sales_content, sales_name)
         parse_finished = perf_counter()
     except (HhFormatError, OSError, ValueError) as exc:
         raise HTTPException(
@@ -861,9 +884,7 @@ async def preview_hh_import(
         "timings": {
             "serverReadMs": round((read_finished - read_started) * 1000, 1),
             "parseMs": round((parse_finished - parse_started) * 1000, 1),
-            "duplicateCheckMs": round(
-                (duplicate_finished - duplicate_started) * 1000, 1
-            ),
+            "duplicateCheckMs": round((duplicate_finished - duplicate_started) * 1000, 1),
         },
     }
 
@@ -879,9 +900,7 @@ async def confirm_hh_import(
         stock_file, sales_file
     )
     try:
-        pair = _extract_hh_uploads(
-            stock_content, stock_name, sales_content, sales_name
-        )
+        pair = _extract_hh_uploads(stock_content, stock_name, sales_content, sales_name)
         if pair.business_fingerprint != expected_fingerprint:
             raise ValueError("คู่ไฟล์เปลี่ยนจากรอบ Preview กรุณาตรวจสอบใหม่")
         existing_batch = _hh_existing_batch(session, pair)
@@ -925,6 +944,228 @@ async def confirm_hh_import(
         "timings": {
             "importMs": round((import_finished - import_started) * 1000, 1),
         },
+    }
+
+
+@router.post("/gh/preview")
+async def preview_gh_import(
+    session: Annotated[Session, Depends(get_session)],
+    file: Annotated[UploadFile, File()],
+) -> dict:
+    read_started = perf_counter()
+    filename, content = await _read_file(file)
+    read_finished = perf_counter()
+    try:
+        parse_started = perf_counter()
+        extract = _extract_gh_upload(content, filename)
+        parse_finished = perf_counter()
+    except (GhFormatError, OSError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    existing = _gh_existing_batch(session, extract)
+    duplicate_reason = (
+        "ข้อมูลธุรกิจ Global House ชุดนี้ถูกนำเข้าแล้ว แม้ชื่อไฟล์อาจต่างกัน"
+        if existing and existing.business_fingerprint == extract.business_fingerprint
+        else None
+    )
+    summary = extract.summary
+    _record(
+        session,
+        checksum=extract.business_fingerprint,
+        action="gh_preview",
+        status="duplicate" if duplicate_reason else "validated",
+        message=duplicate_reason or "ตรวจสอบไฟล์ Global House ผ่าน รอผู้ใช้ยืนยัน Import",
+        filename=extract.source_filename,
+        data_date=extract.data_date.isoformat(),
+        mt_code="GH",
+    )
+    return {
+        "detectedSourceGroup": "GH",
+        "detectedMtCode": "GH",
+        "dataDate": extract.data_date.isoformat(),
+        "filename": extract.source_filename,
+        "businessFingerprint": extract.business_fingerprint,
+        "summary": {
+            "rowCount": summary.row_count,
+            "skuCount": summary.sku_count,
+            "branchCount": summary.store_count,
+            "sourceAmount": float(summary.source_amount),
+            "amount": float(summary.amount),
+            "salesQty": float(summary.sales_qty),
+            "stockOnHand": float(summary.stock_on_hand),
+            "stockValue": float(summary.stock_value),
+            "negativeRowCount": summary.negative_row_count,
+        },
+        "warnings": list(extract.reconciliation_errors),
+        "canImport": duplicate_reason is None,
+        "duplicateReason": duplicate_reason,
+        "operation": "replace" if existing and not duplicate_reason else "import",
+        "replacementBatchId": existing.id if existing and not duplicate_reason else None,
+        "timings": {
+            "serverReadMs": round((read_finished - read_started) * 1000, 1),
+            "parseMs": round((parse_finished - parse_started) * 1000, 1),
+        },
+    }
+
+
+@router.post("/gh/confirm")
+async def confirm_gh_import(
+    session: Annotated[Session, Depends(get_session)],
+    file: Annotated[UploadFile, File()],
+    expected_fingerprint: Annotated[str, Form(max_length=64)],
+) -> dict:
+    filename, content = await _read_file(file)
+    try:
+        extract = _extract_gh_upload(content, filename)
+        if extract.business_fingerprint != expected_fingerprint:
+            raise ValueError("ไฟล์เปลี่ยนจากรอบ Preview กรุณาตรวจสอบใหม่")
+        existing = _gh_existing_batch(session, extract)
+        replacing = existing is not None
+        import_started = perf_counter()
+        batch = import_gh_file(session, extract, actor="manual-upload")
+        import_finished = perf_counter()
+        session.commit()
+    except (GhFormatError, GhImportError, OSError, ValueError) as exc:
+        session.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    message = (
+        f"แทนที่ข้อมูล Global House วันที่ {format_thai_date(extract.data_date)} สำเร็จ"
+        if replacing
+        else f"นำเข้าข้อมูล Global House วันที่ {format_thai_date(extract.data_date)} สำเร็จ"
+    )
+    _record(
+        session,
+        checksum=extract.business_fingerprint,
+        action="batch_replaced" if replacing else "import_completed",
+        status=batch.status,
+        message=message,
+        filename=extract.source_filename,
+        data_date=extract.data_date.isoformat(),
+        batch_id=batch.id,
+        mt_code="GH",
+    )
+    try:
+        capture_monitoring_snapshot(session, trigger="import", upsert_today=True)
+    except Exception:
+        session.rollback()
+        logger.exception("GH import completed, but monitoring snapshot could not be saved")
+    return {
+        "batchId": batch.id,
+        "status": batch.status,
+        "message": message,
+        "dataDate": extract.data_date.isoformat(),
+        "timings": {"importMs": round((import_finished - import_started) * 1000, 1)},
+    }
+
+
+@router.post("/ta/preview")
+async def preview_ta_import(
+    session: Annotated[Session, Depends(get_session)],
+    file: Annotated[UploadFile, File()],
+) -> dict:
+    read_started = perf_counter()
+    filename, content = await _read_file(file)
+    read_finished = perf_counter()
+    try:
+        parse_started = perf_counter()
+        extract = _extract_ta_upload(content, filename)
+        parse_finished = perf_counter()
+    except (TaFormatError, OSError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    existing = _ta_existing_batch(session, extract)
+    duplicate_reason = (
+        "ข้อมูลธุรกิจ Thai-Aust ชุดนี้ถูกนำเข้าแล้ว แม้ชื่อไฟล์อาจต่างกัน"
+        if existing and existing.business_fingerprint == extract.business_fingerprint
+        else None
+    )
+    summary = extract.summary
+    _record(
+        session,
+        checksum=extract.business_fingerprint,
+        action="ta_preview",
+        status="duplicate" if duplicate_reason else "validated",
+        message=duplicate_reason or "ตรวจสอบไฟล์ Thai-Aust ผ่าน รอผู้ใช้ยืนยัน Import",
+        filename=extract.source_filename,
+        data_date=extract.data_date.isoformat(),
+        mt_code="TA",
+    )
+    return {
+        "detectedSourceGroup": "TA",
+        "detectedMtCode": "TA",
+        "dataDate": extract.data_date.isoformat(),
+        "filename": extract.source_filename,
+        "businessFingerprint": extract.business_fingerprint,
+        "summary": {
+            "rowCount": summary.row_count,
+            "skuCount": summary.sku_count,
+            "branchCount": summary.store_count,
+            "sourceAmount": float(summary.source_amount),
+            "amount": float(summary.amount),
+            "salesQty": float(summary.sales_qty),
+            "stockOnHand": float(summary.stock_on_hand),
+            "stockValue": float(summary.stock_value),
+            "negativeRowCount": summary.negative_row_count,
+        },
+        "warnings": list(extract.reconciliation_errors),
+        "canImport": duplicate_reason is None,
+        "duplicateReason": duplicate_reason,
+        "operation": "replace" if existing and not duplicate_reason else "import",
+        "replacementBatchId": existing.id if existing and not duplicate_reason else None,
+        "timings": {
+            "serverReadMs": round((read_finished - read_started) * 1000, 1),
+            "parseMs": round((parse_finished - parse_started) * 1000, 1),
+        },
+    }
+
+
+@router.post("/ta/confirm")
+async def confirm_ta_import(
+    session: Annotated[Session, Depends(get_session)],
+    file: Annotated[UploadFile, File()],
+    expected_fingerprint: Annotated[str, Form(max_length=64)],
+) -> dict:
+    filename, content = await _read_file(file)
+    try:
+        extract = _extract_ta_upload(content, filename)
+        if extract.business_fingerprint != expected_fingerprint:
+            raise ValueError("ไฟล์เปลี่ยนจากรอบ Preview กรุณาตรวจสอบใหม่")
+        existing = _ta_existing_batch(session, extract)
+        replacing = existing is not None
+        import_started = perf_counter()
+        batch = import_ta_file(session, extract, actor="manual-upload")
+        import_finished = perf_counter()
+        session.commit()
+    except (TaFormatError, TaImportError, OSError, ValueError) as exc:
+        session.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    message = (
+        f"แทนที่ข้อมูล Thai-Aust วันที่ {format_thai_date(extract.data_date)} สำเร็จ"
+        if replacing
+        else f"นำเข้าข้อมูล Thai-Aust วันที่ {format_thai_date(extract.data_date)} สำเร็จ"
+    )
+    _record(
+        session,
+        checksum=extract.business_fingerprint,
+        action="batch_replaced" if replacing else "import_completed",
+        status=batch.status,
+        message=message,
+        filename=extract.source_filename,
+        data_date=extract.data_date.isoformat(),
+        batch_id=batch.id,
+        mt_code="TA",
+    )
+    try:
+        capture_monitoring_snapshot(session, trigger="import", upsert_today=True)
+    except Exception:
+        session.rollback()
+        logger.exception("TA import completed, but monitoring snapshot could not be saved")
+    return {
+        "batchId": batch.id,
+        "status": batch.status,
+        "message": message,
+        "dataDate": extract.data_date.isoformat(),
+        "timings": {"importMs": round((import_finished - import_started) * 1000, 1)},
     }
 
 

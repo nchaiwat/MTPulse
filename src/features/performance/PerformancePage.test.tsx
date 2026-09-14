@@ -34,6 +34,8 @@ describe('PerformancePage', () => {
   it.each([
     ['HP', 'HomePro'],
     ['MH', 'MegaHome'],
+    ['GH', 'Global House'],
+    ['TA', 'Thai-Aust'],
   ] as const)('shows %s template columns and Stock Value instead of Stock On Order', async (mtCode, mtName) => {
     const user = userEvent.setup()
     const hpData: PerformanceResponse = {
@@ -194,6 +196,14 @@ describe('PerformancePage', () => {
     expect(screen.queryByRole('columnheader', { name: 'TWD description' })).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'WA description' })).not.toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'WA item' })).toBeInTheDocument()
+  })
+
+  it('keeps the Total summary, heading, and values in the frozen column group', () => {
+    render(<PerformancePage initialData={samplePerformanceResponse} />)
+
+    expect(screen.getByRole('columnheader', { name: 'Total' })).toHaveClass('sticky-column', 'total-column')
+    expect(document.querySelector('.matrix-summary-row .total-column')).toHaveClass('sticky-column')
+    expect(document.querySelector('tbody .total-column')).toHaveClass('sticky-column')
   })
 
   it('keeps TWD TOM and TOD sticky columns visible when descriptions are hidden', async () => {

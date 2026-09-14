@@ -92,7 +92,7 @@ const response = {
 describe('MonitoringPage', () => {
   afterEach(() => vi.restoreAllMocks())
 
-  it('renders HH in data readiness even before its first import', async () => {
+  it('renders HH, GH, and TA in data readiness even before their first import', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       ...response,
       current: {
@@ -109,6 +109,26 @@ describe('MonitoringPage', () => {
             recordCount: 0,
             latestImport: null,
           },
+          {
+            code: 'GH',
+            name: 'Global House',
+            enabled: false,
+            status: 'inactive',
+            latestDataDate: null,
+            lagDays: null,
+            recordCount: 0,
+            latestImport: null,
+          },
+          {
+            code: 'TA',
+            name: 'Thai-Aust',
+            enabled: false,
+            status: 'inactive',
+            latestDataDate: null,
+            lagDays: null,
+            recordCount: 0,
+            latestImport: null,
+          },
         ],
       },
     }), { status: 200 }))
@@ -117,6 +137,10 @@ describe('MonitoringPage', () => {
 
     expect(await screen.findByText('HomeHub')).toBeInTheDocument()
     expect(screen.getByText('HH')).toBeInTheDocument()
+    expect(screen.getByText('Global House')).toBeInTheDocument()
+    expect(screen.getByText('GH')).toBeInTheDocument()
+    expect(screen.getByText('Thai-Aust')).toBeInTheDocument()
+    expect(screen.getByText('TA')).toBeInTheDocument()
   })
 
   it('shows current health, database workload, slow queries, and refreshes on demand', async () => {

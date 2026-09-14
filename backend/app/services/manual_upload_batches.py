@@ -11,15 +11,19 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.importers.gh import GhFormatError, extract_gh_file
 from app.importers.hh import HhFormatError, extract_hh_pair, inspect_hh_workbook
 from app.importers.hp_mh import HpMhFormatError, extract_hp_mh_pair
+from app.importers.ta import TaFormatError, extract_ta_file
 from app.importers.twd import TwdFormatError, extract_twd_file
 from app.models import AuditEvent, ManualUploadBatch, ManualUploadFile
 from app.modern_trade_registry import source_group_member_codes
+from app.services.gh_import import GhImportError, import_gh_file
 from app.services.hh_import import HhImportError, import_hh_pair
 from app.services.hp_mh_import import HpMhImportError, import_hp_mh_pair
 from app.services.manual_upload_contracts import STAGING_RETENTION_DAYS
 from app.services.manual_upload_detection import detect_upload_file
+from app.services.ta_import import TaImportError, import_ta_file
 from app.services.twd_import import (
     DuplicateImportError,
     PeriodDuplicateError,
@@ -167,9 +171,7 @@ def finalize_folder_batch(
     if batch.status != "uploading":
         raise ValueError("Batch นี้ไม่อยู่ในสถานะรอตรวจสอบ")
     if batch.uploaded_count != batch.total_count:
-        raise ValueError(
-            f"ส่งไฟล์ยังไม่ครบ {batch.uploaded_count}/{batch.total_count} ไฟล์"
-        )
+        raise ValueError(f"ส่งไฟล์ยังไม่ครบ {batch.uploaded_count}/{batch.total_count} ไฟล์")
     files = session.scalars(
         select(ManualUploadFile).where(ManualUploadFile.upload_batch_id == batch.id)
     ).all()
@@ -195,17 +197,13 @@ def finalize_folder_batch(
         if detected != expected_source_group:
             batch.status = "failed"
             batch.detection_status = "conflict"
-            batch.error_message = (
-                f"เลือกหน้า {expected_source_group} แต่ระบบตรวจพบข้อมูล {detected}"
-            )
+            batch.error_message = f"เลือกหน้า {expected_source_group} แต่ระบบตรวจพบข้อมูล {detected}"
         else:
             batch.status = "awaiting_confirmation"
             batch.detection_status = "detected"
             batch.eligible_count = sum(row.status == "uploaded" for row in files)
             batch.new_count = batch.eligible_count
-            batch.summary_message = (
-                f"ตรวจพบ {detected} · พร้อมนำเข้า {batch.eligible_count} ไฟล์"
-            )
+            batch.summary_message = f"ตรวจพบ {detected} · พร้อมนำเข้า {batch.eligible_count} ไฟล์"
     session.commit()
     session.refresh(batch)
     return batch
@@ -235,6 +233,10 @@ def process_folder_batch(session: Session, batch_id: int) -> None:
         _process_hp_mh_folder(session, batch)
     elif batch.detected_source_group == "HH":
         _process_hh_folder(session, batch)
+    elif batch.detected_source_group == "GH":
+        _process_gh_folder(session, batch)
+    elif batch.detected_source_group == "TA":
+        _process_ta_folder(session, batch)
     else:
         batch.status = "failed"
         batch.error_message = "ไม่พบ Source Group ที่รองรับ"
@@ -305,15 +307,9 @@ def _pair_key(filename: str) -> str:
 def _process_hp_mh_folder(session: Session, batch: ManualUploadBatch) -> None:
     rows = _files(session, batch)
     inventory = {
-        _pair_key(row.display_filename): row
-        for row in rows
-        if row.source_kind == "inventory"
+        _pair_key(row.display_filename): row for row in rows if row.source_kind == "inventory"
     }
-    sales = {
-        _pair_key(row.display_filename): row
-        for row in rows
-        if row.source_kind == "sales"
-    }
+    sales = {_pair_key(row.display_filename): row for row in rows if row.source_kind == "sales"}
     keys = sorted(set(inventory) | set(sales))
     if len(inventory) == len(sales) == 1 and not (set(inventory) & set(sales)):
         keys = ["single-pair"]
@@ -432,6 +428,64 @@ def _process_hh_folder(session: Session, batch: ManualUploadBatch) -> None:
                 row.validation_status = "invalid"
                 row.status_reason = str(exc)
                 row.processed_at = datetime.now(UTC)
+            session.commit()
+
+
+def _process_gh_folder(session: Session, batch: ManualUploadBatch) -> None:
+    for source in _files(session, batch):
+        try:
+            extract = extract_gh_file(staging_root() / str(source.staging_key))
+            extract = replace(
+                extract,
+                source_path=f"manual-folder:{source.display_filename}",
+                source_filename=source.display_filename,
+            )
+            imported = import_gh_file(session, extract, actor=batch.requested_by)
+            source.status = "imported"
+            source.validation_status = "valid"
+            source.business_fingerprint = extract.business_fingerprint
+            source.import_batch_id = imported.id
+            source.data_date = extract.data_date
+            source.processed_at = datetime.now(UTC)
+            session.commit()
+        except (GhFormatError, GhImportError, OSError, ValueError) as exc:
+            session.rollback()
+            source = session.get(ManualUploadFile, source.id)
+            if source is None:
+                continue
+            source.status = "duplicate" if isinstance(exc, GhImportError) else "failed"
+            source.validation_status = "invalid"
+            source.status_reason = str(exc)
+            source.processed_at = datetime.now(UTC)
+            session.commit()
+
+
+def _process_ta_folder(session: Session, batch: ManualUploadBatch) -> None:
+    for source in _files(session, batch):
+        try:
+            extract = extract_ta_file(staging_root() / str(source.staging_key))
+            extract = replace(
+                extract,
+                source_path=f"manual-folder:{source.display_filename}",
+                source_filename=source.display_filename,
+            )
+            imported = import_ta_file(session, extract, actor=batch.requested_by)
+            source.status = "imported"
+            source.validation_status = "valid"
+            source.business_fingerprint = extract.business_fingerprint
+            source.import_batch_id = imported.id
+            source.data_date = extract.data_date
+            source.processed_at = datetime.now(UTC)
+            session.commit()
+        except (TaFormatError, TaImportError, OSError, ValueError) as exc:
+            session.rollback()
+            source = session.get(ManualUploadFile, source.id)
+            if source is None:
+                continue
+            source.status = "duplicate" if isinstance(exc, TaImportError) else "failed"
+            source.validation_status = "invalid"
+            source.status_reason = str(exc)
+            source.processed_at = datetime.now(UTC)
             session.commit()
 
 

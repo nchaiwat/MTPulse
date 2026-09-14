@@ -308,4 +308,24 @@ describe('ImportPage', () => {
     await userEvent.click(screen.getByRole('tab', { name: /HP/ }))
     expect(screen.getByLabelText('เลือก Folder สำหรับ HP_MH')).toHaveAttribute('webkitdirectory')
   })
+
+  it('offers both single-file and Admin Folder Import for GH', async () => {
+    render(<ImportPage />)
+
+    await userEvent.click(screen.getByRole('tab', { name: /GH/ }))
+    expect(screen.getByRole('heading', { name: 'Global House (GH)' })).toBeInTheDocument()
+    expect(screen.getByLabelText(/Piyawat-YYYY-MM-DD/)).toBeInTheDocument()
+
+    expect(screen.getByLabelText('เลือก Folder สำหรับ GH')).toHaveAttribute('webkitdirectory')
+  })
+
+  it('offers isolated single-file and Admin Folder Import for TA', async () => {
+    render(<ImportPage />)
+
+    await userEvent.click(screen.getByRole('tab', { name: /TA/ }))
+    expect(screen.getByRole('heading', { name: 'Thai-Aust (TA)' })).toBeInTheDocument()
+    expect(screen.getByLabelText(/Runglawan-YYYY-MM-DD/)).toBeInTheDocument()
+    expect(screen.getByText(/ลบ 1 วันเป็นวันที่ข้อมูล/)).toBeInTheDocument()
+    expect(screen.getByLabelText('เลือก Folder สำหรับ TA')).toHaveAttribute('webkitdirectory')
+  })
 })

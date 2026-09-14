@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 ModernTradeCode = Literal["TWD", "HP", "MH", "HH", "GH", "SCG", "TA"]
-ActiveReportingModernTradeCode = Literal["TWD", "HP", "MH", "HH"]
+ActiveReportingModernTradeCode = Literal["TWD", "HP", "MH", "HH", "GH", "TA"]
 ModernTradeCapability = Literal[
     "dashboard",
     "performance",
@@ -89,6 +89,8 @@ _ACTIVE_HH = frozenset(
         "excel",
     }
 )
+_ACTIVE_GH = ALL_CAPABILITIES
+_ACTIVE_TA = ALL_CAPABILITIES
 
 MODERN_TRADES: dict[ModernTradeCode, ModernTradeDefinition] = {
     "TWD": ModernTradeDefinition(
@@ -137,14 +139,14 @@ MODERN_TRADES: dict[ModernTradeCode, ModernTradeDefinition] = {
     ),
     "GH": ModernTradeDefinition(
         code="GH",
-        name="Modern Trade GH",
-        display_name="Modern Trade GH (GH)",
+        name="Global House",
+        display_name="Global House (GH)",
         source_group_code="GH",
         source_owner_code="GH",
-        vat_mode=None,
-        inventory_metrics=(),
-        active_capabilities=frozenset(),
-        planned_capabilities=ALL_CAPABILITIES,
+        vat_mode="include",
+        inventory_metrics=("stockOh", "stockValue"),
+        active_capabilities=_ACTIVE_GH,
+        planned_capabilities=frozenset(),
     ),
     "SCG": ModernTradeDefinition(
         code="SCG",
@@ -159,14 +161,14 @@ MODERN_TRADES: dict[ModernTradeCode, ModernTradeDefinition] = {
     ),
     "TA": ModernTradeDefinition(
         code="TA",
-        name="Modern Trade TA",
-        display_name="Modern Trade TA (TA)",
+        name="Thai-Aust",
+        display_name="Thai-Aust (TA)",
         source_group_code="TA",
         source_owner_code="TA",
-        vat_mode=None,
-        inventory_metrics=(),
-        active_capabilities=frozenset(),
-        planned_capabilities=ALL_CAPABILITIES,
+        vat_mode="include",
+        inventory_metrics=("stockOh", "stockValue"),
+        active_capabilities=_ACTIVE_TA,
+        planned_capabilities=frozenset(),
     ),
 }
 

@@ -290,11 +290,14 @@ def performance(
         inventory_month_snapshot_dates = list(latest_date_by_month.values())
     selected_month = None
     if grain == "branch_month":
-        selected_month = (
-            available_months[-1]
-            if period_month in (None, "latest") and available_months
-            else period_month
-        )
+        if mt_code in {"GH", "TA"} and period_month in (None, "latest") and not available_months:
+            selected_month = None
+        else:
+            selected_month = (
+                available_months[-1]
+                if period_month in (None, "latest") and available_months
+                else period_month
+            )
         if selected_month:
             try:
                 range_from, range_to = _month_bounds(selected_month)
@@ -809,6 +812,12 @@ def performance(
     branch_mapping_by_code = {
         mapping.source_branch_code: mapping for mapping in branch_mappings
     }
+    if mt_code in {"GH", "TA"} and not branch_rows:
+        branch_rows = [
+            (code, mapping.source_branch_description)
+            for code, mapping in sorted(branch_mapping_by_code.items())
+            if mapping.status == "confirmed"
+        ]
     dates = (
         [date.fromisoformat(f"{value}-01") for value in available_months]
         if use_monthly_summary

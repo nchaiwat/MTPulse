@@ -10,11 +10,15 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.imports import _extract_upload, _read_file
+from app.api.imports import _extract_gh_upload, _extract_ta_upload, _extract_upload, _read_file
 from app.database import get_session
+from app.importers.gh import GhExtract, GhFormatError
+from app.importers.ta import TaExtract, TaFormatError
 from app.importers.twd import TwdExtract, TwdFormatError
-from app.models import AuditEvent, ImportBatch
+from app.models import AuditEvent, ImportBatch, ModernTrade
+from app.services.gh_import import GhImportError, import_gh_file
 from app.services.monitoring import capture_monitoring_snapshot
+from app.services.ta_import import TaImportError, import_ta_file
 from app.services.telegram import format_thai_date, send_telegram
 from app.services.twd_import import DuplicateImportError, replace_twd_batch
 
@@ -60,6 +64,26 @@ def _extract_summary(extract: TwdExtract) -> dict[str, object]:
         "stockOnOrder": float(summary.stock_on_order),
         "negativeRowCount": summary.negative_row_count,
     }
+
+
+def _single_file_extract_summary(extract: GhExtract | TaExtract) -> dict[str, object]:
+    summary = extract.summary
+    return {
+        "rowCount": summary.row_count,
+        "skuCount": summary.sku_count,
+        "branchCount": summary.store_count,
+        "amount": float(summary.amount),
+        "salesQty": float(summary.sales_qty),
+        "stockOnHand": float(summary.stock_on_hand),
+        "reportedStockOnHand": float(summary.stock_on_hand),
+        "stockOnOrder": 0,
+        "negativeRowCount": summary.negative_row_count,
+    }
+
+
+def _batch_mt_code(session: Session, batch: ImportBatch) -> str:
+    code = session.scalar(select(ModernTrade.code).where(ModernTrade.id == batch.modern_trade_id))
+    return code or ""
 
 
 def _batch_detail(batch: ImportBatch) -> dict[str, object]:
@@ -176,18 +200,33 @@ async def preview_batch_replacement(
 ) -> dict[str, object]:
     batch = _batch_or_404(session, batch_id)
     filename, content = await _read_file(file)
+    mt_code = _batch_mt_code(session, batch)
     try:
-        extract = _extract_upload(content, filename)
-    except (TwdFormatError, OSError, ValueError) as exc:
+        extract = (
+            _extract_gh_upload(content, filename)
+            if mt_code == "GH"
+            else _extract_ta_upload(content, filename)
+            if mt_code == "TA"
+            else _extract_upload(content, filename)
+        )
+    except (GhFormatError, TaFormatError, TwdFormatError, OSError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=f"ตรวจสอบไฟล์ไม่ผ่าน: {exc}") from exc
-    blocked_reason = _replacement_block_reason(session, batch, extract)
+    blocked_reason = (
+        _single_file_replacement_block_reason(session, batch, extract)
+        if isinstance(extract, (GhExtract, TaExtract))
+        else _replacement_block_reason(session, batch, extract)
+    )
     return {
         "batchId": batch.id,
         "checksum": extract.checksum_sha256,
         "filename": extract.source_filename,
         "dataDate": extract.data_date.isoformat(),
         "current": _summary(batch),
-        "replacement": _extract_summary(extract),
+        "replacement": (
+            _single_file_extract_summary(extract)
+            if isinstance(extract, (GhExtract, TaExtract))
+            else _extract_summary(extract)
+        ),
         "warnings": list(extract.reconciliation_errors),
         "canReplace": blocked_reason is None,
         "blockedReason": blocked_reason,
@@ -203,15 +242,31 @@ async def confirm_batch_replacement(
 ) -> dict[str, object]:
     batch = _batch_or_404(session, batch_id)
     filename, content = await _read_file(file)
+    mt_code = _batch_mt_code(session, batch)
     try:
-        extract = _extract_upload(content, filename)
+        extract = (
+            _extract_gh_upload(content, filename)
+            if mt_code == "GH"
+            else _extract_ta_upload(content, filename)
+            if mt_code == "TA"
+            else _extract_upload(content, filename)
+        )
         if extract.checksum_sha256 != expected_checksum:
             raise ValueError("ไฟล์เปลี่ยนจากรอบ Preview กรุณาตรวจสอบใหม่")
-        blocked_reason = _replacement_block_reason(session, batch, extract)
+        blocked_reason = (
+            _single_file_replacement_block_reason(session, batch, extract)
+            if isinstance(extract, (GhExtract, TaExtract))
+            else _replacement_block_reason(session, batch, extract)
+        )
         if blocked_reason:
             raise ValueError(blocked_reason)
         before = _batch_detail(batch)
-        replace_twd_batch(session, batch, extract)
+        if isinstance(extract, GhExtract):
+            import_gh_file(session, extract, actor="manual-user:corrective")
+        elif isinstance(extract, TaExtract):
+            import_ta_file(session, extract, actor="manual-user:corrective")
+        else:
+            replace_twd_batch(session, batch, extract)
         after = _batch_detail(batch)
         session.add(
             AuditEvent(
@@ -224,7 +279,16 @@ async def confirm_batch_replacement(
             )
         )
         session.commit()
-    except (TwdFormatError, DuplicateImportError, OSError, ValueError) as exc:
+    except (
+        GhFormatError,
+        GhImportError,
+        TaFormatError,
+        TaImportError,
+        TwdFormatError,
+        DuplicateImportError,
+        OSError,
+        ValueError,
+    ) as exc:
         session.rollback()
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -232,7 +296,7 @@ async def confirm_batch_replacement(
         session,
         "♻️ แทนที่ข้อมูล Import สำเร็จ",
         [
-            "🏪 Modern Trade: ไทวัสดุ (TWD)",
+            f"🏪 Modern Trade: {mt_code}",
             f"🆔 Batch ID: {batch.id}",
             f"📅 วันที่ข้อมูล: {format_thai_date(batch.data_date)}",
             f"📄 ไฟล์ใหม่: {batch.source_filename}",
@@ -245,3 +309,25 @@ async def confirm_batch_replacement(
         session.rollback()
         logger.exception("Batch replaced, but monitoring snapshot could not be saved")
     return _batch_detail(batch)
+
+
+def _single_file_replacement_block_reason(
+    session: Session,
+    batch: ImportBatch,
+    extract: GhExtract | TaExtract,
+) -> str | None:
+    if extract.data_date != batch.data_date:
+        return (
+            f"ไฟล์ใหม่เป็นวันที่ {extract.data_date:%d/%m/%Y} "
+            f"แต่ Batch {batch.id} เป็นวันที่ {batch.data_date:%d/%m/%Y}"
+        )
+    if extract.business_fingerprint == batch.business_fingerprint:
+        return "ข้อมูลธุรกิจในไฟล์ใหม่เหมือนกับข้อมูลที่อยู่ในระบบแล้ว"
+    duplicate = session.scalar(
+        select(ImportBatch).where(
+            ImportBatch.modern_trade_id == batch.modern_trade_id,
+            ImportBatch.business_fingerprint == extract.business_fingerprint,
+            ImportBatch.id != batch.id,
+        )
+    )
+    return f"ข้อมูลธุรกิจนี้เคยนำเข้าแล้วใน Batch {duplicate.id}" if duplicate else None

@@ -9,15 +9,7 @@ export const MANUAL_UPLOAD_LIMITS = {
 
 export type ManualUploadSourceMode = 'single' | 'folder'
 export type UploadDetectionStatus = 'pending' | 'detected' | 'needs_review' | 'conflict' | 'unsupported'
-export type ManualUploadBatchStatus =
-  | 'uploading'
-  | 'detecting'
-  | 'awaiting_confirmation'
-  | 'queued'
-  | 'processing'
-  | 'completed'
-  | 'completed_with_issues'
-  | 'failed'
+export type ManualUploadBatchStatus = 'uploading' | 'detecting' | 'awaiting_confirmation' | 'queued' | 'processing' | 'completed' | 'completed_with_issues' | 'failed'
 
 export interface ManualUploadBatchCounts {
   total: number
@@ -133,6 +125,26 @@ export interface HhImportPreview {
   timings?: ImportTimings
 }
 
+export interface GhImportPreview {
+  detectedSourceGroup: 'GH'
+  detectedMtCode: 'GH'
+  dataDate: string
+  filename: string
+  businessFingerprint: string
+  summary: HpMhImportSummary & { sourceAmount: number }
+  warnings: string[]
+  canImport: boolean
+  duplicateReason: string | null
+  operation: 'import' | 'replace'
+  replacementBatchId: number | null
+  timings?: ImportTimings
+}
+
+export interface TaImportPreview extends Omit<GhImportPreview, 'detectedSourceGroup' | 'detectedMtCode'> {
+  detectedSourceGroup: 'TA'
+  detectedMtCode: 'TA'
+}
+
 export interface ImportTimings {
   serverReadMs?: number
   downloadMs?: number
@@ -168,7 +180,6 @@ export interface ImportActivity {
   batchId: number | null
   notification?: { status: string; message: string }
 }
-
 
 export interface ImportBatchSummary {
   rowCount: number
@@ -210,7 +221,7 @@ export interface ReplacementPreview {
 }
 async function errorMessage(response: Response): Promise<string> {
   try {
-    const payload = await response.json() as { detail?: string }
+    const payload = (await response.json()) as { detail?: string }
     return payload.detail ?? `Import API ตอบกลับ ${response.status}`
   } catch {
     return `Import API ตอบกลับ ${response.status}`
@@ -222,17 +233,11 @@ function xhrErrorMessage(xhr: XMLHttpRequest): string {
     const payload = JSON.parse(xhr.responseText) as { detail?: string }
     return payload.detail ?? `Import API ตอบกลับ ${xhr.status}`
   } catch {
-    return xhr.status
-      ? `Import API ตอบกลับ ${xhr.status}`
-      : 'ไม่สามารถเชื่อมต่อ Import API'
+    return xhr.status ? `Import API ตอบกลับ ${xhr.status}` : 'ไม่สามารถเชื่อมต่อ Import API'
   }
 }
 
-function uploadForm<T>(
-  path: string,
-  form: FormData,
-  onProgress?: (progress: UploadProgress) => void,
-): Promise<T> {
+function uploadForm<T>(path: string, form: FormData, onProgress?: (progress: UploadProgress) => void): Promise<T> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('POST', `${apiBaseUrl}${path}`)
@@ -265,20 +270,13 @@ function uploadForm<T>(
   })
 }
 
-export async function previewImport(
-  file: File,
-  onProgress?: (progress: UploadProgress) => void,
-): Promise<ImportPreview> {
+export async function previewImport(file: File, onProgress?: (progress: UploadProgress) => void): Promise<ImportPreview> {
   const form = new FormData()
   form.append('file', file)
   return uploadForm<ImportPreview>('/api/imports/preview', form, onProgress)
 }
 
-export async function confirmImport(
-  file: File,
-  checksum: string,
-  onProgress?: (progress: UploadProgress) => void,
-) {
+export async function confirmImport(file: File, checksum: string, onProgress?: (progress: UploadProgress) => void) {
   const form = new FormData()
   form.append('file', file)
   form.append('expected_checksum', checksum)
@@ -290,23 +288,14 @@ export async function confirmImport(
   }>('/api/imports/confirm', form, onProgress)
 }
 
-export async function previewHpMhImport(
-  inventoryFile: File,
-  salesFile: File,
-  onProgress?: (progress: UploadProgress) => void,
-): Promise<HpMhImportPreview> {
+export async function previewHpMhImport(inventoryFile: File, salesFile: File, onProgress?: (progress: UploadProgress) => void): Promise<HpMhImportPreview> {
   const form = new FormData()
   form.append('inventory_file', inventoryFile)
   form.append('sales_file', salesFile)
   return uploadForm<HpMhImportPreview>('/api/imports/hp-mh/preview', form, onProgress)
 }
 
-export async function confirmHpMhImport(
-  inventoryFile: File,
-  salesFile: File,
-  fingerprint: string,
-  onProgress?: (progress: UploadProgress) => void,
-) {
+export async function confirmHpMhImport(inventoryFile: File, salesFile: File, fingerprint: string, onProgress?: (progress: UploadProgress) => void) {
   const form = new FormData()
   form.append('inventory_file', inventoryFile)
   form.append('sales_file', salesFile)
@@ -321,23 +310,14 @@ export async function confirmHpMhImport(
   }>('/api/imports/hp-mh/confirm', form, onProgress)
 }
 
-export async function previewHhImport(
-  stockFile: File,
-  salesFile: File,
-  onProgress?: (progress: UploadProgress) => void,
-): Promise<HhImportPreview> {
+export async function previewHhImport(stockFile: File, salesFile: File, onProgress?: (progress: UploadProgress) => void): Promise<HhImportPreview> {
   const form = new FormData()
   form.append('stock_file', stockFile)
   form.append('sales_file', salesFile)
   return uploadForm<HhImportPreview>('/api/imports/hh/preview', form, onProgress)
 }
 
-export async function confirmHhImport(
-  stockFile: File,
-  salesFile: File,
-  fingerprint: string,
-  onProgress?: (progress: UploadProgress) => void,
-) {
+export async function confirmHhImport(stockFile: File, salesFile: File, fingerprint: string, onProgress?: (progress: UploadProgress) => void) {
   const form = new FormData()
   form.append('stock_file', stockFile)
   form.append('sales_file', salesFile)
@@ -349,6 +329,44 @@ export async function confirmHhImport(
     dataDate: string
     timings?: ImportTimings
   }>('/api/imports/hh/confirm', form, onProgress)
+}
+
+export async function previewGhImport(file: File, onProgress?: (progress: UploadProgress) => void): Promise<GhImportPreview> {
+  const form = new FormData()
+  form.append('file', file)
+  return uploadForm<GhImportPreview>('/api/imports/gh/preview', form, onProgress)
+}
+
+export async function confirmGhImport(file: File, fingerprint: string, onProgress?: (progress: UploadProgress) => void) {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('expected_fingerprint', fingerprint)
+  return uploadForm<{
+    batchId: number
+    status: string
+    message: string
+    dataDate: string
+    timings?: ImportTimings
+  }>('/api/imports/gh/confirm', form, onProgress)
+}
+
+export async function previewTaImport(file: File, onProgress?: (progress: UploadProgress) => void): Promise<TaImportPreview> {
+  const form = new FormData()
+  form.append('file', file)
+  return uploadForm<TaImportPreview>('/api/imports/ta/preview', form, onProgress)
+}
+
+export async function confirmTaImport(file: File, fingerprint: string, onProgress?: (progress: UploadProgress) => void) {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('expected_fingerprint', fingerprint)
+  return uploadForm<{
+    batchId: number
+    status: string
+    message: string
+    dataDate: string
+    timings?: ImportTimings
+  }>('/api/imports/ta/confirm', form, onProgress)
 }
 
 async function jsonRequest<T>(path: string, init?: RequestInit): Promise<T> {
@@ -365,81 +383,49 @@ export function createFolderImportBatch(fileCount: number) {
   })
 }
 
-export function uploadFolderImportFile(
-  batchId: number,
-  file: File,
-  idempotencyKey: string,
-  onProgress?: (progress: UploadProgress) => void,
-) {
+export function uploadFolderImportFile(batchId: number, file: File, idempotencyKey: string, onProgress?: (progress: UploadProgress) => void) {
   const form = new FormData()
   form.append('file', file)
   form.append('idempotency_key', idempotencyKey)
   form.append('relative_depth', '1')
-  return uploadForm<ManualUploadFileResult>(
-    `/api/admin/imports/manual-batches/${batchId}/files`,
-    form,
-    onProgress,
-  )
+  return uploadForm<ManualUploadFileResult>(`/api/admin/imports/manual-batches/${batchId}/files`, form, onProgress)
 }
 
-export function finalizeFolderImportBatch(
-  batchId: number,
-  expectedSourceGroup: 'TWD' | 'HP_MH' | 'HH',
-) {
-  return jsonRequest<ManualUploadBatchContract>(
-    `/api/admin/imports/manual-batches/${batchId}/finalize`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ expected_source_group: expectedSourceGroup }),
-    },
-  )
+export function finalizeFolderImportBatch(batchId: number, expectedSourceGroup: 'TWD' | 'HP_MH' | 'HH' | 'GH' | 'TA') {
+  return jsonRequest<ManualUploadBatchContract>(`/api/admin/imports/manual-batches/${batchId}/finalize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expected_source_group: expectedSourceGroup }),
+  })
 }
 
 export function confirmFolderImportBatch(batchId: number) {
-  return jsonRequest<ManualUploadBatchContract>(
-    `/api/admin/imports/manual-batches/${batchId}/confirm`,
-    { method: 'POST' },
-  )
+  return jsonRequest<ManualUploadBatchContract>(`/api/admin/imports/manual-batches/${batchId}/confirm`, { method: 'POST' })
 }
 
 export function fetchFolderImportBatch(batchId: number, signal?: AbortSignal) {
-  return jsonRequest<ManualUploadBatchContract>(
-    `/api/admin/imports/manual-batches/${batchId}`,
-    { signal },
-  )
+  return jsonRequest<ManualUploadBatchContract>(`/api/admin/imports/manual-batches/${batchId}`, { signal })
 }
 
-export async function fetchFileShareReady(
-  signal?: AbortSignal,
-): Promise<FileShareReadyFile[]> {
-  const response = await fetch(`${apiBaseUrl}/api/imports/fileshare-ready`, { signal })
+export async function fetchFileShareReady(signal?: AbortSignal): Promise<FileShareReadyFile[]> {
+  const response = await fetch(`${apiBaseUrl}/api/imports/fileshare-ready`, {
+    signal,
+  })
   if (!response.ok) throw new Error(await errorMessage(response))
-  const payload = await response.json() as { items: FileShareReadyFile[] }
+  const payload = (await response.json()) as { items: FileShareReadyFile[] }
   return payload.items
 }
 
-export async function previewFileShareImport(
-  sourceFileId: number,
-): Promise<ImportPreview> {
-  const response = await fetch(
-    `${apiBaseUrl}/api/imports/fileshare/${sourceFileId}/preview`,
-    { method: 'POST' },
-  )
+export async function previewFileShareImport(sourceFileId: number): Promise<ImportPreview> {
+  const response = await fetch(`${apiBaseUrl}/api/imports/fileshare/${sourceFileId}/preview`, { method: 'POST' })
   if (!response.ok) throw new Error(await errorMessage(response))
   return response.json() as Promise<ImportPreview>
 }
 
-export async function confirmFileShareImport(
-  sourceFileId: number,
-  checksum: string,
-) {
+export async function confirmFileShareImport(sourceFileId: number, checksum: string) {
   const form = new FormData()
   form.append('expected_checksum', checksum)
-  const response = await fetch(
-    `${apiBaseUrl}/api/imports/fileshare/${sourceFileId}/confirm`,
-    { method: 'POST', body: form },
-  )
+  const response = await fetch(`${apiBaseUrl}/api/imports/fileshare/${sourceFileId}/confirm`, { method: 'POST', body: form })
   if (!response.ok) throw new Error(await errorMessage(response))
   return response.json() as Promise<{
     message: string
@@ -450,14 +436,18 @@ export async function confirmFileShareImport(
 }
 
 export async function fetchImportActivity(signal?: AbortSignal): Promise<ImportActivity[]> {
-  const response = await fetch(`${apiBaseUrl}/api/imports/activity`, { signal })
+  const response = await fetch(`${apiBaseUrl}/api/imports/activity`, {
+    signal,
+  })
   if (!response.ok) throw new Error(`Import API ตอบกลับ ${response.status}`)
-  const payload = await response.json() as { items: ImportActivity[] }
+  const payload = (await response.json()) as { items: ImportActivity[] }
   return payload.items
 }
 
 export async function fetchImportBatch(batchId: number, signal?: AbortSignal): Promise<ImportBatchDetail> {
-  const response = await fetch(`${apiBaseUrl}/api/imports/batches/${batchId}`, { signal })
+  const response = await fetch(`${apiBaseUrl}/api/imports/batches/${batchId}`, {
+    signal,
+  })
   if (!response.ok) throw new Error(await errorMessage(response))
   return response.json() as Promise<ImportBatchDetail>
 }

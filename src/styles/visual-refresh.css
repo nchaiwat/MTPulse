@@ -517,6 +517,11 @@ textarea {
   padding-left: 34px;
 }
 
+.page-content[data-performance-source] .filter-bar .popover-search input[type='search'] {
+  padding-left: 34px;
+  padding-right: 11px;
+}
+
 .page-content[data-performance-source] .filter-bar .select-wrap > svg {
   left: 11px;
   top: 11px;

@@ -247,7 +247,14 @@
 .performance-matrix.has-summary .matrix-summary-row .col-tod { background: #d7ece9; }
 .sticky-divider { border-right: 2px solid var(--line-strong) !important; }
 .numeric-column { text-align: right !important; font-variant-numeric: tabular-nums; }
-.total-column { width: 100px; min-width: 100px; background: #f4f7f7; }
+.total-column { left: 636px; width: 100px; min-width: 100px; background: #f4f7f7; }
+.performance-matrix.descriptions-hidden .total-column { left: 236px; }
+.performance-matrix.has-turnover .total-column { left: 812px; }
+.performance-matrix.has-turnover.descriptions-hidden .total-column { left: 412px; }
+.performance-matrix.has-sku-flags .total-column { left: 720px; }
+.performance-matrix.has-sku-flags.descriptions-hidden .total-column { left: 320px; }
+.performance-matrix.has-sku-flags.has-turnover .total-column { left: 896px; }
+.performance-matrix.has-sku-flags.has-turnover.descriptions-hidden .total-column { left: 496px; }
 .dimension-header { width: 96px; min-width: 96px; }
 .dimension-header span { display: block; white-space: nowrap; }
 .dimension-header small { display: none; }

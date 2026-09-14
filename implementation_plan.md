@@ -1785,3 +1785,254 @@ Final migration naming และ reuse กับ `ImportRun`/`SourceFile` ให
 - Phase 4 complete: Dashboard, Report, Excel, TOM/TOD, Sho/Pro และ interaction ใช้ shared TWD pattern โดยคง metric/source rule ของ HH
 - Phase 5 local verification complete: Backend 169 tests, Frontend 97 tests, ESLint, Ruff, production build และ offline migration SQL ผ่าน
 - Deployment ไป WA-MTPULSE-TEST ยังไม่รวมอยู่ในรอบนี้จนกว่า Product Owner จะสั่ง Push/Deploy โดยตรง
+
+# Global House (GH) Full Modern Trade Package — Implementation Plan (12 September 2026)
+
+## Project Summary
+
+พัฒนา GH เป็น package ครบวงจรบน shared TWD pattern โดยสร้าง source adapter สำหรับ workbook `Piyawat*.xlsx`, เปิดทุก capability ที่เกี่ยวข้อง และคงข้อมูล/Logic/UX/UI ของ TWD, HP, MH และ HH ไว้เดิม การเปลี่ยน shared module ต้องเป็น configuration-driven, backward-compatible และมี regression proof
+
+## Goals And Non-Goals
+
+### Goals
+
+- รองรับ GH ตั้งแต่ Source discovery, validation, import, mapping, summaries และ corrective workflow ถึง Dashboard/Report/Excel/Monitoring/Settings
+- ใช้ field/date/VAT/reconciliation contract ที่ยืนยันจาก Daily/Manual GH
+- Seed Item 21 และ Branch 86 mappings พร้อม source provenance โดยไม่มี inferred mapping
+- ใช้ confirmed Item + Branch predicate ชุดเดียวกันทุก API, summary, Dashboard, Report และ Excel
+- ป้องกัน cross-MT writes และยืนยัน MT เดิมไม่เปลี่ยนด้วย baseline/regression matrix
+
+### Non-Goals
+
+- ไม่แก้ parser/metric/VAT/mapping/result ของ TWD, HP, MH หรือ HH
+- ไม่สร้างหน้า GH แบบ copy-paste แยกจาก shared pages
+- ไม่ใช้ Product Status หรือ SKU pattern เป็น business rule
+- ไม่ตั้งหรือเปิด Schedule ให้ GH และไม่ Import source ใดระหว่าง development
+
+## Technical Architecture
+
+- Registry: เปลี่ยน GH จาก planned เป็น active package หลัง backend/frontend/service/test coverage ครบ
+- Source adapter: `gh.py` อ่าน workbook เดียวและคืน normalized rows, source totals, derived Data Date, mapping candidates และ reconciliation result
+- Import domain: `gh_import.py` เป็น transaction owner สำหรับ manual/automatic/corrective paths และ summary rebuild
+- Automation: `gh_automatic_import.py` คัดเฉพาะ `Piyawat*.xlsx`, ทำ Initial Scan/Run incremental และใช้ source registry/idempotency เดิม
+- Shared queries/UI: ใช้ `modern_trade_id/mt_code` และ capability contract; GH inventory capability คือ stockOh/stockValue
+- Operations: GH มี source/schedule/run/monitoring namespace ของตนเอง โดย Schedule default disabled/unset
+
+## File And Module Plan
+
+### Backend — New GH Modules
+
+- `backend/app/importers/gh.py`: filename date parser, strict workbook signature, detail/footer parser, opaque identifiers, metric normalization และ reconciliation
+- `backend/app/services/gh_import.py`: bootstrap trade, import transaction, duplicate/corrective handling, facts, summaries, coverage และ interests
+- `backend/app/services/gh_automatic_import.py`: GH candidate selection, Initial Scan, incremental Run และ source-file outcomes
+- `backend/tests/test_gh.py`: parser/normalization/reconciliation/date/VAT/opaque-SKU tests
+- `backend/tests/test_gh_automatic_import.py`: scan/run/duplicate/changed/retry/corrective/source-isolation tests
+
+### Backend — Shared Modules To Extend Surgically
+
+- `backend/app/modern_trade_registry.py`: GH identity, source group, VAT mode, inventory metrics และ active capabilities
+- Manual upload detection/contracts/batches: GH strict detector และ single/folder routing
+- `backend/app/services/automatic_import.py`: dispatch GH adapter โดยไม่เปลี่ยน existing behavior
+- Performance/dashboard/export/mapping/flags/backfill/monitoring/settings APIs: เพิ่ม GH ผ่าน registry และ shared predicates
+- Alembic: additive GH package/profile/source-setting data และ source-derived mapping seed; ไม่มี update/delete MT เดิม
+
+### Frontend — Shared Surfaces
+
+- `src/config/modernTrades.ts`: Global House labels, metrics และ active capabilities
+- App navigation/routes: เปิด Dashboard/Report สำหรับ GH ผ่าน shared routes
+- Import/Settings/Monitoring: เพิ่ม GH tab/profile/status/actions จาก registry
+- Dashboard/Performance/Excel controls: reuse shared components พร้อม GH labels/metrics และ loading/error/empty parity
+- Tests: ขยาย registry, App, Import, Settings, Monitoring, Dashboard และ Performance matrix ด้วย GH cases
+
+### Documentation And Operations
+
+- อัปเดต README/PROJECT_CONTEXT/HANDOFF เฉพาะ GH source contract, commands, verification และ rollback
+- เพิ่ม server smoke checklist สำหรับ GH โดย Schedule ยังปิดจน Admin เปิดเอง
+
+## Data Model And Migration Plan
+
+- Reuse modern trades, facts, daily/monthly summaries, coverage, import runs/batches/source files, mappings, analysis flags, interests, settings, audit และ monitoring snapshots
+- เพิ่ม column เฉพาะเมื่อจำเป็นต่อ audit ของ Product Status/unit cost/footer; prefer existing source metadata JSON หากรองรับ
+- Fact unique grain ต้องคง `modern_trade_id + data_date + source_branch_code + source_sku`
+- Store normalized source amount, amount Ex.VAT, sales qty, stock on hand และ stock value; retain source status/unit cost/footer evidence โดยไม่เปลี่ยน report metric schema
+- Seed migration ใช้ 21 Item pairs และ 86 Branch pairs ที่ verified; effective date เป็นค่า extract จาก earliest Manual Sale Date พร้อม source provenance
+- ทุก migration additive/idempotent; production rollback ไม่ downgrade business-data migration โดยอัตโนมัติ
+
+## API And Integration Plan
+
+- Manual upload detection/preview/confirm รับ GH workbook เดียวและตอบ detected source group, derived date, row/SKU/Branch counts, mapped/unmatched counts, totals และ warnings
+- Admin Folder upload รองรับ GH direct-level files ตาม global 200-file/25-MB/3-concurrent contract; User คง single-file เท่านั้น
+- FileShare settings/test/run ใช้ GH profile, Base UNC เดิม + subfolder `GBH`, Schedule disabled/unset
+- Initial Scan สร้าง source registry โดยไม่ Import; Run ทันทีอ่านใหม่เฉพาะ new/changed/retry candidates
+- Corrective preview/confirm ทำ atomic replacement ของ GH Data Date เดิมและ rebuild affected summaries
+- Performance/detail/export/dashboard รับ `mt_code=GH`; unsupported metric ถูก reject ชัดเจน
+- Monitoring แสดง GH latest date/fact count/SKU/Branch/run/issues และ deep-link ไป Import workspace
+
+## Phased Implementation
+
+### Phase 1 — Contract Lock, Migration And Parser
+
+1. บันทึก real-workbook profile assertions โดยไม่ commit confidential raw workbook
+2. เพิ่ม failing tests สำหรับ filename date-minus-one-day, 12 headers, footer exclusion, duplicate grain, opaque codes, numeric validation และ reconciliation
+3. Implement `gh.py` และ normalized extract โดยยังไม่ต่อ production routes
+4. เพิ่ม additive GH bootstrap/mapping migration และ tests ตรวจ 21 Item/86 Branch/source-derived effective date
+5. เพิ่ม registry/capability tests และ cross-MT isolation assertions
+
+### Phase 2 — Import, Automation And Corrective Integration
+
+1. Implement idempotent GH import transaction และ summary/coverage rebuild
+2. ต่อ single-file/Admin folder detection, preview, confirm, progress, issue ledger และ retry
+3. ต่อ FileShare `GBH`, Initial Scan, incremental Run ทันที, source registry และ disabled Schedule profile
+4. ต่อ duplicate/changed-date decision และ Admin-confirmed atomic corrective import
+5. เพิ่ม audit/notification/error messages ที่ระบุ Global House (GH) ชัดเจน
+
+### Phase 3 — Mapping, Settings, Monitoring And Backfill
+
+1. Seed/verify initial mappings และคงรายการอื่นเป็น Unmatched
+2. เปิด Item/Branch export/import, descriptions, effective dates, SHO/PRO และ SKU backfill สำหรับ GH
+3. เปิด GH Settings source/schedule/test/run/readiness โดยไม่กำหนดเวลา Default
+4. เปิด GH Monitoring projection/latest date/fact counts/run/issues/deep links
+5. ตรวจว่า actionable issues อยู่หน้า Import และ Monitoring เป็นภาพรวมเท่านั้น
+
+### Phase 4 — Dashboard, Report And Excel Parity
+
+1. เปิด GH Dashboard periods/metrics/KPI/charts/completeness/Excel ด้วย shared component
+2. เปิด GH Report Sales/Inventory × Branch/Date/Month, filters, heatmap, drawer, pagination และ descriptions
+3. ตรวจ Net/Gross, Stock On Hand/Stock Value, TOM/TOD และ SHO/PRO parity ระหว่าง API, screen และ Excel
+4. ตรวจ loading/waiting, cancellation, empty/error และ responsive behavior ตาม TWD
+5. ตรวจ confirmed Item + Branch gating ทุก aggregation และไม่มีข้อมูลจาก MT อื่น
+
+### Phase 5 — Verification And Release Readiness
+
+1. Backend GH-focused tests + full suite + Ruff
+2. Frontend GH-focused tests + full suite + ESLint + production build
+3. Migration offline SQL review และ disposable PostgreSQL upgrade/smoke
+4. Real-file read-only reconciliation: 2,906 detail rows, 92 source products, 91 source branches และ footer totals
+5. Freeze/compare TWD/HP/MH/HH API fixtures, mapping counts, dashboard/report totals และ navigation behavior
+6. Browser QA ทุก GH surface/role โดย Schedule ปิดและไม่กด Import source จริง
+7. สรุป commit/deploy checklist ให้ Product Owner อนุญาต Push/Deploy แยกต่างหาก
+
+## Test And Verification Matrix
+
+- Date: valid filename, leap/month/year boundary, malformed/missing/ambiguous date และ folder-date mismatch
+- Workbook: exact/alternate case headers, missing/duplicate headers, blank rows, footer, malformed numeric, zero/negative values และ duplicate SKU×Branch
+- Metrics: `/1.07` precision, Net/Gross returns, stock qty, total stock value, unit-cost non-aggregation และ footer reconciliation
+- Identity: leading zero, 12/13/14/15-character, alphanumeric/S-prefixed และ same code across MT
+- Mapping: 21/86 seeds, unmatched gating, effective-date boundary, import/export, description update และ SHO/PRO persistence
+- Automation: Initial Scan no facts, first Run import, subsequent unchanged skip, changed pending corrective, retry failures และ Schedule disabled
+- UI/API/Excel: all periods/dimensions/metrics/filters, waiting/empty/error, pagination, detail, download และ summary parity
+- Regression: full TWD/HP/MH/HH import/query/export/settings/monitoring/navigation suites unchanged
+
+## Dependencies
+
+- Frontend versions remain pinned in `package-lock.json`; no new UI dependency planned
+- Backend remains Python 3.13, FastAPI/SQLAlchemy/Alembic/openpyxl versions constrained by `backend/pyproject.toml`
+- FileShare uses existing SMB integration and credential model; no new external service
+
+## Security And Error Handling
+
+- Preserve Admin authorization for folder/source/schedule/run/corrective/mapping mutations and User single-file limit
+- Original UNC file read-only; process via temporary copy and delete temp after completion
+- Strict detector requires filename and workbook structure; filename alone cannot bypass validation
+- No force import across invalid GH structure, mixed MT or unresolved duplicate date
+- Logs/API must not expose FileShare password or sensitive source paths beyond authorized settings context
+- Transaction/audit boundaries include mt id, source group, checksum, derived date, actor และ corrective reason
+
+## Deployment Checklist
+
+- Confirm working tree contains only intended GH/docs changes; preserve unrelated untracked test artifacts
+- Capture pre-deploy baselines for TWD/HP/MH/HH and backup PostgreSQL
+- Push reviewed commit only after Product Owner confirmation
+- Deploy API/worker/web and apply additive migration as one version
+- Verify health, GH registry/profile/mapping seed, FileShare test, Initial Scan dry behavior, Monitoring, Settings, Dashboard/Report empty states และ Excel route
+- Do not enable Schedule and do not run actual GH Import without Admin action
+- Compare MT baseline results after deploy; rollback app version if regression while retaining GH additive data for diagnosis
+
+## Open Decisions
+
+- ไม่มี business/architecture decision ที่ค้างสำหรับเริ่ม Phase 1
+- เวลา Schedule และการเปิดใช้งานจริงเป็น runtime decision ของ Admin หลัง deploy ไม่ใช่ implementation default
+
+## Confirmation Gate
+
+- สิ่งที่จะสร้างคือ GH package ครบทุก capability ที่ TWD template กำหนด พร้อม GH-specific source contract
+- สิ่งที่จงใจไม่เปลี่ยนคือ Logic, data, settings และ UX/UI ของ TWD, HP, MH, HH นอก shared extension ที่มี regression proof
+- First implementation phase คือ parser/source contract, additive migration/mapping seed และ isolation tests โดยยังไม่เปิด route หรือ Import source จริง
+- ต้องได้รับ Product Owner ยืนยันแผนนี้ก่อนเริ่ม Phase 1 coding
+
+# Thai-Aust (TA) Full Modern Trade Package — Draft Implementation Plan (12 September 2026)
+
+## Architecture Direction
+
+- ใช้ shared TWD Dashboard/Performance/Excel/Settings/Monitoring และ GH เป็น blueprint เท่านั้น
+- สร้าง TA-specific parser/import/automatic coordinator เพื่อไม่แตะ GH parser ระหว่างเปิด TA
+- เปิด TA registry หลัง dependency และ test ครบ ไม่เปิด capability แบบครึ่งชุด
+- Reuse schema เดิมโดย scope ด้วย TA `modern_trade_id/source_group_code`; migration additive/idempotent และไม่แก้ MT เดิม
+
+## File And Module Plan
+
+- New: `backend/app/importers/ta.py`, `backend/app/services/ta_import.py`, `backend/app/services/ta_automatic_import.py`, `src/features/imports/TaImportPanel.tsx`, `backend/tests/test_ta.py`, `backend/tests/test_ta_automatic_import.py` และ additive Alembic revision
+- Registry: เปิด TA identity, VAT include, inventory `stockOh/stockValue`, 12 capabilities และ active lists/types
+- App: เพิ่ม TA Dashboard/Report routes ผ่าน shared pages ด้วย explicit `mtCode="TA"`
+- Import: เพิ่ม strict detector, preview/confirm, folder group, activity, corrective, fingerprint และ retry dispatch
+- Automation/backfill: dispatch TA coordinator และ `append_ta_sku_facts`; ห้าม fall through ไป TWD/GH
+- Performance/dashboard/export: เพิ่ม TA allowlist และรองรับ no-fact/latest-branch behavior พร้อม regression
+- Settings: เปลี่ยน TA placeholder เป็น FileShare profile + source/schedule/test/scan/run/mapping/SHO-PRO/backfill/readiness
+- Monitoring: เพิ่ม TA latest date/facts/mapping readiness/latest run/issues/deep link
+
+## Phased Implementation
+
+### Phase 1 — Contract Lock
+
+1. เพิ่ม real-file profile assertions โดยไม่ commit workbook
+2. เขียน failing tests สำหรับ filename/date-minus-one, exact 12 headers, Footer, duplicate grain, arbitrary SKU/leading zero, numeric/VAT/reconciliation
+3. Implement `ta.py` แยกจาก GH และพิสูจน์ baseline 3,268 rows/342 SKUs/87 branches/totals
+4. เตรียม explicit mapping fixture สำหรับ KPI 22 items โดยไม่มี runtime zfill/fuzzy rule
+5. Bootstrap Branch candidates จาก TA source/manual โดยไม่ seed GH crosswalk; TA-specific WA mapping ให้ Admin ยืนยันแยกต่างหาก
+
+### Phase 2 — Import And Integrity
+
+1. Implement TA-isolated atomic import, facts, interests, coverage และ summary rebuild
+2. ต่อ single-file preview/confirm, Admin folder workflow, per-file status/retry และ business fingerprint
+3. ต่อ same-date corrective preview/confirm แบบ atomic
+4. ตรวจ source evidence, audit และ negative sales
+
+### Phase 3 — Settings, Automation, Mapping, Monitoring
+
+1. เปิด TA profile โดย schedule default disabled/unset
+2. ต่อ Initial Scan no facts และ incremental Run
+3. เปิด mapping import/export, descriptions, effective dates, SHO/PRO และ backfill
+4. เปิด Monitoring projection และ Import issue deep link
+5. ตรวจ confirmed+active gate และ unmatched visibility
+
+### Phase 4 — Dashboard, Report, Excel
+
+1. เปิด Dashboard ครบ YTD/H1/H2/Full Year, Amount/Qty, YoY, completeness, charts, top lists และ Excel
+2. เปิด Report ครบ Sales/Inventory, Net/Gross, Amount/Qty, Stock OH/Value, Branch/Date/Month, filters, heatmap, descriptions, detail, pagination
+3. ตรวจ TOM/TOD, SHO/PRO, sticky identity/Total และ loading/empty/error parity ตาม TWD/GH
+4. ตรวจ API/screen/Excel parity และ TA-only isolation
+
+### Phase 5 — Completeness And Release Gate
+
+1. Capability audit 12/12 และ surface audit 5/5 จาก UI ถึง API/job/database
+2. TA-focused + full backend tests, direct automatic-import scenarios และ Ruff
+3. Frontend tests, ESLint และ production build
+4. Disposable PostgreSQL migration test และ offline SQL review
+5. Freeze/compare TWD/HP/MH/HH/GH baselines
+6. Browser QA ทุกหน้า/state โดยไม่เปิด Schedule หรือ Import source จริงระหว่าง development
+7. Push/Deploy เฉพาะเมื่อ Product Owner สั่งหลังรายงาน completeness matrix
+
+## Verification Matrix
+
+- Identity/date: correct/wrong filename, malformed/boundary date, wrong selected MT, filename spoof และ GH/TA branch-prefix collision
+- Data: blank IDs, bad numeric, duplicate grain, Footer, zero/negative และ changed same-date
+- Mapping: exact 22 items, TA-only Branch namespace, no GH reuse/fallback, unmatched, effective date, descriptions, import/export และ SHO/PRO
+- Metrics: `/1.07`, Net/Gross, Stock OH/Value, footer, Month/Date/Branch และ TOM/TOD
+- Operations: scan no facts, first run, unchanged, duplicate, corrective, retry, backfill, disabled schedule
+- UI/regression: all 5 areas + Excel + roles/states/responsive และ full TWD/HP/MH/HH/GH baseline
+
+## Confirmation Gate
+
+- Confirmed: ชื่อ `Thai-Aust (TA)`, subfolder `TA`, filename date ลบหนึ่งวัน และ TA-only Branch Mapping ที่ไม่เกี่ยวข้องกับ GH
+- Phase 1 ไม่เปิด route/schedule/import จริง และไม่เปลี่ยน UI/logic ของ MT เดิม
+- Definition of Done คือ capability/surface ครบพร้อม regression evidence ไม่ใช่เพียงมี TA ในเมนู

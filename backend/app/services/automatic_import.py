@@ -835,6 +835,16 @@ def process_run(session: Session, run_id: int) -> None:
 
         process_hh_run(session, run_id)
         return
+    if mt.source_group_code == "GH":
+        from app.services.gh_automatic_import import process_gh_run
+
+        process_gh_run(session, run_id)
+        return
+    if mt.source_group_code == "TA":
+        from app.services.ta_automatic_import import process_ta_run
+
+        process_ta_run(session, run_id)
+        return
     try:
         root, username, password = _credentials(session, mt)
         candidates = list_twd_source_files(root, username=username, password=password)

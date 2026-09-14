@@ -1296,3 +1296,187 @@ Discovery สำหรับ Frontend UX Milestone ได้รับอนุ�
 
 - Status: Discovery complete; รอ Product Owner ยืนยัน implementation plan ก่อนเริ่ม Full Package implementation
 - Priority: (1) package registry และ gap tests, (2) import/automation parity, (3) mapping/corrective/monitoring/settings parity, (4) end-to-end UI/Excel parity, (5) deployment and real-data reconciliation
+
+# Requirement เพิ่มเติม: Global House (GH) Full Modern Trade Package — 12 กันยายน 2026
+
+## Objective
+
+- เปิดใช้งาน Global House (`GH`) เป็น Modern Trade package เต็มรูปแบบ โดยใช้ TWD เป็น Master ของ Pattern, Concept, workflow, status, interaction, audit และ operational safety
+- ครอบคลุม Dashboard, Report, Excel, Manual/Folder/Automatic/Corrective Import, Mapping, SHO/PRO, SKU Backfill, Monitoring และ Settings โดยไม่มี TWD fallback และไม่เปลี่ยน Logic/UX/UI ของ TWD, HP, MH หรือ HH
+- แยกเฉพาะ source adapter, field mapping, date extraction, VAT, source recognition และ reconciliation ที่เป็นเงื่อนไขจริงของ GH
+
+## Problem
+
+- GH ยังเป็น Planned MT และยังไม่มี importer, automation, mapping seed, monitoring projection, settings profile หรือ Dashboard/Report ที่ใช้งานจริง
+- Daily source รวม Sales และ Inventory ใน workbook เดียว ไม่มี Data Date ภายในตาราง และมี Footer รวมที่ห้ามนำเข้าเป็น Fact
+- Daily source มี SKU/Branch มากกว่าขอบเขตที่ Manual ยืนยัน จึงต้องเก็บข้อมูลต้นทางครบ แต่กัน Unmatched ออกจาก Report/Dashboard จน Admin ยืนยัน Mapping
+
+## Users And Roles
+
+- User ดู Dashboard/Report/Detail/Excel และ Upload ได้ครั้งละหนึ่งไฟล์ตามสิทธิ์เดิม
+- Admin ใช้ Folder Upload, Initial Scan, Run ทันที, Corrective Import, Mapping, SHO/PRO, SKU Backfill, Source/Schedule Settings และตรวจ Import issues
+- Schedule แยกราย MT; GH เริ่มต้นปิดและไม่มีเวลา Default โดย Admin เป็นผู้กำหนดเอง
+- ทุก mutation ต้องเก็บ Actor, เวลา, GH context, source identity, validation/reconciliation และ before/after state ใน Audit Log
+
+## Goals And Success Criteria
+
+- ไฟล์ `Piyawat*.xlsx` ที่ถูกต้องสร้าง GH facts ที่ grain `Data Date × GH Branch × GH SKU` ได้โดยไม่รวม Footer
+- Data Date มาจากวันที่ในชื่อไฟล์ลบหนึ่งวัน เช่น filename วันที่ 12 กันยายนเป็นข้อมูลวันที่ 11 กันยายน
+- Product Code เป็น opaque text รองรับเลขศูนย์นำหน้า ตัวอักษร และความยาวที่เปลี่ยนได้ โดยไม่มี SKU-format heuristic
+- Initial Mapping มี Item 21 รายการและ Branch 86 รายการตาม Manual พร้อม provenance และ effective date ที่อ่านจากวันที่ข้อมูลเก่าสุดใน Manual
+- Dashboard/Report/Excel/TOM-TOD/SHO-PRO/Monitoring/Settings ใช้ GH data เท่านั้น และ MT เดิมผ่าน regression โดยผลลัพธ์ไม่เปลี่ยน
+
+## Non-Goals
+
+- ไม่ใช้ `Product Status` (`A`, `AS`, `I`) เป็น filter, reporting rule หรือ SHO/PRO classification
+- ไม่ auto-map SKU/Branch จากความยาว รูปแบบ คำอธิบาย หรือความคล้ายของชื่อ
+- ไม่เปิด Schedule หรือตั้งเวลา Default ให้ GH
+- ไม่เปลี่ยน VAT, metric, parser, mapping, report predicate หรือ UX/UI ของ MT อื่น
+- ไม่ใช้ `Cost (Ex VAT)` เป็นยอด Stock Value และไม่รวม Footer เป็น Fact
+
+## Must-Have Scope
+
+- GH Dashboard ใช้ TWD shared layout/behavior: YTD/H1/H2/ปีเต็ม, Amount/Qty, prior-year comparison, completeness, charts, loading/empty/error และ Download Excel
+- GH Report ใช้ TWD shared layout/behavior: Sales/Inventory, Net/Gross, Branch/Date/Month, filters, heatmap, descriptions, pagination, drawer, loading/empty/error, SHO/PRO, TOM/TOD และ Download Excel
+- Inventory metrics คือ `Stock on hand` และ `Stock value`; ไม่มี `Stock on order`
+- Import Workspace รู้จัก GH ทั้ง single-file, Admin folder ระดับแรก, detection, preview, confirmation, progress, issue ledger, retry และ duplicate result
+- Automatic Import ใช้ Safety Flow `Initial Scan → Run ทันที`; Initial Scan สร้าง File Registry โดยไม่ Import และ Run ทันทีประมวลผลเฉพาะไฟล์ใหม่/เปลี่ยน/ต้อง retry
+- Corrective Import รองรับ Data Date เดิมแต่ checksum/business fingerprint ต่าง โดย Admin ยืนยันก่อน replace ทั้งวันแบบ atomic
+- Settings มี GH source folder `GBH`, filename rule, Schedule แยกและเริ่มต้นปิด, FileShare test, Initial Scan/Run status, Mapping, SHO/PRO, Backfill และ readiness
+- Monitoring แสดง GH latest data date, fact records, SKU/Branch readiness, last run, warnings/errors และ deep link ไป Import issue
+
+## Core Workflows
+
+### Source Detection And Validation
+
+1. รับเฉพาะ `.xlsx` ที่ชื่อขึ้นต้น `Piyawat` และตรวจ workbook signature/header 12 columns เพื่อป้องกันเลือกผิด MT
+2. อ่านวันที่รูปแบบ `Piyawat-YYYY-MM-DD-HHMMSS.xlsx` แล้วลบหนึ่งวันเป็น Data Date; Folder date เป็น reception context เท่านั้น
+3. อ่าน detail row ที่มี Product Code และ Branch Code; Footer ที่ identity ว่างใช้ reconciliation แล้วตัดออกจาก Fact
+4. รักษา Product Code/Branch Code เป็นข้อความตาม source โดยไม่แปลงเลขศูนย์นำหน้า
+5. ตรวจ duplicate grain, required fields, numeric fields และ source totals ก่อนอนุญาต Import
+
+### Initial Scan And Run Now
+
+1. GH เริ่มต้นโดย Schedule ปิดและยังไม่สแกนเอง
+2. Admin กด Initial Scan เพื่อสำรวจทุก dated folder ชั้นแรกใต้ `GBH` และบันทึกเฉพาะ `Piyawat*.xlsx` ลง File Registry โดยยังไม่สร้าง Fact
+3. Admin กด Run ทันทีครั้งถัดไปเพื่อ Import รายการใหม่ที่ผ่าน validation
+4. Run ต่อไปตรวจทุก folder แต่เปิดอ่านละเอียดเฉพาะไฟล์ใหม่, เปลี่ยน, failed, pending review หรือ ready และข้ามไฟล์เดิมที่สำเร็จแล้ว
+5. หาก Admin เปิด Schedule ภายหลัง ให้ใช้ profile ของ GH เท่านั้นและคง workflow/idempotency ชุดเดียวกับ Run ทันที
+
+### Duplicate And Corrective Import
+
+1. Checksum/business fingerprint เดิมถูกข้ามเป็น Duplicate โดยไม่สร้าง Batch/Fact ซ้ำ
+2. Data Date เดิมแต่เนื้อหาเปลี่ยนเข้าสู่ Pending Review/Corrective Import
+3. Admin ตรวจ preview/reconciliation แล้วจึงยืนยัน replace; transaction แทนเฉพาะ GH facts ของวันนั้นและ rebuild summaries/coverage ที่เกี่ยวข้อง
+4. หาก replace ล้มเหลว ต้อง rollback ทั้ง transaction และคงข้อมูลเดิมครบ
+
+### Mapping And Reporting
+
+1. Import เก็บ detail fact ที่ผ่าน source validation แม้ Item/Branch ยังไม่ Mapping เพื่อรักษาหลักฐานและเปิด workflow แก้ไข
+2. Report/Dashboard/summary/export รวมเฉพาะ Item Mapping และ Branch Mapping ที่เป็น `confirmed + active` ณ Data Date
+3. Unmatched แสดงใน Settings/Import issues สำหรับ Admin แต่ไม่รวมยอด Report/Dashboard จนยืนยัน Mapping
+4. SHO/PRO เริ่มต้นเป็นยังไม่กำหนดสถานะและ Admin กำหนดภายหลัง; Product Status ไม่มีผลต่อ SHO/PRO
+
+## Business Rules
+
+- Daily source มี Sales และ Inventory ในไฟล์เดียว; Product Status เก็บเพื่อ Audit เท่านั้น
+- `Stock on hand = Stock (Qty)`
+- `Stock value = Stock Amount (Ex VAT)` ซึ่งเป็นยอดรวมระดับแถว
+- `Cost (Ex VAT)` เป็นต้นทุนต่อหน่วยและเก็บเพื่อ Audit/Detail; ห้าม SUM เป็น Stock Value
+- ค่า In VAT เก็บเป็น source evidence/reconciliation แต่ไม่ใช้เป็น metric มาตรฐาน
+- `Sale Amount` เป็น Include VAT; `Amount Ex VAT = Sale Amount / 1.07` โดยเก็บ precision เต็มและปัดเฉพาะตอนแสดง
+- Net Sales/Net Qty รวมค่าบวกและค่าคืนติดลบ; Gross Sale Out/Gross Qty รวมเฉพาะแถวที่ Sale Quantity เป็นบวก ตาม shared TWD predicate
+- Footer ตรวจ reconciliation ของ amount fields ที่มีค่า; Qty totals คำนวณจาก detail เพราะ Footer ไม่มี Qty
+- Initial Item Mapping ใช้ 21 rows ที่ตรงกันในสรุป Amount Ex.Vat และ QTY
+- Initial Branch Mapping ใช้เฉพาะ 86 pairs ที่ `BusinessPartner` จับคู่ GH branch กับ WA BP code ได้ครบ
+- `GH-003`, `GH-191`, `GH-211` และรายการอื่นที่ไม่มี verified pair คงเป็น Unmatched
+- Initial mapping effective date อ่านจาก Sale Date ที่เก่าสุดใน Manual; `2025-01-01` เป็น source-derived seed data ไม่ใช่ runtime hard-coded rule
+
+## Data Requirements
+
+- Daily columns: Product Code, Product Name, Product Status, Branch Code, Branch Name, Stock Qty, Stock Amount Ex/In VAT, Cost Ex/In VAT, Sale Quantity และ Sale Amount
+- Source path ใช้ Global FileShare Base เดิม โดย GH subfolder คือ `GBH`
+- Filename prefix เป็น supporting identity ร่วมกับ strict workbook signature; ชื่อไฟล์เพียงอย่างเดียวไม่อนุญาตให้ Import
+- เก็บ source filename/path, size, modified time, checksum, business fingerprint, derived Data Date, footer totals และ validation result เพื่อ Audit
+- Mapping namespace, facts, summaries, coverage, flags, runs และ settings ต้อง scope ด้วย GH modern_trade_id/source group เสมอ
+
+## Architecture Direction
+
+- เพิ่ม GH definition/capabilities ใน shared Modern Trade registry โดยไม่สร้าง duplicate pages
+- สร้าง GH-specific importer/validator และ import service; shared manual/folder/automatic/corrective orchestration เรียกผ่าน registry
+- Dashboard/Performance/Excel/Monitoring/Settings ใช้ shared contract และส่ง `mt_code=GH` ชัดเจน ไม่มี implicit TWD default
+- Migration เป็น additive และ seed เฉพาะ source-derived mapping data; ห้ามแก้ existing facts/mappings/settings ของ MT อื่น
+
+## Risks And Mitigations
+
+- Filename ไม่มี Data Date ใน workbook: strict filename parser + invalid-date rejection + boundary tests
+- Footer ถูกนำเข้าเป็น Fact: identity-row guard และ reconciliation tests ด้วย real workbook profile
+- Cost ต่อหน่วยถูก SUM ผิด: schema mapping/test ยืนยัน `Stock Amount Ex VAT = Qty × Cost Ex VAT`
+- Unmatched ทำให้ยอดเกิน scope: confirmed-item-and-branch predicate พร้อม API/Excel/dashboard parity tests
+- Shared code regression: freeze baseline ของ TWD/HP/MH/HH และทดสอบ cross-MT isolation ก่อน deploy
+- Corrective import ทำข้อมูลครึ่งวัน: atomic transaction, source-group lock และ rollback test
+
+## Open Questions
+
+- ไม่มี Open Decision ที่ค้างสำหรับเริ่ม implementation; Schedule เวลาใช้งานจริงให้ Admin กำหนดผ่าน Settings หลัง deploy
+
+## Status And Priority
+
+- Discovery และ source profiling เสร็จแล้วจาก Daily/Manual workbook
+- Business rules ในส่วนนี้ได้รับการยืนยันทีละประเด็นแล้ว
+- รอ Product Owner ยืนยัน PRD และ Implementation Plan ก่อนเริ่ม Phase 1 coding
+- Priority: (1) source contract/import isolation, (2) mappings/settings/automation, (3) report/dashboard/excel, (4) monitoring/corrective/backfill, (5) full regression and deployment readiness
+
+# Thai-Aust (TA) Full Modern Trade Package — Draft Requirement (12 September 2026)
+
+## Objective And Scope
+
+- เปิด TA เป็น Modern Trade package ครบชุด โดยใช้ TWD เป็น Master ของ Pattern/Concept/UX และใช้ GH เป็น technical blueprint สำหรับ combined workbook รายวัน
+- ครบ Dashboard, Report, single-file/Admin-folder import, automatic/corrective import, mapping, backfill, SHO/PRO, Monitoring, Settings และ Excel
+- TA ต้องมี source, facts, mappings, settings, runs, audit และ monitoring namespace ของตนเอง ห้ามใช้ GH fallback แม้ source Branch Code เป็น `GH-*`
+- ไม่เปลี่ยน business logic, result หรือ UX/UI ของ TWD, HP, MH, HH และ GH ยกเว้น shared extension ที่ backward-compatible และผ่าน regression
+
+## Source-Derived Data Contract
+
+- Daily sample `Runglawan-2026-09-12-075127.xlsx` มี 1 sheet, 12 columns และไม่มี Data Date ในตาราง
+- Proposed filename contract คือ `Runglawan-YYYY-MM-DD*.xlsx`; Proposed Data Date คือวันที่ในชื่อไฟล์ลบหนึ่งวัน เช่น 12 September 2026 เป็นข้อมูล 11 September 2026
+- Grain คือ `Data Date × TA Branch × TA SKU`; Footer ที่ identity ว่างใช้ reconciliation และห้ามสร้าง Fact
+- Columns: Product Code/Name/Status, Branch Code/Name, Stock Qty, Stock Amount Ex/In VAT, Cost Ex/In VAT, Sale Quantity และ Sale Amount
+- `Sale Amount` เป็น Include VAT ตาม Manual formula `Amount Ex.Vat = Sale Amount × 100 / 107`; `Stock on hand = Stock Qty`; `Stock value = Stock Amount Ex VAT`
+- Cost Ex/In VAT และ Product Status เป็น audit evidence ไม่ใช่ report metric หรือ SHO/PRO rule; Net รวมค่าติดลบและ Gross รวมเฉพาะ positive sales
+- Product/Branch Code เป็น opaque identifier ห้ามใช้ความยาว รูปแบบ หรือ Branch prefix ตัดสิน MT
+
+## Real-File Baseline
+
+- Daily sample มี 3,268 detail rows, 342 SKUs, 87 branches, Stock Qty 4,929, Stock Value Ex VAT 12,238,117.91, Sale Qty 565 และ Sale Amount Include VAT 2,375,435
+- Footer ตรงกับ detail totals และทุก row ผ่าน `Stock Amount Ex VAT = Stock Qty × Cost Ex VAT`; มี negative sales 2 rows
+- KPI Manual มี 6 sheets: สรุป Amount Ex.vat TA, สรุป QTY TA, BP TA, Sale Out, สาขา และ BP 22.1.26
+- Summary Amount/QTY ยืนยัน KPI target 22 SKUs; Manual Branch reference มี 79 codes
+- Daily sample overlap Manual Branch 76 codes, มี 11 daily branches นอก Manual และ 3 Manual placeholders ไม่อยู่ใน Daily
+- Manual `BP TA` มี 66 source catalog mappings แต่ KPI Summary เลือก 22 items; ทั้ง 22 codes ตรงกับ Daily Product Code เมื่อ reconcile เป็น exact pair ที่มีเลข `0` ด้านหน้า
+- Runtime ห้ามทำ zfill/fuzzy/length heuristic; Initial mapping ที่ยืนยันต้องเป็น exact source-code pairs พร้อม provenance เท่านั้น
+
+## Mapping, Operations And Visibility
+
+- Import เก็บ valid TA facts ทั้งหมด แต่ Dashboard/Report/Excel รวมเฉพาะ Item และ Branch mapping ที่ `confirmed + active` ณ Data Date
+- Unmatched ไม่รวม business totals เมื่อ setting ปิด แต่ Admin ตรวจได้ใน Settings/Import issue workflow
+- Detection ต้องใช้ selected TA context + `Runglawan` filename + strict signature; `GH-*` branch prefix ไม่ใช่หลักฐานว่าเป็น GH
+- Schedule แยกราย MT, default disabled และไม่มีเวลา; Admin กำหนดเอง
+- Initial Scan สร้าง File Registry โดยไม่ Import; Run import เฉพาะ new/ready/retry; duplicate ข้าม; changed same-date เข้า Admin-confirmed atomic corrective
+- User upload ทีละไฟล์; Admin folder upload ระดับแรกตาม limits เดิม; issues อยู่หน้า Import และ Monitoring เป็นภาพรวม
+
+## Confirmed Decisions
+
+- ชื่อแสดงผลคือ `Thai-Aust (TA)`
+- Source subfolder คือ `TA`
+- Data Date คือวันที่ในชื่อ `Runglawan` ลบหนึ่งวัน
+- Branch Mapping เป็นข้อมูลของ TA โดยเฉพาะและแยก namespace ด้วย TA `modern_trade_id`
+- ห้าม copy, reuse, join หรือ fallback ไปยัง GH Branch Mapping แม้ source branch code จะใช้รูปแบบ `GH-*` เหมือนกัน
+- Branch ใน TA Manual ใช้เป็น source reference/code/name เท่านั้น; Branch ที่ยังไม่มี TA-specific WA crosswalk ต้องคงเป็น Unmatched เพื่อให้ Admin ยืนยัน Mapping ของ TA เอง
+
+## Acceptance Criteria
+
+- TA เปิดครบ 12 capabilities และครบทั้ง 5 user-facing areas โดยไม่มี unsupported placeholder
+- API/UI/Excel ตรงกันสำหรับ Amount/Qty/Stock OH/Stock Value, Net/Gross, Branch/Date/Month, YTD/H1/H2/Full Year และ confirmed mapping scope
+- Import/scan/run/duplicate/corrective/backfill/mapping/SHO-PRO/Monitoring/Settings ผ่าน TA integration tests
+- Full regression, lint, build, migration review และ browser QA ผ่าน โดย baseline MT เดิมไม่เปลี่ยน

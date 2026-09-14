@@ -11,7 +11,9 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.importers.gh import GhFormatError
 from app.importers.hh import HhFormatError
+from app.importers.ta import TaFormatError
 from app.importers.twd import TwdFormatError
 from app.local_time import bangkok_now
 from app.models import (
@@ -694,9 +696,7 @@ def process_sku_backfill_run(session: Session, run_id: int) -> None:
                                 password=password,
                             )
                             extract = pair_extract.hp if mt.code == "HP" else pair_extract.mh
-                            count = append_hp_mh_sku_facts(
-                                session, batch, extract, run.target_sku
-                            )
+                            count = append_hp_mh_sku_facts(session, batch, extract, run.target_sku)
                     else:
                         candidate = SourceCandidate(
                             path=source.source_path,
@@ -704,12 +704,28 @@ def process_sku_backfill_run(session: Session, run_id: int) -> None:
                             size_bytes=source.size_bytes,
                             modified_at=source.modified_at,
                         )
-                        extract = download_twd_extract(
-                            candidate, username=username, password=password
-                        )
+                        if mt.source_group_code == "GH":
+                            from app.services.gh_automatic_import import _download
+                            from app.services.gh_import import append_gh_sku_facts
+
+                            extract = _download(candidate, username=username, password=password)
+                        elif mt.source_group_code == "TA":
+                            from app.services.ta_automatic_import import _download
+                            from app.services.ta_import import append_ta_sku_facts
+
+                            extract = _download(candidate, username=username, password=password)
+                        else:
+                            extract = download_twd_extract(
+                                candidate, username=username, password=password
+                            )
                         if extract.data_date.isoformat() != data_date_text:
                             raise ValueError("วันที่ในไฟล์เปลี่ยนจาก File Registry")
-                        count = append_twd_sku_facts(session, batch, extract, run.target_sku)
+                        if mt.source_group_code == "GH":
+                            count = append_gh_sku_facts(session, batch, extract, run.target_sku)
+                        elif mt.source_group_code == "TA":
+                            count = append_ta_sku_facts(session, batch, extract, run.target_sku)
+                        else:
+                            count = append_twd_sku_facts(session, batch, extract, run.target_sku)
                     outcome = {
                         **item,
                         "status": "imported" if count else "not_found",
@@ -720,7 +736,14 @@ def process_sku_backfill_run(session: Session, run_id: int) -> None:
                     results.append(outcome)
                     _save_progress(session, run, results, total, str(outcome["message"]))
                     session.commit()
-                except (HhFormatError, TwdFormatError, OSError, ValueError) as exc:
+                except (
+                    GhFormatError,
+                    TaFormatError,
+                    HhFormatError,
+                    TwdFormatError,
+                    OSError,
+                    ValueError,
+                ) as exc:
                     session.rollback()
                     run = session.get(ImportRun, run_id)
                     assert run is not None

@@ -34,6 +34,64 @@ describe('FileShareSettingsCard progress', () => {
     expect(container.querySelectorAll('article[data-source-group="HH"]')).toHaveLength(1)
   })
 
+  it('renders the independent GH source, schedule, and run controls', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      baseUnc: '\\\\server\\share',
+      domain: 'WA',
+      username: 'user',
+      passwordConfigured: true,
+      passwordMasked: '********',
+      lastTestAt: null,
+      lastTestStatus: null,
+      lastTestResults: [],
+      profiles: [{
+        code: 'GH', name: 'Global House', subfolder: 'GBH', enabled: false,
+        fullPath: '\\\\server\\share\\GBH', scheduleEnabled: false,
+        scheduleTime: null, initialScanCompleted: false, nextRunAt: null,
+        sourceGroup: 'GH', sharedProfileOwner: true, sharedWith: [], lastRun: null,
+      }],
+    }), { status: 200 }))
+
+    const { container } = render(
+      <FileShareSettingsCard view="profile" profileCode="GH" />,
+    )
+
+    expect(await screen.findByRole('heading', { name: 'FileShare · GH' })).toBeInTheDocument()
+    expect(screen.getByText('Global House')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('GBH')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Initial Scan' })).toBeInTheDocument()
+    expect(container.querySelectorAll('article[data-source-group="GH"]')).toHaveLength(1)
+  })
+
+  it('renders the independent TA source with unset Admin schedule', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      baseUnc: '\\\\server\\share',
+      domain: 'WA',
+      username: 'user',
+      passwordConfigured: true,
+      passwordMasked: '********',
+      lastTestAt: null,
+      lastTestStatus: null,
+      lastTestResults: [],
+      profiles: [{
+        code: 'TA', name: 'Thai-Aust', subfolder: 'TA', enabled: false,
+        fullPath: '\\\\server\\share\\TA', scheduleEnabled: false,
+        scheduleTime: null, initialScanCompleted: false, nextRunAt: null,
+        sourceGroup: 'TA', sharedProfileOwner: true, sharedWith: [], lastRun: null,
+      }],
+    }), { status: 200 }))
+
+    const { container } = render(
+      <FileShareSettingsCard view="profile" profileCode="TA" />,
+    )
+
+    expect(await screen.findByRole('heading', { name: 'FileShare · TA' })).toBeInTheDocument()
+    expect(screen.getByText('Thai-Aust')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('TA')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Initial Scan' })).toBeInTheDocument()
+    expect(container.querySelectorAll('article[data-source-group="TA"]')).toHaveLength(1)
+  })
+
   it('shows live progress, activity and the latest issue for an active run', async () => {
     const now = Date.now()
     vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(

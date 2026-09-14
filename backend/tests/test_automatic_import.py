@@ -35,6 +35,38 @@ def _summary() -> TwdSummary:
     )
 
 
+def test_process_run_dispatches_ta_to_its_independent_processor(engine, monkeypatch) -> None:
+    from app.services import ta_automatic_import
+
+    calls: list[int] = []
+    monkeypatch.setattr(
+        ta_automatic_import,
+        "process_ta_run",
+        lambda _session, run_id: calls.append(run_id),
+    )
+    with Session(engine) as session:
+        mt = ModernTrade(
+            id=91,
+            code="TA",
+            name="Thai-Aust",
+            source_group_code="TA",
+            source_subfolder="TA",
+        )
+        run = ImportRun(
+            id=92,
+            modern_trade_id=mt.id,
+            trigger="manual",
+            mode="scan",
+            status="running",
+            requested_by="admin",
+        )
+        session.add_all([mt, run])
+        session.commit()
+        process_run(session, run.id)
+
+    assert calls == [92]
+
+
 def _extract(
     *,
     checksum: str = "a" * 64,

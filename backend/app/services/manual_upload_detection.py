@@ -6,8 +6,10 @@ from pathlib import Path
 from typing import Literal
 from zipfile import BadZipFile, ZipFile
 
+from app.importers.gh import GhFormatError, inspect_gh_workbook
 from app.importers.hh import HhFormatError, extract_hh_pair, inspect_hh_workbook
 from app.importers.hp_mh import HpMhFormatError, extract_hp_mh_pair
+from app.importers.ta import TaFormatError, inspect_ta_workbook
 from app.importers.twd import TwdFormatError, extract_twd_file
 
 DetectionStatus = Literal["detected", "needs_review", "conflict", "unsupported"]
@@ -50,6 +52,36 @@ def _detect_twd_workbook(path: Path) -> UploadDetection:
 
 
 def _detect_excel_workbook(path: Path) -> UploadDetection:
+    try:
+        kind, data_date = inspect_ta_workbook(path)
+    except (TaFormatError, OSError, ValueError):
+        pass
+    else:
+        return UploadDetection(
+            status="detected",
+            source_group_code="TA",
+            mt_codes=("TA",),
+            source_kind=kind,
+            evidence=(
+                "ผ่าน Strict Validation ของ TA workbook",
+                f"Data date {data_date.isoformat()}",
+            ),
+        )
+    try:
+        kind, data_date = inspect_gh_workbook(path)
+    except (GhFormatError, OSError, ValueError):
+        pass
+    else:
+        return UploadDetection(
+            status="detected",
+            source_group_code="GH",
+            mt_codes=("GH",),
+            source_kind=kind,
+            evidence=(
+                "ผ่าน Strict Validation ของ GH workbook",
+                f"Data date {data_date.isoformat()}",
+            ),
+        )
     twd = _detect_twd_workbook(path)
     if twd.status == "detected":
         return twd

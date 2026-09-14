@@ -17,6 +17,10 @@ services:
   api:
     build: ./backend
     restart: unless-stopped
+    command:
+      - sh
+      - -c
+      - python -m alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000
     environment:
       MTPULSE_DATABASE_URL: postgresql+psycopg://mtpulse:mtpulse@db:5432/mtpulse
       MTPULSE_CORS_ORIGINS: '["http://localhost:5173"]'

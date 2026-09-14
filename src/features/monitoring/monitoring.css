@@ -97,6 +97,7 @@
 .monitoring-mt-code[data-mt="HP"] { color: #8a5700; background: #fff5d8; border-color: #ead391; }
 .monitoring-mt-code[data-mt="MH"] { color: #6540a8; background: #f2ebff; border-color: #d9c8f7; }
 .monitoring-mt-code[data-mt="GH"] { color: #16724b; background: #e8f8f0; border-color: #b9e5cf; }
+.monitoring-mt-code[data-mt="TA"] { color: #8a4b08; background: #fff4df; border-color: #f2d19a; }
 .monitoring-status-text[data-status="inactive"] { color: #6f7f89; }
 .monitoring-status-text[data-status="inactive"]::before { background: #9aa8b1; }
 .monitoring-technical-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); }

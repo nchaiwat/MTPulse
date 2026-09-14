@@ -1,14 +1,6 @@
 import { useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, FolderOpen, LoaderCircle } from 'lucide-react'
-import {
-  MANUAL_UPLOAD_LIMITS,
-  confirmFolderImportBatch,
-  createFolderImportBatch,
-  fetchFolderImportBatch,
-  finalizeFolderImportBatch,
-  uploadFolderImportFile,
-  type ManualUploadBatchContract,
-} from './importApi'
+import { MANUAL_UPLOAD_LIMITS, confirmFolderImportBatch, createFolderImportBatch, fetchFolderImportBatch, finalizeFolderImportBatch, uploadFolderImportFile, type ManualUploadBatchContract } from './importApi'
 
 const terminalStatuses = new Set(['completed', 'completed_with_issues', 'failed'])
 const maxStatusPolls = 300
@@ -24,22 +16,13 @@ function directFiles(fileList: FileList | null) {
   })
 }
 
-export function FolderImportPanel({
-  expectedSourceGroup,
-  onCompleted,
-}: {
-  expectedSourceGroup: 'TWD' | 'HP_MH' | 'HH'
-  onCompleted: () => void
-}) {
+export function FolderImportPanel({ expectedSourceGroup, onCompleted }: { expectedSourceGroup: 'TWD' | 'HP_MH' | 'HH' | 'GH' | 'TA'; onCompleted: () => void }) {
   const [files, setFiles] = useState<File[]>([])
   const [batch, setBatch] = useState<ManualUploadBatchContract | null>(null)
   const [busy, setBusy] = useState<'upload' | 'confirm' | null>(null)
   const [uploadedCount, setUploadedCount] = useState(0)
   const [message, setMessage] = useState<string | null>(null)
-  const exceptionFiles = useMemo(
-    () => batch?.files.filter((file) => !['uploaded', 'imported'].includes(file.status)) ?? [],
-    [batch],
-  )
+  const exceptionFiles = useMemo(() => batch?.files.filter((file) => !['uploaded', 'imported'].includes(file.status)) ?? [], [batch])
 
   const selectFolder = (fileList: FileList | null) => {
     const selected = directFiles(fileList)
@@ -48,9 +31,7 @@ export function FolderImportPanel({
     setUploadedCount(0)
     if (selected.length > MANUAL_UPLOAD_LIMITS.maxFolderFiles) {
       setFiles([])
-      setMessage(
-        `Folder มี ${selected.length} ไฟล์ เกินกำหนดสูงสุด ${MANUAL_UPLOAD_LIMITS.maxFolderFiles} ไฟล์`,
-      )
+      setMessage(`Folder มี ${selected.length} ไฟล์ เกินกำหนดสูงสุด ${MANUAL_UPLOAD_LIMITS.maxFolderFiles} ไฟล์`)
       return
     }
     setFiles(selected)
@@ -73,11 +54,7 @@ export function FolderImportPanel({
         let lastError: unknown
         for (let attempt = 0; attempt < 3; attempt += 1) {
           try {
-            await uploadFolderImportFile(
-              created.id,
-              file,
-              `${index + 1}-${file.size}-${file.lastModified}`,
-            )
+            await uploadFolderImportFile(created.id, file, `${index + 1}-${file.size}-${file.lastModified}`)
             return
           } catch (error) {
             lastError = error
@@ -98,7 +75,9 @@ export function FolderImportPanel({
       }
       await Promise.all(
         Array.from(
-          { length: Math.min(MANUAL_UPLOAD_LIMITS.uploadConcurrency, files.length) },
+          {
+            length: Math.min(MANUAL_UPLOAD_LIMITS.uploadConcurrency, files.length),
+          },
           () => uploadWorker(),
         ),
       )
@@ -147,7 +126,9 @@ export function FolderImportPanel({
         <div>
           <span className="eyebrow">Admin folder import</span>
           <h3 id={`folder-import-${expectedSourceGroup}`}>นำเข้าข้อมูลทั้ง Folder</h3>
-          <p>อ่านเฉพาะไฟล์ระดับแรก · สูงสุด {MANUAL_UPLOAD_LIMITS.maxFolderFiles} ไฟล์ · Upload พร้อมกัน {MANUAL_UPLOAD_LIMITS.uploadConcurrency} ไฟล์</p>
+          <p>
+            อ่านเฉพาะไฟล์ระดับแรก · สูงสุด {MANUAL_UPLOAD_LIMITS.maxFolderFiles} ไฟล์ · Upload พร้อมกัน {MANUAL_UPLOAD_LIMITS.uploadConcurrency} ไฟล์
+          </p>
         </div>
         <span className="folder-admin-badge">Admin only</span>
       </header>
@@ -166,20 +147,9 @@ export function FolderImportPanel({
         />
         <div>
           <strong>{files.length > 0 ? `${files.length} ไฟล์พร้อมตรวจสอบ` : 'ยังไม่ได้เลือก Folder'}</strong>
-          <small>
-            {expectedSourceGroup === 'TWD'
-              ? 'ระบบต้องตรวจพบไฟล์ TWD .xls/.xlsx เท่านั้น'
-              : expectedSourceGroup === 'HH'
-                ? 'ระบบจะจับคู่ StockReport.xlsx และ SaleReport.xlsx ของ HH ตามวันที่ข้อมูล'
-              : 'ระบบจะจับคู่ Inventory ZIP และ Sales ZIP ของ HP/MH'}
-          </small>
+          <small>{expectedSourceGroup === 'TWD' ? 'ระบบต้องตรวจพบไฟล์ TWD .xls/.xlsx เท่านั้น' : expectedSourceGroup === 'HH' ? 'ระบบจะจับคู่ StockReport.xlsx และ SaleReport.xlsx ของ HH ตามวันที่ข้อมูล' : expectedSourceGroup === 'GH' ? 'ระบบต้องตรวจพบไฟล์ Piyawat-YYYY-MM-DD*.xlsx ของ GH เท่านั้น' : expectedSourceGroup === 'TA' ? 'ระบบต้องตรวจพบไฟล์ Runglawan-YYYY-MM-DD*.xlsx ของ TA และใช้วันที่ข้อมูลลบ 1 วันเท่านั้น' : 'ระบบจะจับคู่ Inventory ZIP และ Sales ZIP ของ HP/MH'}</small>
         </div>
-        <button
-          className="primary-action"
-          type="button"
-          disabled={files.length === 0 || busy !== null}
-          onClick={() => void inspectFolder()}
-        >
+        <button className="primary-action" type="button" disabled={files.length === 0 || busy !== null} onClick={() => void inspectFolder()}>
           {busy === 'upload' ? <LoaderCircle className="is-spinning" size={15} /> : <FolderOpen size={15} />}
           {busy === 'upload' ? `กำลังส่ง ${uploadedCount}/${files.length}` : 'ตรวจสอบ Folder'}
         </button>
@@ -188,19 +158,34 @@ export function FolderImportPanel({
       {batch && (
         <div className="folder-batch-result" data-status={batch.status}>
           <div className="folder-batch-summary">
-            {batch.status === 'failed'
-              ? <AlertTriangle size={18} aria-hidden="true" />
-              : <CheckCircle2 size={18} aria-hidden="true" />}
+            {batch.status === 'failed' ? <AlertTriangle size={18} aria-hidden="true" /> : <CheckCircle2 size={18} aria-hidden="true" />}
             <div>
-              <strong>Batch {batch.id} · {batch.detectedSourceGroup ?? 'ยังระบุ MT ไม่ได้'}</strong>
+              <strong>
+                Batch {batch.id} · {batch.detectedSourceGroup ?? 'ยังระบุ MT ไม่ได้'}
+              </strong>
               <small>{batch.summaryMessage ?? batch.errorMessage ?? 'กำลังประมวลผลข้อมูล'}</small>
             </div>
             <dl>
-              <div><dt>ทั้งหมด</dt><dd>{batch.counts.total}</dd></div>
-              <div><dt>พร้อมนำเข้า</dt><dd>{batch.counts.eligible}</dd></div>
-              <div><dt>สำเร็จ</dt><dd>{batch.counts.imported}</dd></div>
-              <div><dt>ซ้ำ</dt><dd>{batch.counts.duplicate}</dd></div>
-              <div><dt>ผิดพลาด</dt><dd>{batch.counts.failed + batch.counts.needsReview}</dd></div>
+              <div>
+                <dt>ทั้งหมด</dt>
+                <dd>{batch.counts.total}</dd>
+              </div>
+              <div>
+                <dt>พร้อมนำเข้า</dt>
+                <dd>{batch.counts.eligible}</dd>
+              </div>
+              <div>
+                <dt>สำเร็จ</dt>
+                <dd>{batch.counts.imported}</dd>
+              </div>
+              <div>
+                <dt>ซ้ำ</dt>
+                <dd>{batch.counts.duplicate}</dd>
+              </div>
+              <div>
+                <dt>ผิดพลาด</dt>
+                <dd>{batch.counts.failed + batch.counts.needsReview}</dd>
+              </div>
             </dl>
           </div>
 
@@ -228,7 +213,11 @@ export function FolderImportPanel({
         </div>
       )}
 
-      {message && <div className="import-message" role="status">{message}</div>}
+      {message && (
+        <div className="import-message" role="status">
+          {message}
+        </div>
+      )}
     </section>
   )
 }

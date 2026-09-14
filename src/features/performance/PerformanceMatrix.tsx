@@ -124,7 +124,7 @@ const MatrixTable = memo(function MatrixTable({ items, branches, dates, branchId
           <td className={`sticky-column col-wa-desc ${showTurnover ? '' : 'sticky-divider'}`}><span className="truncate" title={waDescriptionText(item)}>{waDescriptionText(item)}</span></td>
           {showTurnover && <td className="sticky-column col-tom numeric-column turnover-column">{formatTurnover(item.tom)}</td>}
           {showTurnover && <td className="sticky-column col-tod numeric-column turnover-column sticky-divider">{formatTurnover(item.tod)}</td>}
-          <td className={`numeric-column total-column ${total < 0 ? 'is-negative' : ''}`}><strong>{formatMetric(total, metric)}</strong></td>
+          <td className={`sticky-column numeric-column total-column ${total < 0 ? 'is-negative' : ''}`}><strong>{formatMetric(total, metric)}</strong></td>
           {dimensionKeys.map((key) => {
             const value = values[key] ?? 0
             const level = heatmap ? heatLevel(value, maxValue) : 'off'
@@ -171,7 +171,7 @@ const MatrixTable = memo(function MatrixTable({ items, branches, dates, branchId
               {showDescriptions && <th className={`sticky-column col-wa-desc ${showTurnover ? '' : 'sticky-divider'}`} />}
               {showTurnover && <th className="sticky-column col-tom numeric-column">AVG {formatTurnover(turnoverSummary?.averageTom)}</th>}
               {showTurnover && <th className="sticky-column col-tod numeric-column sticky-divider">AVG {formatTurnover(turnoverSummary?.averageTod)}</th>}
-              <th className={`numeric-column total-column ${mode === 'sales' && summaryTotal < 0 ? 'is-negative' : ''}`}>{mode === 'sales' ? formatMetric(summaryTotal, metric) : ''}</th>
+              <th className={`sticky-column numeric-column total-column ${mode === 'sales' && summaryTotal < 0 ? 'is-negative' : ''}`}>{mode === 'sales' ? formatMetric(summaryTotal, metric) : ''}</th>
               {dimensionKeys.map((key) => {
                 const value = summaryValue(key)
                 return <th className={`numeric-column dimension-header ${mode === 'sales' && value < 0 ? 'is-negative' : ''}`} key={key}>{mode === 'sales' ? formatMetric(value, metric) : ''}</th>
@@ -187,7 +187,7 @@ const MatrixTable = memo(function MatrixTable({ items, branches, dates, branchId
             {showDescriptions && <th className={`sticky-column col-wa-desc ${showTurnover ? '' : 'sticky-divider'}`}>WA description</th>}
             {showTurnover && <th className="sticky-column col-tom numeric-column"><abbr title="Turn Over Month">TOM</abbr></th>}
             {showTurnover && <th className="sticky-column col-tod numeric-column sticky-divider"><abbr title="Turn Over Day">TOD</abbr></th>}
-            <th className="numeric-column total-column">Total</th>
+            <th className="sticky-column numeric-column total-column">Total</th>
             {dimensionKeys.map((key) => {
               const branch = branches.find((entry) => entry.id === key)
               return (

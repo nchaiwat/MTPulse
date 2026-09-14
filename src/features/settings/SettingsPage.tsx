@@ -1,14 +1,5 @@
 import { useEffect, useState } from 'react'
-import {
-  Bell,
-  Building2,
-  CalendarClock,
-  FileCog,
-  FileSearch,
-  Globe2,
-  LockKeyhole,
-  SlidersHorizontal,
-} from 'lucide-react'
+import { Bell, Building2, CalendarClock, FileCog, FileSearch, Globe2, LockKeyhole, SlidersHorizontal } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { FileShareSettingsCard } from './FileShareSettingsCard'
 import { SystemSettingsPage } from './SystemSettingsPage'
@@ -32,9 +23,7 @@ const scopes: ScopeDefinition[] = [
     code: definition.code,
     label: definition.code,
     name: definition.name,
-    status: definition.activeCapabilities.includes('settings')
-      ? definition.plannedCapabilities.length > 0 ? 'partial' : 'ready'
-      : 'planned',
+    status: definition.activeCapabilities.includes('settings') ? (definition.plannedCapabilities.length > 0 ? 'partial' : 'ready') : 'planned',
     sharedWith: definition.code === 'HP' ? 'MH' : definition.code === 'MH' ? 'HP' : undefined,
   })),
 ]
@@ -45,23 +34,22 @@ const statusLabel = {
   planned: 'ยังไม่ตั้งค่า',
 }
 
-function UnavailableSection({
-  icon: Icon,
-  eyebrow,
-  title,
-  description,
-}: {
-  icon: LucideIcon
-  eyebrow: string
-  title: string
-  description: string
-}) {
+function UnavailableSection({ icon: Icon, eyebrow, title, description }: { icon: LucideIcon; eyebrow: string; title: string; description: string }) {
   return (
     <section className="settings-standard-section" data-availability="unavailable" aria-disabled="true">
       <header>
-        <span className="setting-icon"><Icon size={18} aria-hidden="true" /></span>
-        <div><span className="eyebrow">{eyebrow}</span><h3>{title}</h3><p>{description}</p></div>
-        <span className="settings-availability"><LockKeyhole size={13} aria-hidden="true" />Not available for this MT</span>
+        <span className="setting-icon">
+          <Icon size={18} aria-hidden="true" />
+        </span>
+        <div>
+          <span className="eyebrow">{eyebrow}</span>
+          <h3>{title}</h3>
+          <p>{description}</p>
+        </div>
+        <span className="settings-availability">
+          <LockKeyhole size={13} aria-hidden="true" />
+          Not available for this MT
+        </span>
       </header>
     </section>
   )
@@ -120,7 +108,12 @@ export function SettingsPage({ focusCoverageKey = 0 }: { focusCoverageKey?: numb
             <small>{activeScope === 'global' ? 'Global scope' : current.code}</small>
             <strong>{current.name}</strong>
           </span>
-          {current.sharedWith && <em><CalendarClock size={12} aria-hidden="true" />ใช้ Source และ Schedule ร่วมกับ {current.sharedWith}</em>}
+          {current.sharedWith && (
+            <em>
+              <CalendarClock size={12} aria-hidden="true" />
+              ใช้ Source และ Schedule ร่วมกับ {current.sharedWith}
+            </em>
+          )}
           <b data-status={current.status}>{statusLabel[current.status]}</b>
         </div>
       </div>
@@ -153,16 +146,17 @@ export function SettingsPage({ focusCoverageKey = 0 }: { focusCoverageKey?: numb
             }}
           >
             {scope.code === 'global' ? <Globe2 size={16} aria-hidden="true" /> : <Building2 size={16} aria-hidden="true" />}
-            <span><strong>{scope.label}</strong><small>{scope.code === 'global' ? 'Shared by all MT' : scope.name}</small></span>
+            <span>
+              <strong>{scope.label}</strong>
+              <small>{scope.code === 'global' ? 'Shared by all MT' : scope.name}</small>
+            </span>
             {scope.sharedWith && <em>Shared</em>}
           </button>
         ))}
       </nav>
 
       <div id={`settings-panel-${activeScope}`} role="tabpanel" aria-labelledby={`settings-tab-${activeScope}`} className="settings-scope-panel">
-        {activeScope === 'global' && (
-          <SystemSettingsPage embedded fileShareView="connection" onDirtyChange={(dirty) => setDirtyScope(dirty ? 'global' : null)} />
-        )}
+        {activeScope === 'global' && <SystemSettingsPage embedded fileShareView="connection" onDirtyChange={(dirty) => setDirtyScope(dirty ? 'global' : null)} />}
 
         {activeScope === 'TWD' && (
           <>
@@ -174,11 +168,7 @@ export function SettingsPage({ focusCoverageKey = 0 }: { focusCoverageKey?: numb
         {(activeScope === 'HP' || activeScope === 'MH') && (
           <>
             <FileShareSettingsCard view="profile" profileCode={activeScope} showSaveAction onDirtyChange={(dirty) => setDirtyScope(dirty ? activeScope : null)} />
-            <TwdSettingsPage
-              embedded
-              mtCode={activeScope}
-              mtName={activeScope === 'HP' ? 'HomePro' : 'MegaHome'}
-            />
+            <TwdSettingsPage embedded mtCode={activeScope} mtName={activeScope === 'HP' ? 'HomePro' : 'MegaHome'} />
           </>
         )}
 
@@ -189,7 +179,21 @@ export function SettingsPage({ focusCoverageKey = 0 }: { focusCoverageKey?: numb
           </>
         )}
 
-        {['GH', 'SCG', 'TA'].includes(activeScope) && (
+        {activeScope === 'GH' && (
+          <>
+            <FileShareSettingsCard view="profile" profileCode="GH" showSaveAction onDirtyChange={(dirty) => setDirtyScope(dirty ? 'GH' : null)} />
+            <TwdSettingsPage embedded mtCode="GH" mtName="Global House" />
+          </>
+        )}
+
+        {activeScope === 'TA' && (
+          <>
+            <FileShareSettingsCard view="profile" profileCode="TA" showSaveAction onDirtyChange={(dirty) => setDirtyScope(dirty ? 'TA' : null)} />
+            <TwdSettingsPage embedded mtCode="TA" mtName="Thai-Aust" />
+          </>
+        )}
+
+        {activeScope === 'SCG' && (
           <>
             <UnavailableSection icon={Bell} eyebrow="Data source & automation" title="Source Connection and Schedule" description="Source profile สำหรับ Modern Trade นี้ยังไม่ถูกกำหนด" />
             <CapabilityTemplate />
