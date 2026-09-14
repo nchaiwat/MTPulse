@@ -25,7 +25,7 @@ export const MODERN_TRADES: Readonly<Record<ModernTradeCode, ModernTradeDefiniti
     code: 'TWD',
     name: 'Thai Watsadu',
     displayName: 'TWD',
-    navigationLabel: 'ไทวัสดุ',
+    navigationLabel: 'Thai Watsadu',
     sourceGroupCode: 'TWD',
     sourceOwnerCode: 'TWD',
     inventoryMetrics: ['stockOh', 'stockOnOrder'],

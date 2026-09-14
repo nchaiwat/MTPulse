@@ -7,6 +7,10 @@ describe('Modern Trade registry', () => {
     expect(ACTIVE_MODERN_TRADES.map((item) => item.code)).toEqual(['TWD', 'HP', 'MH', 'HH', 'GH', 'TA'])
   })
 
+  it('uses the standard English name for TWD navigation', () => {
+    expect(MODERN_TRADES.TWD.navigationLabel).toBe('Thai Watsadu')
+  })
+
   it('gives every capability exactly one state', () => {
     Object.values(MODERN_TRADES).forEach((definition) => {
       expect(definition.activeCapabilities.filter((item) => definition.plannedCapabilities.includes(item))).toEqual([])

@@ -152,6 +152,10 @@ describe('MonitoringPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Monitoring' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'สถานะข้อมูลแยกตาม Modern Trade' })).toBeInTheDocument()
+    const twdRow = screen.getByText('TWD').closest('tr')
+    expect(twdRow?.querySelectorAll(':scope > td')).toHaveLength(5)
+    expect(twdRow?.querySelector('.monitoring-mt-identity')).toBeInTheDocument()
+    expect(twdRow?.querySelectorAll('.monitoring-cell-stack')).toHaveLength(3)
     expect(screen.getByText('12,590 records · 25/08/2026 10:00')).toBeInTheDocument()
     expect(screen.getAllByText('22/08/2026')).toHaveLength(2)
     expect(screen.getAllByText('175,717')).toHaveLength(3)

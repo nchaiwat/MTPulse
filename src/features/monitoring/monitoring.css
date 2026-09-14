@@ -75,21 +75,23 @@
 
 .monitoring-mt-panel,
 .monitoring-technical-panel { margin-bottom: 9px; }
-.monitoring-mt-table { min-width: 860px !important; }
-.monitoring-mt-table th:first-child { width: 31%; }
-.monitoring-mt-table th:nth-child(2) { width: 15%; }
-.monitoring-mt-table th:nth-child(3) { width: 17%; }
-.monitoring-mt-table th:nth-child(4) { width: 16%; }
-.monitoring-mt-table th:nth-child(5) { width: 21%; }
-.monitoring-mt-table td { height: 46px; text-align: left; vertical-align: middle; }
-.monitoring-mt-table td:first-child { display: grid; grid-template-columns: 42px minmax(0, 1fr); align-items: center; gap: 8px; border-left: 3px solid var(--teal-600); }
+.monitoring-mt-table { min-width: 860px !important; table-layout: fixed; }
+.monitoring-mt-column { width: 31%; }
+.monitoring-status-column { width: 15%; }
+.monitoring-date-column { width: 17%; }
+.monitoring-records-column { width: 16%; }
+.monitoring-import-column { width: 21%; }
+.monitoring-mt-table td { height: 52px; text-align: left; vertical-align: middle; }
+.monitoring-mt-table td:first-child { border-left: 3px solid var(--teal-600); }
 .monitoring-mt-table tr[data-status="warning"] td:first-child { border-left-color: #d79222; }
 .monitoring-mt-table tr[data-status="critical"] td:first-child { border-left-color: var(--red-700); }
 .monitoring-mt-table tr[data-status="inactive"] td:first-child { border-left-color: #aab7c0; }
 .monitoring-mt-table td > span:not(.monitoring-status-text),
 .monitoring-mt-table td:not(:first-child) { color: var(--text-900); }
-.monitoring-mt-table td:first-child > span,
-.monitoring-mt-table td:nth-child(n+3) { display: grid; gap: 1px; }
+.monitoring-mt-identity { min-width: 0; display: flex; align-items: center; gap: 8px; }
+.monitoring-mt-identity > span { min-width: 0; display: grid; gap: 1px; }
+.monitoring-mt-identity strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.monitoring-cell-stack { min-width: 0; display: grid; gap: 1px; }
 .monitoring-mt-table td small { display: block; color: var(--text-600); font-size: 8px; }
 .monitoring-mt-table time,
 .monitoring-number { font-family: "Cascadia Mono", Consolas, monospace; font-size: 11px; font-weight: 700; }

@@ -19,12 +19,34 @@ const performanceResponse = {
   latestImport: null,
 }
 
+const emptyTwdDashboardResponse = {
+  meta: {
+    mtCode: 'TWD',
+    mtName: 'Thai Watsadu',
+    year: null,
+    previousYear: null,
+    period: 'ytd',
+    latestDataDate: null,
+    availableYears: [],
+    loadedDays: 0,
+    expectedDays: 0,
+    completenessPercent: 0,
+  },
+  summary: null,
+  monthly: [],
+  topBranches: [],
+  topSkus: [],
+}
+
 describe('App navigation', () => {
   afterEach(() => vi.restoreAllMocks())
 
   it('uses collapsible submenus and one settings workspace', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input)
+      if (url.includes('/api/dashboards/twd')) {
+        return new Response(JSON.stringify(emptyTwdDashboardResponse), { status: 200 })
+      }
       if (url.includes('/api/settings/twd/unmatched-visibility')) {
         return new Response(
           JSON.stringify({
@@ -79,20 +101,20 @@ describe('App navigation', () => {
     await userEvent.click(screen.getByRole('button', { name: 'ย่อเมนู' }))
     expect(appShell).toHaveAttribute('data-navigation', 'collapsed')
     expect(screen.getByRole('button', { name: 'ขยายเมนู' })).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.getByRole('button', { name: 'รายงาน' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('button', { name: 'แดชบอร์ด' })).toHaveAttribute('aria-current', 'page')
     await userEvent.click(screen.getByRole('button', { name: 'ขยายเมนู' }))
     expect(appShell).toHaveAttribute('data-navigation', 'expanded')
 
     expect(screen.getByRole('button', { name: 'รายงาน' })).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByRole('button', { name: 'แดชบอร์ด' })).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByRole('button', { name: 'สถานะข้อมูล' })).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByRole('button', { name: 'รายงาน ไทวัสดุ' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('button', { name: 'แดชบอร์ด Thai Watsadu' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('button', { name: 'Monitoring' })).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'การตั้งค่า' })).toHaveLength(1)
     expect(within(screen.getByRole('navigation', { name: 'Primary navigation' })).queryByText('Mapping')).not.toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: 'รายงาน' }))
-    expect(screen.queryByRole('button', { name: 'รายงาน ไทวัสดุ' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'รายงาน Thai Watsadu' })).not.toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: 'การตั้งค่า' }))
 
@@ -171,7 +193,7 @@ describe('App navigation', () => {
     })
 
     render(<App />)
-    await userEvent.click(screen.getByRole('button', { name: 'แดชบอร์ด ไทวัสดุ' }))
+    await userEvent.click(screen.getByRole('button', { name: 'แดชบอร์ด Thai Watsadu' }))
 
     expect(screen.queryByRole('heading', { level: 1, name: 'แดชบอร์ดไทวัสดุ' })).not.toBeInTheDocument()
     expect(
@@ -180,7 +202,7 @@ describe('App navigation', () => {
         name: 'ภาพรวม Performance ของ TWD',
       }),
     ).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'แดชบอร์ด ไทวัสดุ' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('button', { name: 'แดชบอร์ด Thai Watsadu' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('button', { name: /เปิดรายงานรายละเอียด/ })).toBeInTheDocument()
   })
 
@@ -242,7 +264,11 @@ describe('App navigation', () => {
   it('opens separate HomePro and MegaHome report pages with matching MT API filters', async () => {
     const requested: string[] = []
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      requested.push(String(input))
+      const url = String(input)
+      requested.push(url)
+      if (url.includes('/api/dashboards/twd')) {
+        return new Response(JSON.stringify(emptyTwdDashboardResponse), { status: 200 })
+      }
       return new Response(JSON.stringify(performanceResponse), { status: 200 })
     })
 
@@ -267,7 +293,11 @@ describe('App navigation', () => {
   })
 
   it('uses the compact Import-owned header without rendering the duplicate shell header', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ items: [] }), { status: 200 }))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => (
+      String(input).includes('/api/dashboards/twd')
+        ? new Response(JSON.stringify(emptyTwdDashboardResponse), { status: 200 })
+        : new Response(JSON.stringify({ items: [] }), { status: 200 })
+    ))
 
     render(<App />)
     await userEvent.click(screen.getByRole('button', { name: 'สถานะข้อมูล นำเข้าข้อมูล' }))

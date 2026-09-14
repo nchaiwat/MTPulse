@@ -64,7 +64,7 @@ const pageMeta: Record<AppPage, { eyebrow: string; title: string }> = {
 }
 
 export function App() {
-  const [page, setPage] = useState<AppPage>('performance')
+  const [page, setPage] = useState<AppPage>('dashboard')
   const [openMenu, setOpenMenu] = useState({
     dashboard: true,
     reports: true,
@@ -121,8 +121,8 @@ export function App() {
             </button>
             {openMenu.dashboard && (
               <div className="nav-submenu" id="dashboard-submenu">
-                <button className="nav-item nav-subitem" aria-label="แดชบอร์ด ไทวัสดุ" data-active={page === 'dashboard' || undefined} aria-current={page === 'dashboard' ? 'page' : undefined} type="button" onClick={() => setPage('dashboard')}>
-                  <span>ไทวัสดุ</span>
+                <button className="nav-item nav-subitem" aria-label={`แดชบอร์ด ${MODERN_TRADES.TWD.navigationLabel}`} data-active={page === 'dashboard' || undefined} aria-current={page === 'dashboard' ? 'page' : undefined} type="button" onClick={() => setPage('dashboard')}>
+                  <span>{MODERN_TRADES.TWD.navigationLabel}</span>
                 </button>
                 <button className="nav-item nav-subitem" aria-label="แดชบอร์ด HomePro" data-active={page === 'dashboard-hp' || undefined} aria-current={page === 'dashboard-hp' ? 'page' : undefined} type="button" onClick={() => setPage('dashboard-hp')}>
                   <span>HomePro</span>
@@ -169,8 +169,8 @@ export function App() {
             </button>
             {openMenu.reports && (
               <div className="nav-submenu" id="reports-submenu">
-                <button className="nav-item nav-subitem" aria-label="รายงาน ไทวัสดุ" data-active={page === 'performance' || undefined} aria-current={page === 'performance' ? 'page' : undefined} type="button" onClick={() => setPage('performance')}>
-                  <span>ไทวัสดุ</span>
+                <button className="nav-item nav-subitem" aria-label={`รายงาน ${MODERN_TRADES.TWD.navigationLabel}`} data-active={page === 'performance' || undefined} aria-current={page === 'performance' ? 'page' : undefined} type="button" onClick={() => setPage('performance')}>
+                  <span>{MODERN_TRADES.TWD.navigationLabel}</span>
                 </button>
                 <button className="nav-item nav-subitem" aria-label="รายงาน HomePro" data-active={page === 'performance-hp' || undefined} aria-current={page === 'performance-hp' ? 'page' : undefined} type="button" onClick={() => setPage('performance-hp')}>
                   <span>HomePro</span>

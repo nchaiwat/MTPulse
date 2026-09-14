@@ -214,20 +214,27 @@ export function MonitoringPage({ onOpenImports, onOpenCoverage }: MonitoringPage
         </header>
         <div className="monitoring-table-scroll">
           <table className="monitoring-mt-table">
+            <colgroup>
+              <col className="monitoring-mt-column" />
+              <col className="monitoring-status-column" />
+              <col className="monitoring-date-column" />
+              <col className="monitoring-records-column" />
+              <col className="monitoring-import-column" />
+            </colgroup>
             <thead>
               <tr><th>Modern Trade</th><th>สถานะข้อมูล</th><th>วันที่ข้อมูลล่าสุด</th><th>Records ในระบบ</th><th>Import ล่าสุด</th></tr>
             </thead>
             <tbody>
               {current.modernTrades.map((mt) => (
                 <tr key={mt.code} data-status={mt.status}>
-                  <td><b className="monitoring-mt-code" data-mt={mt.code}>{mt.code}</b><span><strong>{mt.name}</strong><small>{mt.enabled ? 'เปิดใช้งาน' : 'ยังไม่เปิดใช้งาน'}</small></span></td>
+                  <td><span className="monitoring-mt-identity"><b className="monitoring-mt-code" data-mt={mt.code}>{mt.code}</b><span><strong>{mt.name}</strong><small>{mt.enabled ? 'เปิดใช้งาน' : 'ยังไม่เปิดใช้งาน'}</small></span></span></td>
                   <td><span className="monitoring-status-text" data-status={mt.status}>{mtStatusLabel(mt.status)}</span></td>
-                  <td><time>{formatDisplayDate(mt.latestDataDate, '—')}</time><small>{mt.lagDays === null ? 'ยังไม่มีข้อมูล' : mt.lagDays === 0 ? 'ข้อมูลปัจจุบัน' : `ล่าช้า ${integer.format(mt.lagDays)} วัน`}</small></td>
-                  <td><strong className="monitoring-number">{integer.format(mt.recordCount)}</strong><small>Fact records</small></td>
+                  <td><span className="monitoring-cell-stack"><time>{formatDisplayDate(mt.latestDataDate, '—')}</time><small>{mt.lagDays === null ? 'ยังไม่มีข้อมูล' : mt.lagDays === 0 ? 'ข้อมูลปัจจุบัน' : `ล่าช้า ${integer.format(mt.lagDays)} วัน`}</small></span></td>
+                  <td><span className="monitoring-cell-stack"><strong className="monitoring-number">{integer.format(mt.recordCount)}</strong><small>Fact records</small></span></td>
                   <td>
                     {mt.latestImport
-                      ? <><strong>{importStatus(mt.latestImport.status)}</strong><small>{integer.format(mt.latestImport.rowCount)} records · {formatDisplayDateTime(mt.latestImport.finishedAt, 'ไม่ระบุเวลา')}</small></>
-                      : <><strong>—</strong><small>ยังไม่มี Import</small></>}
+                      ? <span className="monitoring-cell-stack"><strong>{importStatus(mt.latestImport.status)}</strong><small>{integer.format(mt.latestImport.rowCount)} records · {formatDisplayDateTime(mt.latestImport.finishedAt, 'ไม่ระบุเวลา')}</small></span>
+                      : <span className="monitoring-cell-stack"><strong>—</strong><small>ยังไม่มี Import</small></span>}
                   </td>
                 </tr>
               ))}
