@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from itertools import count
 from pathlib import Path
@@ -17,8 +17,11 @@ from app.models import (
     ItemMapping,
     ModernTrade,
     SalesInventoryFact,
+    SourceFile,
 )
 from app.services import gh_import
+from app.services.automatic_import import SourceCandidate
+from app.services.gh_automatic_import import _gh_unchanged_outcome
 from app.services.gh_import import GhImportError, import_gh_file
 
 HEADERS = [
@@ -77,6 +80,79 @@ def _report(path: Path, *, footer_sale_amount: object = 0) -> None:
     workbook.save(path)
 
 
+def _legacy_report(path: Path) -> None:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Sheet"
+
+    sheet.merge_cells("H2:L2")
+    sheet["H2"] = "GH-003"
+    sheet.merge_cells("M2:O2")
+    sheet["M2"] = "GH-101"
+    sheet.merge_cells("P2:R3")
+    sheet["P2"] = "Grand Total"
+    sheet.merge_cells("H3:L3")
+    sheet["H3"] = "DC2"
+    sheet.merge_cells("M3:O3")
+    sheet["M3"] = "RE"
+
+    sheet.merge_cells("A4:B4")
+    sheet["A4"] = "Product Code"
+    sheet.merge_cells("C4:E4")
+    sheet["C4"] = "Product Name"
+    sheet["F4"] = "Unit"
+    sheet["G4"] = "Inactive"
+    sheet.merge_cells("H4:I4")
+    sheet["H4"] = "Stock"
+    sheet.merge_cells("J4:K4")
+    sheet["J4"] = "Sale Quantity"
+    sheet["L4"] = "Net Sale"
+    for start in (13, 16):
+        sheet.cell(4, start, "Stock")
+        sheet.cell(4, start + 1, "Sale Quantity")
+        sheet.cell(4, start + 2, "Net Sale")
+
+    rows = [
+        (5, "00001234", "Window A", "A", (2, 1, 107), (3, 0, 0), (5, 1, 107)),
+        (6, "SKU-A7", "Door B", "I", (0, 0, 0), (0, -1, -107), (0, -1, -107)),
+    ]
+    for row_number, sku, description, status, first, second, total in rows:
+        sheet.merge_cells(start_row=row_number, start_column=1, end_row=row_number, end_column=2)
+        sheet.cell(row_number, 1, sku)
+        sheet.merge_cells(start_row=row_number, start_column=3, end_row=row_number, end_column=5)
+        sheet.cell(row_number, 3, description)
+        sheet.cell(row_number, 7, status)
+        sheet.merge_cells(start_row=row_number, start_column=8, end_row=row_number, end_column=9)
+        sheet.cell(row_number, 8, first[0])
+        sheet.merge_cells(start_row=row_number, start_column=10, end_row=row_number, end_column=11)
+        sheet.cell(row_number, 10, first[1])
+        sheet.cell(row_number, 12, first[2])
+        for offset, value in enumerate(second):
+            sheet.cell(row_number, 13 + offset, value)
+        for offset, value in enumerate(total):
+            sheet.cell(row_number, 16 + offset, value)
+
+    sheet.merge_cells("A7:G7")
+    sheet["A7"] = "Grand Total"
+    sheet.merge_cells("H7:I7")
+    sheet["H7"] = 2
+    sheet.merge_cells("J7:K7")
+    sheet["J7"] = 1
+    sheet["L7"] = 107
+    for column, value in enumerate((3, -1, -107, 5, 0, 0), start=13):
+        sheet.cell(7, column, value)
+    workbook.save(path)
+
+
+def _empty_legacy_report(path: Path) -> None:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet["H2"] = "Grand Total"
+    sheet["G3"] = "Inactive"
+    sheet["A4"] = "Grand Total"
+    workbook.save(path)
+
+
 def test_extract_gh_file_uses_filename_date_and_preserves_source_metrics(tmp_path: Path) -> None:
     source = tmp_path / "Piyawat-2026-09-12-074128.xlsx"
     _report(source)
@@ -100,6 +176,52 @@ def test_extract_gh_file_uses_filename_date_and_preserves_source_metrics(tmp_pat
     assert extract.rows[0].unit_cost_ex_vat == Decimal("100")
     assert extract.rows[0].stock_amount_in_vat == Decimal("214")
     assert extract.rows[0].product_status == "A"
+    assert extract.reconciliation_errors == ()
+
+
+def test_extract_gh_file_supports_legacy_wide_branch_layout(tmp_path: Path) -> None:
+    source = tmp_path / "Piyawat-2026-08-03-080548.xlsx"
+    _legacy_report(source)
+
+    extract = extract_gh_file(source)
+
+    assert extract.data_date == date(2026, 8, 2)
+    assert extract.summary.row_count == 3
+    assert extract.summary.store_count == 2
+    assert extract.summary.sku_count == 2
+    assert extract.summary.negative_row_count == 1
+    assert extract.summary.source_amount == Decimal("0")
+    assert extract.summary.amount == Decimal("0E-12")
+    assert extract.summary.sales_qty == Decimal("0")
+    assert extract.summary.stock_on_hand == Decimal("5")
+    assert extract.summary.stock_value == Decimal("0")
+    assert extract.inventory_skus == frozenset({"00001234", "SKU-A7"})
+    assert extract.inventory_branches == frozenset({"GH-003", "GH-101"})
+    assert extract.product_status_counts == (("A", 2), ("I", 1))
+    assert extract.footer_totals == (
+        ("Stock (Qty)", Decimal("5")),
+        ("Sale Quantity", Decimal("0")),
+        ("Sale Amount", Decimal("0")),
+    )
+    assert extract.reconciliation_errors == ()
+
+
+def test_extract_gh_file_supports_empty_legacy_report(tmp_path: Path) -> None:
+    source = tmp_path / "Piyawat-2025-04-03-082519.xlsx"
+    _empty_legacy_report(source)
+
+    extract = extract_gh_file(source)
+
+    assert extract.data_date == date(2025, 4, 2)
+    assert extract.rows == ()
+    assert extract.summary.row_count == 0
+    assert extract.summary.store_count == 0
+    assert extract.summary.sku_count == 0
+    assert extract.summary.source_amount == Decimal("0")
+    assert extract.summary.sales_qty == Decimal("0")
+    assert extract.summary.stock_on_hand == Decimal("0")
+    assert extract.inventory_skus == frozenset()
+    assert extract.inventory_branches == frozenset()
     assert extract.reconciliation_errors == ()
 
 
@@ -214,6 +336,66 @@ def test_import_gh_file_isolated_trade_and_source_audit(tmp_path: Path, monkeypa
         )
         assert coverage is not None
         assert coverage.source_row_count == 2
+
+
+def test_import_gh_file_records_empty_legacy_day(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "Piyawat-2025-04-03-082519.xlsx"
+    _empty_legacy_report(source)
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(
+        gh_import,
+        "_new_batch",
+        lambda **values: gh_import.ImportBatch(id=1, **values),
+    )
+    monkeypatch.setattr(
+        gh_import,
+        "_new_coverage",
+        lambda **values: gh_import.InventoryCoverage(id=1, **values),
+    )
+
+    with Session(engine) as session:
+        batch = import_gh_file(session, extract_gh_file(source), actor="admin")
+        session.commit()
+
+        gh = session.scalar(select(ModernTrade).where(ModernTrade.code == "GH"))
+        assert gh is not None
+        assert batch.status == "imported"
+        assert batch.row_count == 0
+        assert (
+            session.scalar(
+                select(func.count(SalesInventoryFact.id)).where(
+                    SalesInventoryFact.modern_trade_id == gh.id
+                )
+            )
+            == 0
+        )
+        coverage = session.scalar(
+            select(InventoryCoverage).where(InventoryCoverage.modern_trade_id == gh.id)
+        )
+        assert coverage is not None
+        assert coverage.source_row_count == 0
+
+
+def test_gh_automatic_import_retries_unchanged_failed_source() -> None:
+    modified_at = datetime(2026, 9, 14, tzinfo=UTC)
+    source = SourceFile(
+        modern_trade_id=1,
+        source_path=r"\\server\GBH\Piyawat-2025-01-01.xlsx",
+        source_filename="Piyawat-2025-01-01.xlsx",
+        size_bytes=100,
+        modified_at=modified_at,
+        status="failed",
+        error_message="legacy layout was unsupported",
+    )
+    candidate = SourceCandidate(
+        path=source.source_path,
+        filename=source.source_filename,
+        size_bytes=source.size_bytes,
+        modified_at=modified_at,
+    )
+
+    assert _gh_unchanged_outcome(source, candidate) is None
 
 
 def test_import_gh_file_rejects_same_business_fingerprint(tmp_path: Path, monkeypatch) -> None:

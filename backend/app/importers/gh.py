@@ -18,6 +18,7 @@ FILENAME_PATTERN = re.compile(
     r"^Piyawat-(\d{4})-(\d{2})-(\d{2})(?:[-_].*)?\.xlsx$",
     re.IGNORECASE,
 )
+LEGACY_BRANCH_PATTERN = re.compile(r"^GH-\d+$", re.IGNORECASE)
 HEADERS = (
     "Product Code",
     "Product Name",
@@ -95,104 +96,33 @@ def extract_gh_file(source_path: str | Path) -> GhExtract:
     if not path.is_file() or path.stat().st_size == 0:
         raise GhFormatError(f"ไม่พบไฟล์หรือไฟล์ว่าง: {path.name}")
 
-    workbook = load_workbook(path, read_only=True, data_only=True)
+    workbook = load_workbook(path, read_only=False, data_only=True)
     try:
         sheet = workbook.active
         actual_headers = tuple(_text(cell.value) for cell in sheet[1][: len(HEADERS)])
-        if actual_headers != HEADERS:
-            raise GhFormatError(
-                "โครงสร้าง column ของ GH ไม่ถูกต้อง: "
-                f"ต้องเป็น {', '.join(HEADERS)}"
-            )
-
-        rows: list[GhRow] = []
-        keys: set[tuple[str, str]] = set()
-        statuses: Counter[str] = Counter()
-        footer: dict[str, Decimal] | None = None
-        warnings: list[str] = []
-        for row_number, cells in enumerate(sheet.iter_rows(min_row=2, max_col=12), start=2):
-            values = [cell.value for cell in cells]
-            sku = _identifier(cells[0])
-            branch_code = _identifier(cells[3])
-            if not sku and not branch_code:
-                if not any(value not in (None, "") for value in values):
-                    continue
-                if footer is not None:
-                    raise GhFormatError("พบ Footer มากกว่าหนึ่งแถว")
-                footer = {
-                    "Stock Amount (Ex VAT)": _decimal(values[6], row_number, 7),
-                    "Stock Amount (In VAT)": _decimal(values[7], row_number, 8),
-                    "Cost (Ex VAT)": _decimal(values[8], row_number, 9),
-                    "Cost (In VAT)": _decimal(values[9], row_number, 10),
-                    "Sale Amount": _decimal(values[11], row_number, 12),
-                }
-                continue
-            if not sku or not branch_code:
-                raise GhFormatError(
-                    f"ข้อมูล GH แถว {row_number} ขาด Product Code หรือ Branch Code"
-                )
-            key = (branch_code, sku)
-            if key in keys:
-                raise GhFormatError(
-                    f"พบ SKU × Branch ซ้ำที่แถว {row_number}: {sku} × {branch_code}"
-                )
-            keys.add(key)
-
-            description = _text(values[1]) or None
-            product_status = _text(values[2]) or None
-            branch_name = _text(values[4])
-            if not description or not branch_name:
-                raise GhFormatError(
-                    f"ข้อมูล GH แถว {row_number} ขาด Product Name หรือ Branch Name"
-                )
-            if product_status:
-                statuses[product_status] += 1
-
-            stock_qty = _decimal(values[5], row_number, 6)
-            stock_ex = _decimal(values[6], row_number, 7)
-            stock_in = _decimal(values[7], row_number, 8)
-            cost_ex = _decimal(values[8], row_number, 9)
-            cost_in = _decimal(values[9], row_number, 10)
-            sales_qty = _decimal(values[10], row_number, 11)
-            source_amount = _decimal(values[11], row_number, 12)
-            _compare(
-                warnings,
-                f"แถว {row_number} Stock Amount (Ex VAT)",
-                stock_ex,
-                stock_qty * cost_ex,
-            )
-            rows.append(
-                GhRow(
-                    branch_code=branch_code,
-                    branch_name=branch_name,
-                    sku=sku,
-                    description=description,
-                    product_status=product_status,
-                    source_amount=source_amount,
-                    amount=(source_amount / VAT_DIVISOR).quantize(STORAGE_SCALE),
-                    sales_qty=sales_qty,
-                    stock_on_hand=stock_qty,
-                    stock_value=stock_ex,
-                    stock_amount_in_vat=stock_in,
-                    unit_cost_ex_vat=cost_ex,
-                    unit_cost_in_vat=cost_in,
-                )
-            )
+        allow_empty = False
+        if actual_headers == HEADERS:
+            rows, statuses, footer, warnings = _extract_flat_rows(sheet)
+        else:
+            allow_empty = _is_empty_legacy_sheet(sheet)
+            rows, statuses, footer, warnings = _extract_legacy_rows(sheet)
     finally:
         workbook.close()
 
-    if not rows:
+    if not rows and not allow_empty:
         raise GhFormatError("ไม่พบข้อมูล Detail ในไฟล์ GH")
     if footer is None:
         raise GhFormatError("ไม่พบ Footer สำหรับตรวจสอบยอดรวมของ GH")
 
     detail_totals = {
+        "Stock (Qty)": sum((row.stock_on_hand for row in rows), Decimal("0")),
         "Stock Amount (Ex VAT)": sum((row.stock_value for row in rows), Decimal("0")),
         "Stock Amount (In VAT)": sum(
             (row.stock_amount_in_vat for row in rows), Decimal("0")
         ),
         "Cost (Ex VAT)": sum((row.unit_cost_ex_vat for row in rows), Decimal("0")),
         "Cost (In VAT)": sum((row.unit_cost_in_vat for row in rows), Decimal("0")),
+        "Sale Quantity": sum((row.sales_qty for row in rows), Decimal("0")),
         "Sale Amount": sum((row.source_amount for row in rows), Decimal("0")),
     }
     for label, expected in footer.items():
@@ -248,6 +178,250 @@ def extract_gh_file(source_path: str | Path) -> GhExtract:
         product_status_counts=tuple(sorted(statuses.items())),
         footer_totals=tuple(footer.items()),
         reconciliation_errors=tuple(warnings),
+    )
+
+
+def _extract_flat_rows(sheet) -> tuple[
+    list[GhRow], Counter[str], dict[str, Decimal] | None, list[str]
+]:
+    rows: list[GhRow] = []
+    keys: set[tuple[str, str]] = set()
+    statuses: Counter[str] = Counter()
+    footer: dict[str, Decimal] | None = None
+    warnings: list[str] = []
+    for row_number, cells in enumerate(sheet.iter_rows(min_row=2, max_col=12), start=2):
+        values = [cell.value for cell in cells]
+        sku = _identifier(cells[0])
+        branch_code = _identifier(cells[3])
+        if not sku and not branch_code:
+            if not any(value not in (None, "") for value in values):
+                continue
+            if footer is not None:
+                raise GhFormatError("พบ Footer มากกว่าหนึ่งแถว")
+            footer = {
+                "Stock Amount (Ex VAT)": _decimal(values[6], row_number, 7),
+                "Stock Amount (In VAT)": _decimal(values[7], row_number, 8),
+                "Cost (Ex VAT)": _decimal(values[8], row_number, 9),
+                "Cost (In VAT)": _decimal(values[9], row_number, 10),
+                "Sale Amount": _decimal(values[11], row_number, 12),
+            }
+            continue
+        if not sku or not branch_code:
+            raise GhFormatError(
+                f"ข้อมูล GH แถว {row_number} ขาด Product Code หรือ Branch Code"
+            )
+        key = (branch_code, sku)
+        if key in keys:
+            raise GhFormatError(
+                f"พบ SKU × Branch ซ้ำที่แถว {row_number}: {sku} × {branch_code}"
+            )
+        keys.add(key)
+
+        description = _text(values[1]) or None
+        product_status = _text(values[2]) or None
+        branch_name = _text(values[4])
+        if not description or not branch_name:
+            raise GhFormatError(
+                f"ข้อมูล GH แถว {row_number} ขาด Product Name หรือ Branch Name"
+            )
+        if product_status:
+            statuses[product_status] += 1
+
+        stock_qty = _decimal(values[5], row_number, 6)
+        stock_ex = _decimal(values[6], row_number, 7)
+        stock_in = _decimal(values[7], row_number, 8)
+        cost_ex = _decimal(values[8], row_number, 9)
+        cost_in = _decimal(values[9], row_number, 10)
+        sales_qty = _decimal(values[10], row_number, 11)
+        source_amount = _decimal(values[11], row_number, 12)
+        _compare(
+            warnings,
+            f"แถว {row_number} Stock Amount (Ex VAT)",
+            stock_ex,
+            stock_qty * cost_ex,
+        )
+        rows.append(
+            GhRow(
+                branch_code=branch_code,
+                branch_name=branch_name,
+                sku=sku,
+                description=description,
+                product_status=product_status,
+                source_amount=source_amount,
+                amount=(source_amount / VAT_DIVISOR).quantize(STORAGE_SCALE),
+                sales_qty=sales_qty,
+                stock_on_hand=stock_qty,
+                stock_value=stock_ex,
+                stock_amount_in_vat=stock_in,
+                unit_cost_ex_vat=cost_ex,
+                unit_cost_in_vat=cost_in,
+            )
+        )
+    return rows, statuses, footer, warnings
+
+
+def _extract_legacy_rows(sheet) -> tuple[
+    list[GhRow], Counter[str], dict[str, Decimal] | None, list[str]
+]:
+    if _is_empty_legacy_sheet(sheet):
+        return (
+            [],
+            Counter(),
+            {
+                "Stock (Qty)": Decimal("0"),
+                "Sale Quantity": Decimal("0"),
+                "Sale Amount": Decimal("0"),
+            },
+            [],
+        )
+    if sheet.max_column < 12 or _text(sheet.cell(4, 7).value).casefold() != "inactive":
+        raise GhFormatError(
+            "โครงสร้าง column ของ GH ไม่ถูกต้อง: "
+            f"ต้องเป็น {', '.join(HEADERS)} หรือ GH Legacy Branch Matrix"
+        )
+
+    branch_starts: list[tuple[int, str, str]] = []
+    grand_total_start: int | None = None
+    for column in range(8, sheet.max_column + 1):
+        value = _text(sheet.cell(2, column).value)
+        if LEGACY_BRANCH_PATTERN.fullmatch(value):
+            branch_name = _text(sheet.cell(3, column).value)
+            if not branch_name:
+                raise GhFormatError(f"ข้อมูล GH Legacy column {column} ขาด Branch Name")
+            branch_starts.append((column, value, branch_name))
+        elif value.casefold() == "grand total":
+            grand_total_start = column
+
+    if not branch_starts or grand_total_start is None:
+        raise GhFormatError("โครงสร้าง GH Legacy ไม่พบ Branch หรือ Grand Total")
+
+    group_starts = [column for column, _, _ in branch_starts] + [grand_total_start]
+    branch_groups: list[tuple[str, str, tuple[int, int, int]]] = []
+    for index, (start, branch_code, branch_name) in enumerate(branch_starts):
+        end = group_starts[index + 1] - 1
+        metric_columns = tuple(
+            column
+            for column in range(start, end + 1)
+            if _text(sheet.cell(4, column).value)
+        )
+        if len(metric_columns) != 3:
+            raise GhFormatError(
+                f"โครงสร้าง GH Legacy ของ Branch {branch_code} ต้องมี 3 Metrics"
+            )
+        branch_groups.append((branch_code, branch_name, metric_columns))
+
+    total_columns = tuple(
+        column
+        for column in range(grand_total_start, sheet.max_column + 1)
+        if _text(sheet.cell(4, column).value)
+    )
+    if len(total_columns) != 3:
+        raise GhFormatError("โครงสร้าง GH Legacy ของ Grand Total ต้องมี 3 Metrics")
+
+    footer_row = next(
+        (
+            row_number
+            for row_number in range(5, sheet.max_row + 1)
+            if _text(sheet.cell(row_number, 1).value).casefold() == "grand total"
+        ),
+        None,
+    )
+    if footer_row is None:
+        raise GhFormatError("ไม่พบ Footer สำหรับตรวจสอบยอดรวมของ GH Legacy")
+
+    rows: list[GhRow] = []
+    keys: set[tuple[str, str]] = set()
+    statuses: Counter[str] = Counter()
+    warnings: list[str] = []
+    branch_totals = {
+        branch_code: [Decimal("0"), Decimal("0"), Decimal("0")]
+        for branch_code, _, _ in branch_groups
+    }
+    for row_number in range(5, footer_row):
+        sku = _identifier(sheet.cell(row_number, 1))
+        if not sku:
+            continue
+        description = _text(sheet.cell(row_number, 3).value) or None
+        product_status = _text(sheet.cell(row_number, 7).value) or None
+        if not description:
+            raise GhFormatError(f"ข้อมูล GH Legacy แถว {row_number} ขาด Product Name")
+        for branch_code, branch_name, metric_columns in branch_groups:
+            stock_qty, sales_qty, source_amount = (
+                _decimal(sheet.cell(row_number, column).value, row_number, column)
+                for column in metric_columns
+            )
+            if stock_qty == sales_qty == source_amount == 0:
+                continue
+            key = (branch_code, sku)
+            if key in keys:
+                raise GhFormatError(
+                    f"พบ SKU × Branch ซ้ำที่แถว {row_number}: {sku} × {branch_code}"
+                )
+            keys.add(key)
+            if product_status:
+                statuses[product_status] += 1
+            totals = branch_totals[branch_code]
+            totals[0] += stock_qty
+            totals[1] += sales_qty
+            totals[2] += source_amount
+            rows.append(
+                GhRow(
+                    branch_code=branch_code,
+                    branch_name=branch_name,
+                    sku=sku,
+                    description=description,
+                    product_status=product_status,
+                    source_amount=source_amount,
+                    amount=(source_amount / VAT_DIVISOR).quantize(STORAGE_SCALE),
+                    sales_qty=sales_qty,
+                    stock_on_hand=stock_qty,
+                    stock_value=Decimal("0"),
+                    stock_amount_in_vat=Decimal("0"),
+                    unit_cost_ex_vat=Decimal("0"),
+                    unit_cost_in_vat=Decimal("0"),
+                )
+            )
+
+    for branch_code, _, metric_columns in branch_groups:
+        for label, column, actual in zip(
+            ("Stock (Qty)", "Sale Quantity", "Sale Amount"),
+            metric_columns,
+            branch_totals[branch_code],
+            strict=True,
+        ):
+            _compare(
+                warnings,
+                f"Footer {branch_code} {label}",
+                actual,
+                _decimal(sheet.cell(footer_row, column).value, footer_row, column),
+            )
+
+    footer = {
+        "Stock (Qty)": _decimal(
+            sheet.cell(footer_row, total_columns[0]).value,
+            footer_row,
+            total_columns[0],
+        ),
+        "Sale Quantity": _decimal(
+            sheet.cell(footer_row, total_columns[1]).value,
+            footer_row,
+            total_columns[1],
+        ),
+        "Sale Amount": _decimal(
+            sheet.cell(footer_row, total_columns[2]).value,
+            footer_row,
+            total_columns[2],
+        ),
+    }
+    return rows, statuses, footer, warnings
+
+
+def _is_empty_legacy_sheet(sheet) -> bool:
+    return (
+        sheet.max_row == 4
+        and _text(sheet.cell(2, 8).value).casefold() == "grand total"
+        and _text(sheet.cell(3, 7).value).casefold() == "inactive"
+        and _text(sheet.cell(4, 1).value).casefold() == "grand total"
     )
 
 

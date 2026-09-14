@@ -91,7 +91,7 @@ def _process_candidate(
     password: str,
 ) -> dict:
     row = _source_row(session, owner, candidate)
-    unchanged = _unchanged_outcome(row, candidate)
+    unchanged = _gh_unchanged_outcome(row, candidate)
     if unchanged is not None:
         row.last_seen_run_id = run.id
         row.last_seen_at = bangkok_now()
@@ -161,6 +161,12 @@ def _process_candidate(
             "message": row.error_message,
             "batchId": None,
         }
+
+
+def _gh_unchanged_outcome(row: SourceFile, candidate: SourceCandidate) -> dict | None:
+    if row.status == "failed":
+        return None
+    return _unchanged_outcome(row, candidate)
 
 
 def _save_outcome(
