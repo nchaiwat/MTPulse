@@ -580,6 +580,10 @@ textarea {
 /* Shared MT report chrome: compact so the matrix owns more of the viewport. */
 @media (min-width: 761px) {
   .page-content[data-performance-source] {
+    box-sizing: border-box;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
     padding-top: 10px;
   }
 
@@ -670,7 +674,16 @@ textarea {
   }
 
   .page-content[data-performance-source] .matrix-scroll {
-    max-height: calc(100vh - 315px);
+    min-height: 0;
+    max-height: none;
+    flex: 1 1 0;
+  }
+
+  .page-content[data-performance-source] .matrix-frame {
+    min-height: 363px;
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
   }
 }
 
