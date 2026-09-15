@@ -5,6 +5,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from app.api.automatic_imports import router as automatic_imports_router
 from app.api.dashboards import router as dashboards_router
 from app.api.data_coverage import router as data_coverage_router
+from app.api.dh_prices import router as dh_prices_router
 from app.api.fileshare_settings import router as fileshare_settings_router
 from app.api.import_correctives import router as import_correctives_router
 from app.api.imports import router as imports_router
@@ -30,6 +31,7 @@ app.add_middleware(
 )
 app.add_middleware(GZipMiddleware, minimum_size=1_000, compresslevel=5)
 app.include_router(data_coverage_router)
+app.include_router(dh_prices_router)
 app.include_router(automatic_imports_router)
 app.include_router(dashboards_router)
 app.include_router(performance_router)
