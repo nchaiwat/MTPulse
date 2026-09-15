@@ -4,6 +4,7 @@ from decimal import Decimal
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
@@ -387,6 +388,45 @@ class InventoryCoverage(Base):
     source_row_count: Mapped[int] = mapped_column(Integer)
     captured_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class DhEffectivePrice(Base):
+    __tablename__ = "dh_effective_prices"
+    __table_args__ = (
+        UniqueConstraint(
+            "modern_trade_id",
+            "source_sku",
+            "effective_from",
+            name="uq_dh_price_mt_sku_from",
+        ),
+        CheckConstraint(
+            "unit_price_ex_vat > 0",
+            name="ck_dh_price_positive",
+        ),
+        CheckConstraint(
+            "effective_to IS NULL OR effective_to >= effective_from",
+            name="ck_dh_price_date_range",
+        ),
+        Index(
+            "ix_dh_price_lookup",
+            "modern_trade_id",
+            "source_sku",
+            "effective_from",
+            "effective_to",
+        ),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    modern_trade_id: Mapped[int] = mapped_column(ForeignKey("modern_trades.id"))
+    source_sku: Mapped[str] = mapped_column(String(50))
+    unit_price_ex_vat: Mapped[Decimal] = mapped_column(MONEY)
+    effective_from: Mapped[date] = mapped_column(Date)
+    effective_to: Mapped[date | None] = mapped_column(Date)
+    source_filename: Mapped[str] = mapped_column(String(255))
+    source_checksum_sha256: Mapped[str] = mapped_column(String(64))
+    changed_by: Mapped[str] = mapped_column(String(200))
+    changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
 
