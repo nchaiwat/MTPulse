@@ -4,6 +4,10 @@ from pathlib import Path
 from openpyxl import Workbook
 
 from app.importers.dh import DhFormatError, extract_dh_pair, inspect_dh_workbook
+from app.services.manual_upload_detection import (
+    detect_upload_batch,
+    detect_upload_file,
+)
 
 
 def _save_sale(path: Path) -> None:
@@ -73,6 +77,28 @@ def test_dh_inspection_detects_kind_and_source_date(tmp_path: Path) -> None:
 
     assert inspect_dh_workbook(sale) == ("sales", date(2025, 1, 6))
     assert inspect_dh_workbook(stock) == ("inventory", date(2025, 1, 7))
+
+
+def test_manual_folder_detection_identifies_dh_pair(tmp_path: Path) -> None:
+    sale = tmp_path / "รายงานยอดขาย06-01-2025_06-01-2025.xlsx"
+    stock = tmp_path / "รายงานสต็อคAll07-01-2025_07-01-2025.xlsx"
+    _save_sale(sale)
+    _save_stock(stock)
+
+    sale_detection = detect_upload_file(sale)
+    stock_detection = detect_upload_file(stock)
+    batch_detection = detect_upload_batch([stock, sale])
+
+    assert (sale_detection.source_group_code, sale_detection.source_kind) == (
+        "DH",
+        "sales",
+    )
+    assert (stock_detection.source_group_code, stock_detection.source_kind) == (
+        "DH",
+        "inventory",
+    )
+    assert batch_detection.source_group_code == "DH"
+    assert batch_detection.mt_codes == ("DH",)
 
 
 def test_dh_pair_rejects_non_consecutive_source_dates(tmp_path: Path) -> None:

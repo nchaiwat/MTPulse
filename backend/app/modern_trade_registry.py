@@ -3,8 +3,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-ModernTradeCode = Literal["TWD", "HP", "MH", "HH", "GH", "SCG", "TA"]
-ActiveReportingModernTradeCode = Literal["TWD", "HP", "MH", "HH", "GH", "TA"]
+ModernTradeCode = Literal["TWD", "HP", "MH", "HH", "GH", "SCG", "TA", "DH"]
+ActiveReportingModernTradeCode = Literal[
+    "TWD",
+    "HP",
+    "MH",
+    "HH",
+    "GH",
+    "TA",
+    "DH",
+]
 ModernTradeCapability = Literal[
     "dashboard",
     "performance",
@@ -168,6 +176,17 @@ MODERN_TRADES: dict[ModernTradeCode, ModernTradeDefinition] = {
         vat_mode="include",
         inventory_metrics=("stockOh", "stockValue"),
         active_capabilities=_ACTIVE_TA,
+        planned_capabilities=frozenset(),
+    ),
+    "DH": ModernTradeDefinition(
+        code="DH",
+        name="DoHome",
+        display_name="DoHome (DH)",
+        source_group_code="DH",
+        source_owner_code="DH",
+        vat_mode="exclude",
+        inventory_metrics=("stockOh",),
+        active_capabilities=ALL_CAPABILITIES,
         planned_capabilities=frozenset(),
     ),
 }

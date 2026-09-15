@@ -85,11 +85,35 @@ def inspect_dh_workbook(source_path: str | Path) -> tuple[str, date]:
     return kind, data_date
 
 
-def extract_dh_pair(inventory_path: str | Path, sales_path: str | Path) -> DhPairExtract:
+def validate_dh_workbook(
+    source_path: str | Path,
+    *,
+    source_filename: str | None = None,
+) -> tuple[str, date]:
+    path = Path(source_path)
+    kind, data_date = inspect_dh_workbook(source_filename or path.name)
+    if kind == "inventory":
+        _read_stock(path)
+    else:
+        _read_sale(path, {})
+    return kind, data_date
+
+
+def extract_dh_pair(
+    inventory_path: str | Path,
+    sales_path: str | Path,
+    *,
+    inventory_filename: str | None = None,
+    sales_filename: str | None = None,
+) -> DhPairExtract:
     inventory = Path(inventory_path)
     sales = Path(sales_path)
-    inventory_kind, stock_date = inspect_dh_workbook(inventory)
-    sales_kind, sales_date = inspect_dh_workbook(sales)
+    inventory_kind, stock_date = inspect_dh_workbook(
+        inventory_filename or inventory.name
+    )
+    sales_kind, sales_date = inspect_dh_workbook(
+        sales_filename or sales.name
+    )
     if inventory_kind != "inventory" or sales_kind != "sales":
         raise DhFormatError("กรุณาเลือกไฟล์ Stock และ Sale ของ DoHome ให้ถูกประเภท")
     if sales_date != stock_date - timedelta(days=1):
@@ -152,8 +176,8 @@ def extract_dh_pair(inventory_path: str | Path, sales_path: str | Path) -> DhPai
         stock_date=stock_date,
         inventory_path=str(inventory),
         sales_path=str(sales),
-        inventory_filename=inventory.name,
-        sales_filename=sales.name,
+        inventory_filename=inventory_filename or inventory.name,
+        sales_filename=sales_filename or sales.name,
         inventory_checksum=_sha256(inventory),
         sales_checksum=_sha256(sales),
         business_fingerprint=fingerprint,

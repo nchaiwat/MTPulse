@@ -279,7 +279,7 @@ def confirm_dh_price_master(
     expected_preview_fingerprint: str,
 ) -> DhPriceMasterPreview:
     try:
-        _lock_dh_price_changes(session)
+        lock_dh_price_changes(session)
         preview = preview_dh_price_master(session, content)
         if preview.preview_fingerprint != expected_preview_fingerprint:
             raise DhPricePreviewStaleError(
@@ -468,7 +468,7 @@ def load_effective_dh_prices(
     )
 
 
-def _lock_dh_price_changes(session: Session) -> None:
+def lock_dh_price_changes(session: Session) -> None:
     bind = session.get_bind()
     if bind.dialect.name == "postgresql":
         session.execute(

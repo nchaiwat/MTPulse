@@ -10,12 +10,25 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.imports import _extract_gh_upload, _extract_ta_upload, _extract_upload, _read_file
+from app.api.imports import (
+    _extract_dh_uploads,
+    _extract_gh_upload,
+    _extract_ta_upload,
+    _extract_upload,
+    _read_file,
+    _read_hp_mh_files,
+)
 from app.database import get_session
+from app.importers.dh import DhFormatError, DhPairExtract
 from app.importers.gh import GhExtract, GhFormatError
 from app.importers.ta import TaExtract, TaFormatError
 from app.importers.twd import TwdExtract, TwdFormatError
 from app.models import AuditEvent, ImportBatch, ModernTrade
+from app.services.dh_import import (
+    DhImportError,
+    import_dh_pair,
+    price_dh_import_preview,
+)
 from app.services.gh_import import GhImportError, import_gh_file
 from app.services.monitoring import capture_monitoring_snapshot
 from app.services.ta_import import TaImportError, import_ta_file
@@ -331,3 +344,147 @@ def _single_file_replacement_block_reason(
         )
     )
     return f"ข้อมูลธุรกิจนี้เคยนำเข้าแล้วใน Batch {duplicate.id}" if duplicate else None
+
+
+def _dh_replacement_block_reason(
+    session: Session,
+    batch: ImportBatch,
+    pair: DhPairExtract,
+    fingerprint: str,
+) -> str | None:
+    if pair.batch_date != batch.data_date:
+        return (
+            f"คู่ไฟล์ใหม่เป็นวันที่ {pair.batch_date:%d/%m/%Y} "
+            f"แต่ Batch {batch.id} เป็นวันที่ {batch.data_date:%d/%m/%Y}"
+        )
+    if fingerprint == batch.business_fingerprint:
+        return "ข้อมูลธุรกิจและราคาชุดใหม่เหมือนกับข้อมูลที่อยู่ในระบบแล้ว"
+    duplicate = session.scalar(
+        select(ImportBatch).where(
+            ImportBatch.modern_trade_id == batch.modern_trade_id,
+            ImportBatch.business_fingerprint == fingerprint,
+            ImportBatch.id != batch.id,
+        )
+    )
+    return (
+        f"ข้อมูลธุรกิจและราคาชุดนี้เคยนำเข้าแล้วใน Batch {duplicate.id}"
+        if duplicate
+        else None
+    )
+
+
+@router.post("/{batch_id}/dh-replacement-preview")
+async def preview_dh_batch_replacement(
+    batch_id: int,
+    session: Annotated[Session, Depends(get_session)],
+    stock_file: Annotated[UploadFile, File()],
+    sales_file: Annotated[UploadFile, File()],
+) -> dict[str, object]:
+    batch = _batch_or_404(session, batch_id)
+    if _batch_mt_code(session, batch) != "DH":
+        raise HTTPException(status_code=409, detail="Batch นี้ไม่ใช่ข้อมูล DoHome")
+    stock_name, stock_content, sales_name, sales_content = await _read_hp_mh_files(
+        stock_file,
+        sales_file,
+    )
+    try:
+        pair = _extract_dh_uploads(
+            stock_content,
+            stock_name,
+            sales_content,
+            sales_name,
+        )
+        priced = price_dh_import_preview(session, pair)
+    except (DhFormatError, DhImportError, OSError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"ตรวจสอบคู่ไฟล์ DoHome ไม่ผ่าน: {exc}",
+        ) from exc
+    blocked_reason = _dh_replacement_block_reason(
+        session,
+        batch,
+        pair,
+        priced.business_fingerprint,
+    )
+    summary = priced.summary
+    return {
+        "batchId": batch.id,
+        "businessFingerprint": priced.business_fingerprint,
+        "stockFilename": pair.inventory_filename,
+        "salesFilename": pair.sales_filename,
+        "dataDate": pair.batch_date.isoformat(),
+        "current": _summary(batch),
+        "replacement": {
+            "rowCount": summary.row_count,
+            "skuCount": summary.sku_count,
+            "branchCount": summary.store_count,
+            "sourceAmount": float(summary.source_footer_amount),
+            "amount": float(summary.derived_amount),
+            "salesQty": float(summary.sales_qty),
+            "stockOnHand": float(summary.stock_on_hand),
+            "negativeRowCount": summary.negative_row_count,
+        },
+        "warnings": list(priced.reconciliation_errors),
+        "canReplace": blocked_reason is None,
+        "blockedReason": blocked_reason,
+    }
+
+
+@router.post("/{batch_id}/dh-replace")
+async def confirm_dh_batch_replacement(
+    batch_id: int,
+    session: Annotated[Session, Depends(get_session)],
+    stock_file: Annotated[UploadFile, File()],
+    sales_file: Annotated[UploadFile, File()],
+    expected_fingerprint: Annotated[str, Form(min_length=64, max_length=64)],
+) -> dict[str, object]:
+    batch = _batch_or_404(session, batch_id)
+    if _batch_mt_code(session, batch) != "DH":
+        raise HTTPException(status_code=409, detail="Batch นี้ไม่ใช่ข้อมูล DoHome")
+    stock_name, stock_content, sales_name, sales_content = await _read_hp_mh_files(
+        stock_file,
+        sales_file,
+    )
+    try:
+        pair = _extract_dh_uploads(
+            stock_content,
+            stock_name,
+            sales_content,
+            sales_name,
+        )
+        priced = price_dh_import_preview(session, pair)
+        if priced.business_fingerprint != expected_fingerprint:
+            raise DhImportError(
+                "ข้อมูลคู่ไฟล์หรือราคา DH เปลี่ยนจากรอบ Preview กรุณาตรวจสอบใหม่"
+            )
+        blocked_reason = _dh_replacement_block_reason(
+            session,
+            batch,
+            pair,
+            priced.business_fingerprint,
+        )
+        if blocked_reason:
+            raise DhImportError(blocked_reason)
+        before = _batch_detail(batch)
+        updated = import_dh_pair(
+            session,
+            pair,
+            actor="manual-user:corrective",
+            expected_fingerprint=expected_fingerprint,
+        )
+        after = _batch_detail(updated)
+        session.add(
+            AuditEvent(
+                entity_type="import_corrective",
+                entity_id=str(batch.id),
+                action="batch_replaced",
+                actor="manual-user",
+                before_json=json.dumps(before, ensure_ascii=False),
+                after_json=json.dumps(after, ensure_ascii=False),
+            )
+        )
+        session.commit()
+    except (DhFormatError, DhImportError, OSError, ValueError) as exc:
+        session.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _batch_detail(updated)

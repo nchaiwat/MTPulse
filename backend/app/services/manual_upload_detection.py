@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 from zipfile import BadZipFile, ZipFile
 
+from app.importers.dh import DhFormatError, validate_dh_workbook
 from app.importers.gh import GhFormatError, inspect_gh_workbook
 from app.importers.hh import HhFormatError, extract_hh_pair, inspect_hh_workbook
 from app.importers.hp_mh import HpMhFormatError, extract_hp_mh_pair
@@ -52,6 +54,29 @@ def _detect_twd_workbook(path: Path) -> UploadDetection:
 
 
 def _detect_excel_workbook(path: Path) -> UploadDetection:
+    source_filename = re.sub(
+        r"^\d{4}-[0-9a-f]{12}-",
+        "",
+        path.name,
+    )
+    try:
+        kind, data_date = validate_dh_workbook(
+            path,
+            source_filename=source_filename,
+        )
+    except (DhFormatError, OSError, ValueError):
+        pass
+    else:
+        return UploadDetection(
+            status="detected",
+            source_group_code="DH",
+            mt_codes=("DH",),
+            source_kind=kind,
+            evidence=(
+                "ผ่าน Strict Validation ของ DH workbook",
+                f"Data date {data_date.isoformat()}",
+            ),
+        )
     try:
         kind, data_date = inspect_ta_workbook(path)
     except (TaFormatError, OSError, ValueError):

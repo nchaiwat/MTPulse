@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_session
+from app.importers.dh import DhFormatError, DhPairExtract, extract_dh_pair
 from app.importers.gh import GhExtract, GhFormatError, extract_gh_file
 from app.importers.hh import HhFormatError, HhPairExtract, extract_hh_pair
 from app.importers.hp_mh import HpMhFormatError, HpMhPairExtract, extract_hp_mh_pair
@@ -26,6 +27,11 @@ from app.services.automatic_import import (
     SourceCandidate,
     _credentials,
     download_twd_extract_with_timings,
+)
+from app.services.dh_import import (
+    DhImportError,
+    import_dh_pair,
+    price_dh_import_preview,
 )
 from app.services.fileshare import (
     FileShareSettingsError,
@@ -203,6 +209,57 @@ def _extract_hh_uploads(
         sales_path=f"manual-upload:{sales_name}",
         inventory_filename=stock_name,
         sales_filename=sales_name,
+    )
+
+
+def _extract_dh_uploads(
+    stock_content: bytes,
+    stock_filename: str,
+    sales_content: bytes,
+    sales_filename: str,
+) -> DhPairExtract:
+    stock_name = (
+        Path(stock_filename).name
+        or "รายงานสต็อคAllDD-MM-YYYY_DD-MM-YYYY.xlsx"
+    )
+    sales_name = (
+        Path(sales_filename).name
+        or "รายงานยอดขายDD-MM-YYYY_DD-MM-YYYY.xlsx"
+    )
+    if (
+        Path(stock_name).suffix.lower() != ".xlsx"
+        or Path(sales_name).suffix.lower() != ".xlsx"
+    ):
+        raise DhFormatError("DoHome ต้องใช้ไฟล์ Stock และ Sale นามสกุล .xlsx")
+    with tempfile.TemporaryDirectory(prefix="mtpulse-dh-manual-") as temp_dir:
+        stock_path = Path(temp_dir) / stock_name
+        sales_path = Path(temp_dir) / sales_name
+        stock_path.write_bytes(stock_content)
+        sales_path.write_bytes(sales_content)
+        pair = extract_dh_pair(stock_path, sales_path)
+    return replace(
+        pair,
+        inventory_path=f"manual-upload:{stock_name}",
+        sales_path=f"manual-upload:{sales_name}",
+        inventory_filename=stock_name,
+        sales_filename=sales_name,
+    )
+
+
+def _dh_existing_batch(
+    session: Session,
+    pair: DhPairExtract,
+) -> ImportBatch | None:
+    modern_trade = session.scalar(
+        select(ModernTrade).where(ModernTrade.code == "DH")
+    )
+    if modern_trade is None:
+        return None
+    return session.scalar(
+        select(ImportBatch).where(
+            ImportBatch.modern_trade_id == modern_trade.id,
+            ImportBatch.data_date == pair.batch_date,
+        )
     )
 
 
@@ -818,6 +875,152 @@ async def confirm_hp_mh_import(
         "notification": {
             "status": delivery.status,
             "message": delivery.message,
+        },
+    }
+
+
+@router.post("/dh/preview")
+async def preview_dh_import(
+    session: Annotated[Session, Depends(get_session)],
+    stock_file: Annotated[UploadFile, File()],
+    sales_file: Annotated[UploadFile, File()],
+) -> dict:
+    read_started = perf_counter()
+    stock_name, stock_content, sales_name, sales_content = await _read_hp_mh_files(
+        stock_file,
+        sales_file,
+    )
+    read_finished = perf_counter()
+    try:
+        parse_started = perf_counter()
+        pair = _extract_dh_uploads(
+            stock_content,
+            stock_name,
+            sales_content,
+            sales_name,
+        )
+        priced = price_dh_import_preview(session, pair)
+        parse_finished = perf_counter()
+    except (DhFormatError, DhImportError, OSError, ValueError) as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail=f"ตรวจสอบคู่ไฟล์ DoHome ไม่ผ่าน: {exc}",
+        ) from exc
+    existing = _dh_existing_batch(session, pair)
+    duplicate_reason = (
+        "ข้อมูลธุรกิจและราคาชุดนี้ถูกนำเข้าแล้ว"
+        if existing
+        and existing.business_fingerprint == priced.business_fingerprint
+        else None
+    )
+    _record(
+        session,
+        checksum=priced.business_fingerprint,
+        action="dh_preview",
+        status="duplicate" if duplicate_reason else "validated",
+        message=duplicate_reason
+        or "ตรวจสอบคู่ไฟล์ DoHome และราคาผ่าน รอผู้ใช้ยืนยัน Import",
+        filename=f"{pair.inventory_filename} + {pair.sales_filename}",
+        data_date=pair.batch_date.isoformat(),
+        mt_code="DH",
+    )
+    summary = priced.summary
+    return {
+        "detectedSourceGroup": "DH",
+        "detectedMtCode": "DH",
+        "dataDate": pair.batch_date.isoformat(),
+        "salesDate": pair.sales_date.isoformat(),
+        "stockDate": pair.stock_date.isoformat(),
+        "stockFilename": pair.inventory_filename,
+        "salesFilename": pair.sales_filename,
+        "businessFingerprint": priced.business_fingerprint,
+        "summary": {
+            "rowCount": summary.row_count,
+            "skuCount": summary.sku_count,
+            "branchCount": summary.store_count,
+            "sourceAmount": float(summary.source_footer_amount),
+            "amount": float(summary.derived_amount),
+            "salesQty": float(summary.sales_qty),
+            "stockOnHand": float(summary.stock_on_hand),
+            "negativeRowCount": summary.negative_row_count,
+        },
+        "warnings": list(priced.reconciliation_errors),
+        "canImport": duplicate_reason is None,
+        "duplicateReason": duplicate_reason,
+        "operation": "replace" if existing and not duplicate_reason else "import",
+        "replacementBatchId": (
+            existing.id if existing and not duplicate_reason else None
+        ),
+        "timings": {
+            "serverReadMs": round((read_finished - read_started) * 1000, 1),
+            "parseMs": round((parse_finished - parse_started) * 1000, 1),
+        },
+    }
+
+
+@router.post("/dh/confirm")
+async def confirm_dh_import(
+    session: Annotated[Session, Depends(get_session)],
+    stock_file: Annotated[UploadFile, File()],
+    sales_file: Annotated[UploadFile, File()],
+    expected_fingerprint: Annotated[str, Form(min_length=64, max_length=64)],
+) -> dict:
+    stock_name, stock_content, sales_name, sales_content = await _read_hp_mh_files(
+        stock_file,
+        sales_file,
+    )
+    try:
+        pair = _extract_dh_uploads(
+            stock_content,
+            stock_name,
+            sales_content,
+            sales_name,
+        )
+        replacing = _dh_existing_batch(session, pair) is not None
+        import_started = perf_counter()
+        batch = import_dh_pair(
+            session,
+            pair,
+            actor="manual-upload",
+            expected_fingerprint=expected_fingerprint,
+        )
+        import_finished = perf_counter()
+        session.commit()
+    except (DhFormatError, DhImportError, OSError, ValueError) as exc:
+        session.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    message = (
+        f"แทนที่ข้อมูล DoHome วันที่ {format_thai_date(pair.batch_date)} สำเร็จ"
+        if replacing
+        else f"นำเข้าข้อมูล DoHome วันที่ {format_thai_date(pair.batch_date)} สำเร็จ"
+    )
+    _record(
+        session,
+        checksum=batch.business_fingerprint or pair.business_fingerprint,
+        action="batch_replaced" if replacing else "import_completed",
+        status=batch.status,
+        message=message,
+        filename=f"{pair.inventory_filename} + {pair.sales_filename}",
+        data_date=pair.batch_date.isoformat(),
+        batch_id=batch.id,
+        mt_code="DH",
+    )
+    try:
+        capture_monitoring_snapshot(session, trigger="import", upsert_today=True)
+    except Exception:
+        session.rollback()
+        logger.exception(
+            "DH import completed, but the daily monitoring snapshot could not be saved"
+        )
+    return {
+        "batchId": batch.id,
+        "status": batch.status,
+        "message": message,
+        "dataDate": pair.batch_date.isoformat(),
+        "timings": {
+            "importMs": round((import_finished - import_started) * 1000, 1),
         },
     }
 

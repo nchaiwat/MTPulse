@@ -835,6 +835,11 @@ def process_run(session: Session, run_id: int) -> None:
 
         process_hh_run(session, run_id)
         return
+    if mt.source_group_code == "DH":
+        from app.services.dh_automatic_import import process_dh_run
+
+        process_dh_run(session, run_id)
+        return
     if mt.source_group_code == "GH":
         from app.services.gh_automatic_import import process_gh_run
 

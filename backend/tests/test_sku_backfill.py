@@ -458,3 +458,28 @@ def test_preview_rejects_start_before_file_registry() -> None:
                 "SKU-A",
                 date(2026, 7, 1),
             )
+
+
+def test_dh_backfill_uses_paired_source_plan(monkeypatch) -> None:
+    mt = ModernTrade(
+        id=1,
+        code="DH",
+        name="DoHome",
+        source_group_code="DH",
+    )
+    expected = (object(), [{"status": "candidate"}], False)
+    monkeypatch.setattr(
+        sku_backfill,
+        "_plan_paired_sources",
+        lambda *_args: expected,
+    )
+
+    result = sku_backfill._plan(
+        None,
+        mt,
+        "00123",
+        date(2025, 1, 1),
+        date(2025, 1, 31),
+    )
+
+    assert result is expected

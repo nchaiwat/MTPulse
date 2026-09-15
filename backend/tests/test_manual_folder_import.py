@@ -57,6 +57,34 @@ def _hh_report(path, *, report_date: str = "10-09-2026") -> None:
     workbook.save(path)
 
 
+def _dh_reports(stock_path, sales_path) -> None:
+    stock = Workbook()
+    stock_sheet = stock.active
+    stock_sheet.append(
+        [
+            "รหัสสาขา",
+            "ชื่อสาขา",
+            "รหัสสินค้า",
+            "ชื่อสินค้า",
+            "หน่วย",
+            "ชื่อหน่วย",
+            "สต็อกคงเหลือ",
+            "จำนวนขาย",
+        ]
+    )
+    stock_sheet.append(["B1", "Branch 1", "00123", "Item", "EA", "Each", 10, 2])
+    stock.save(stock_path)
+
+    sales = Workbook()
+    sales_sheet = sales.active
+    sales_sheet.append(
+        ["รหัสสินค้า", "ชื่อสินค้า", "ชื่อผู้ดูแลขาย", "Branch 1", "รวม"]
+    )
+    sales_sheet.append(["00123", "Item", "Owner", 2, 2])
+    sales_sheet.append([None, None, None, 240, 2])
+    sales.save(sales_path)
+
+
 def test_folder_batch_uploads_independently_and_finalizes_one_mt(tmp_path, monkeypatch) -> None:
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
@@ -290,4 +318,63 @@ def test_hh_folder_import_pairs_stock_and_sales_without_sku_pattern(
     assert [row.status for row in files] == ["imported", "imported"]
     assert [row.source_kind for row in files] == ["inventory", "sales"]
     assert {row.sku for row in imported_pairs[0][0].rows} == {"00001", "SKU-A7"}
+    assert imported_pairs[0][1] == "admin"
+
+
+def test_dh_folder_import_pairs_sale_and_next_day_stock(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(
+        manual_upload_batches,
+        "get_settings",
+        lambda: _settings(tmp_path),
+    )
+    stock = tmp_path / "stock-source.xlsx"
+    sales = tmp_path / "sales-source.xlsx"
+    _dh_reports(stock, sales)
+    imported_pairs = []
+    audit_ids = count(1)
+    monkeypatch.setattr(
+        manual_upload_batches,
+        "AuditEvent",
+        lambda **values: AuditEvent(id=next(audit_ids), **values),
+    )
+
+    def import_pair(_session, pair, *, actor):
+        imported_pairs.append((pair, actor))
+        return SimpleNamespace(id=88, business_fingerprint="f" * 64)
+
+    monkeypatch.setattr(manual_upload_batches, "import_dh_pair", import_pair)
+
+    with Session(engine) as session:
+        batch = create_folder_batch(session, file_count=2, actor="admin")
+        store_folder_file(
+            session,
+            batch,
+            filename="รายงานสต็อคAll07-01-2025_07-01-2025.xlsx",
+            content=stock.read_bytes(),
+            idempotency_key="dh-stock",
+        )
+        store_folder_file(
+            session,
+            batch,
+            filename="รายงานยอดขาย06-01-2025_06-01-2025.xlsx",
+            content=sales.read_bytes(),
+            idempotency_key="dh-sales",
+        )
+        finalize_folder_batch(session, batch, expected_source_group="DH")
+        queue_folder_batch(session, batch)
+        process_folder_batch(session, batch.id)
+        stored_batch = session.get(ManualUploadBatch, batch.id)
+        files = session.query(ManualUploadFile).order_by(ManualUploadFile.id).all()
+
+    assert stored_batch is not None
+    assert stored_batch.status == "completed"
+    assert [row.status for row in files] == ["imported", "imported"]
+    assert [row.source_kind for row in files] == ["inventory", "sales"]
+    assert imported_pairs[0][0].sales_date.isoformat() == "2025-01-06"
+    assert imported_pairs[0][0].stock_date.isoformat() == "2025-01-07"
     assert imported_pairs[0][1] == "admin"
