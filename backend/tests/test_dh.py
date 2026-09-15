@@ -50,8 +50,18 @@ def test_dh_pair_keeps_real_sales_stock_and_batch_dates(tmp_path: Path) -> None:
     assert extract.sales_summary.sales_qty == 4
     assert extract.sales_summary.source_amount == 4_500.25
     assert extract.stock_summary.stock_on_hand == 15
-    assert {row.branch_code for row in extract.sales_rows if row.branch_name == "บางนา-ตราด"} == {"BN"}
-    assert len({row.branch_code for row in extract.sales_rows if row.branch_name == "To go สาทร"}) == 1
+    assert {
+        row.branch_code
+        for row in extract.sales_rows
+        if row.branch_name == "บางนา-ตราด"
+    } == {"BN"}
+    assert len(
+        {
+            row.branch_code
+            for row in extract.sales_rows
+            if row.branch_name == "To go สาทร"
+        }
+    ) == 1
     assert extract.reconciliation_errors == ()
 
 
