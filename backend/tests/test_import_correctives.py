@@ -5,6 +5,7 @@ from decimal import Decimal
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from app.api.import_correctives import import_batch_detail
 from app.database import Base
 from app.importers.twd import TwdExtract, TwdSummary
 from app.models import ModernTrade
@@ -60,3 +61,18 @@ def test_replace_batch_updates_in_place_and_rollback_restores_original() -> None
         session.refresh(original)
         assert original.checksum_sha256 == "a" * 64
         assert original.source_filename == "source.xls"
+
+
+def test_batch_detail_includes_modern_trade_code_for_corrective_ui() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(ModernTrade(id=1, code="DH", name="DoHome"))
+        batch = _build_batch(1, _extract("d" * 64))
+        batch.id = 18
+        session.add(batch)
+        session.commit()
+
+        detail = import_batch_detail(18, session)
+
+        assert detail["mtCode"] == "DH"

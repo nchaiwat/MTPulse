@@ -4,8 +4,11 @@ import { formatDisplayDate, formatDisplayDateTime } from '../../shared/dateForma
 import {
   acknowledgeImportWarning,
   fetchImportBatch,
+  previewDhBatchReplacement,
   previewBatchReplacement,
+  replaceDhImportBatch,
   replaceImportBatch,
+  type DhReplacementPreview,
   type ImportBatchDetail,
   type ReplacementPreview,
 } from './importApi'
@@ -22,7 +25,8 @@ export function ImportCorrectivePanel({ batchId, onCompleted }: ImportCorrective
   const [batch, setBatch] = useState<ImportBatchDetail | null>(null)
   const [note, setNote] = useState('')
   const [replacementFile, setReplacementFile] = useState<File | null>(null)
-  const [preview, setPreview] = useState<ReplacementPreview | null>(null)
+  const [replacementFiles, setReplacementFiles] = useState<{ stock: File | null, sales: File | null }>({ stock: null, sales: null })
+  const [preview, setPreview] = useState<ReplacementPreview | DhReplacementPreview | null>(null)
   const [busy, setBusy] = useState<'load' | 'acknowledge' | 'preview' | 'replace' | null>('load')
   const [message, setMessage] = useState<{ tone: 'success' | 'error', text: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -56,12 +60,16 @@ export function ImportCorrectivePanel({ batchId, onCompleted }: ImportCorrective
   }
 
   const inspectReplacement = async () => {
-    if (!batch || !replacementFile) return
+    if (!batch) return
+    const isDh = batch.mtCode === 'DH'
+    if (isDh ? !replacementFiles.stock || !replacementFiles.sales : !replacementFile) return
     setBusy('preview')
     setMessage(null)
     setPreview(null)
     try {
-      setPreview(await previewBatchReplacement(batch.batchId, replacementFile))
+      setPreview(isDh
+        ? await previewDhBatchReplacement(batch.batchId, replacementFiles.stock!, replacementFiles.sales!)
+        : await previewBatchReplacement(batch.batchId, replacementFile!))
     } catch (error) {
       setMessage({ tone: 'error', text: error instanceof Error ? error.message : 'ตรวจสอบไฟล์ทดแทนไม่สำเร็จ' })
     } finally {
@@ -70,13 +78,23 @@ export function ImportCorrectivePanel({ batchId, onCompleted }: ImportCorrective
   }
 
   const confirmReplacement = async () => {
-    if (!batch || !replacementFile || !preview?.canReplace) return
+    if (!batch || !preview?.canReplace) return
+    const isDh = batch.mtCode === 'DH'
+    if (isDh ? !replacementFiles.stock || !replacementFiles.sales : !replacementFile) return
     setBusy('replace')
     setMessage(null)
     try {
-      setBatch(await replaceImportBatch(batch.batchId, replacementFile, preview.checksum))
+      setBatch(isDh
+        ? await replaceDhImportBatch(
+            batch.batchId,
+            replacementFiles.stock!,
+            replacementFiles.sales!,
+            (preview as DhReplacementPreview).businessFingerprint,
+          )
+        : await replaceImportBatch(batch.batchId, replacementFile!, (preview as ReplacementPreview).checksum))
       setPreview(null)
       setReplacementFile(null)
+      setReplacementFiles({ stock: null, sales: null })
       if (fileInputRef.current) fileInputRef.current.value = ''
       setMessage({ tone: 'success', text: `แทนที่ข้อมูล Batch ${batch.batchId} สำเร็จ` })
       onCompleted?.()
@@ -129,16 +147,27 @@ export function ImportCorrectivePanel({ batchId, onCompleted }: ImportCorrective
               <section>
                 <div><span className="corrective-step">B</span><h4>แทนที่ด้วยไฟล์ที่แก้ไขแล้ว</h4></div>
                 <p>ระบบตรวจวันที่และเปรียบเทียบข้อมูลก่อนเปิดให้ยืนยัน ข้อมูลเดิมจะถูกเปลี่ยนใน Transaction เดียว</p>
-                <label htmlFor="replacement-file">ไฟล์ Raw Data ที่แก้ไขแล้ว</label>
-                <input ref={fileInputRef} id="replacement-file" type="file" accept=".xls" onChange={(event) => { setReplacementFile(event.target.files?.[0] ?? null); setPreview(null); setMessage(null) }} />
-                <button className="secondary-action" type="button" disabled={busy !== null || !replacementFile} onClick={() => void inspectReplacement()}>{busy === 'preview' ? 'กำลังตรวจสอบ…' : 'Preview เปรียบเทียบ'}</button>
+                {batch.mtCode === 'DH' ? (
+                  <>
+                    <label htmlFor="replacement-stock-file">ไฟล์ Stock ของ DH ที่แก้ไขแล้ว</label>
+                    <input id="replacement-stock-file" type="file" accept=".xlsx" onChange={(event) => { setReplacementFiles((current) => ({ ...current, stock: event.target.files?.[0] ?? null })); setPreview(null); setMessage(null) }} />
+                    <label htmlFor="replacement-sales-file">ไฟล์ Sale ของ DH ที่แก้ไขแล้ว</label>
+                    <input id="replacement-sales-file" type="file" accept=".xlsx" onChange={(event) => { setReplacementFiles((current) => ({ ...current, sales: event.target.files?.[0] ?? null })); setPreview(null); setMessage(null) }} />
+                  </>
+                ) : (
+                  <>
+                    <label htmlFor="replacement-file">ไฟล์ Raw Data ที่แก้ไขแล้ว</label>
+                    <input ref={fileInputRef} id="replacement-file" type="file" accept=".xls" onChange={(event) => { setReplacementFile(event.target.files?.[0] ?? null); setPreview(null); setMessage(null) }} />
+                  </>
+                )}
+                <button className="secondary-action" type="button" disabled={busy !== null || (batch.mtCode === 'DH' ? !replacementFiles.stock || !replacementFiles.sales : !replacementFile)} onClick={() => void inspectReplacement()}>{busy === 'preview' ? 'กำลังตรวจสอบ…' : 'Preview เปรียบเทียบ'}</button>
               </section>
             </div>
           )}
 
           {preview && (
             <div className="replacement-preview" data-blocked={!preview.canReplace || undefined}>
-              <header><strong>ผลเปรียบเทียบก่อนแทนที่</strong><span>{preview.filename}</span></header>
+              <header><strong>ผลเปรียบเทียบก่อนแทนที่</strong><span>{'filename' in preview ? preview.filename : preview.stockFilename + ' + ' + preview.salesFilename}</span></header>
               <table>
                 <thead><tr><th>รายการ</th><th>ข้อมูลเดิม</th><th>ไฟล์ใหม่</th></tr></thead>
                 <tbody>
@@ -146,7 +175,9 @@ export function ImportCorrectivePanel({ batchId, onCompleted }: ImportCorrective
                   <tr><td>Amount</td><td>{number.format(preview.current.amount)}</td><td>{number.format(preview.replacement.amount)}</td></tr>
                   <tr><td>Qty</td><td>{number.format(preview.current.salesQty)}</td><td>{number.format(preview.replacement.salesQty)}</td></tr>
                   <tr><td>Stock On Hand</td><td>{number.format(preview.current.stockOnHand)}</td><td>{number.format(preview.replacement.stockOnHand)}</td></tr>
-                  <tr><td>Source Total: Stock On Hand</td><td>{number.format(preview.current.reportedStockOnHand)}</td><td>{number.format(preview.replacement.reportedStockOnHand)}</td></tr>
+                  {'sourceAmount' in preview.replacement
+                    ? <tr><td>Source Footer Amount</td><td>{number.format(preview.current.amount)}</td><td>{number.format(preview.replacement.sourceAmount)}</td></tr>
+                    : <tr><td>Source Total: Stock On Hand</td><td>{number.format(preview.current.reportedStockOnHand)}</td><td>{number.format(preview.replacement.reportedStockOnHand)}</td></tr>}
                 </tbody>
               </table>
               {preview.blockedReason && <p className="replacement-blocked"><AlertTriangle size={15} />{preview.blockedReason}</p>}

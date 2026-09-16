@@ -153,7 +153,11 @@ def import_batch_detail(
     batch_id: int,
     session: Annotated[Session, Depends(get_session)],
 ) -> dict[str, object]:
-    return _batch_detail(_batch_or_404(session, batch_id))
+    batch = _batch_or_404(session, batch_id)
+    return {
+        **_batch_detail(batch),
+        "mtCode": _batch_mt_code(session, batch),
+    }
 
 
 @router.post("/{batch_id}/acknowledge")

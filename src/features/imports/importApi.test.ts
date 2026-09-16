@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { MANUAL_UPLOAD_LIMITS, previewHpMhImport, previewImport } from './importApi'
+import { MANUAL_UPLOAD_LIMITS, previewDhImport, previewHpMhImport, previewImport } from './importApi'
 
 class FakeEventTarget {
   private listeners = new Map<string, EventListener[]>()
@@ -112,6 +112,23 @@ describe('manual import upload transport', () => {
     xhr.responseText = JSON.stringify({ detectedSourceGroup: 'HP_MH' })
     xhr.emit('load', new Event('load'))
     await expect(request).resolves.toMatchObject({ detectedSourceGroup: 'HP_MH' })
+  })
+
+  it('sends the DH stock and sales pair to the dedicated preview endpoint', async () => {
+    const stock = new File(['stock'], 'stock.xlsx')
+    const sales = new File(['sales'], 'sales.xlsx')
+    const request = previewDhImport(stock, sales)
+    const xhr = FakeXMLHttpRequest.instances[0]
+    const body = xhr.body as FormData
+
+    expect(xhr.url).toContain('/api/imports/dh/preview')
+    expect(body.get('stock_file')).toBe(stock)
+    expect(body.get('sales_file')).toBe(sales)
+
+    xhr.status = 200
+    xhr.responseText = JSON.stringify({ detectedSourceGroup: 'DH' })
+    xhr.emit('load', new Event('load'))
+    await expect(request).resolves.toMatchObject({ detectedSourceGroup: 'DH' })
   })
 
   it('rejects instead of hanging when a successful response is not valid JSON', async () => {

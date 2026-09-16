@@ -187,7 +187,13 @@ export function SettingsPage({ focusCoverageKey = 0 }: { focusCoverageKey?: numb
           </>
         )}
 
-        {activeScope === 'DH' && <DhPriceMasterPanel />}
+        {activeScope === 'DH' && (
+          <>
+            <FileShareSettingsCard view="profile" profileCode="DH" showSaveAction onDirtyChange={(dirty) => setDirtyScope(dirty ? 'DH' : null)} />
+            <DhPriceMasterPanel />
+            <TwdSettingsPage embedded mtCode="DH" mtName="DoHome" />
+          </>
+        )}
 
         {activeScope === 'TA' && (
           <>

@@ -16,7 +16,7 @@ function directFiles(fileList: FileList | null) {
   })
 }
 
-export function FolderImportPanel({ expectedSourceGroup, onCompleted }: { expectedSourceGroup: 'TWD' | 'HP_MH' | 'HH' | 'GH' | 'TA'; onCompleted: () => void }) {
+export function FolderImportPanel({ expectedSourceGroup, onCompleted }: { expectedSourceGroup: 'TWD' | 'HP_MH' | 'HH' | 'GH' | 'DH' | 'TA'; onCompleted: () => void }) {
   const [files, setFiles] = useState<File[]>([])
   const [batch, setBatch] = useState<ManualUploadBatchContract | null>(null)
   const [busy, setBusy] = useState<'upload' | 'confirm' | null>(null)
@@ -147,7 +147,7 @@ export function FolderImportPanel({ expectedSourceGroup, onCompleted }: { expect
         />
         <div>
           <strong>{files.length > 0 ? `${files.length} ไฟล์พร้อมตรวจสอบ` : 'ยังไม่ได้เลือก Folder'}</strong>
-          <small>{expectedSourceGroup === 'TWD' ? 'ระบบต้องตรวจพบไฟล์ TWD .xls/.xlsx เท่านั้น' : expectedSourceGroup === 'HH' ? 'ระบบจะจับคู่ StockReport.xlsx และ SaleReport.xlsx ของ HH ตามวันที่ข้อมูล' : expectedSourceGroup === 'GH' ? 'ระบบต้องตรวจพบไฟล์ Piyawat-YYYY-MM-DD*.xlsx ของ GH เท่านั้น' : expectedSourceGroup === 'TA' ? 'ระบบต้องตรวจพบไฟล์ Runglawan-YYYY-MM-DD*.xlsx ของ TA และใช้วันที่ข้อมูลลบ 1 วันเท่านั้น' : 'ระบบจะจับคู่ Inventory ZIP และ Sales ZIP ของ HP/MH'}</small>
+          <small>{expectedSourceGroup === 'TWD' ? 'ระบบต้องตรวจพบไฟล์ TWD .xls/.xlsx เท่านั้น' : expectedSourceGroup === 'HH' ? 'ระบบจะจับคู่ StockReport.xlsx และ SaleReport.xlsx ของ HH ตามวันที่ข้อมูล' : expectedSourceGroup === 'DH' ? 'ระบบจะจับคู่ Stock และ Sale ของ DH ตามวันที่ข้อมูลและตรวจ Price Master' : expectedSourceGroup === 'GH' ? 'ระบบต้องตรวจพบไฟล์ Piyawat-YYYY-MM-DD*.xlsx ของ GH เท่านั้น' : expectedSourceGroup === 'TA' ? 'ระบบต้องตรวจพบไฟล์ Runglawan-YYYY-MM-DD*.xlsx ของ TA และใช้วันที่ข้อมูลลบ 1 วันเท่านั้น' : 'ระบบจะจับคู่ Inventory ZIP และ Sales ZIP ของ HP/MH'}</small>
         </div>
         <button className="primary-action" type="button" disabled={files.length === 0 || busy !== null} onClick={() => void inspectFolder()}>
           {busy === 'upload' ? <LoaderCircle className="is-spinning" size={15} /> : <FolderOpen size={15} />}

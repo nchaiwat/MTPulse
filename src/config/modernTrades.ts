@@ -19,8 +19,6 @@ export type ModernTradeDefinition = {
 const complete = MODERN_TRADE_CAPABILITIES
 const hpMhActive = ['dashboard', 'performance', 'manualImport', 'folderImport', 'automaticImport', 'mapping', 'skuBackfill', 'shoPro', 'monitoring', 'settings', 'excel'] as const satisfies readonly ModernTradeCapability[]
 const hhActive = ['dashboard', 'performance', 'manualImport', 'folderImport', 'automaticImport', 'correctiveImport', 'mapping', 'skuBackfill', 'shoPro', 'monitoring', 'settings', 'excel'] as const satisfies readonly ModernTradeCapability[]
-const dhActive = ['dashboard', 'performance', 'settings', 'excel'] as const satisfies readonly ModernTradeCapability[]
-const dhPlanned = ['manualImport', 'folderImport', 'automaticImport', 'correctiveImport', 'mapping', 'skuBackfill', 'shoPro', 'monitoring'] as const satisfies readonly ModernTradeCapability[]
 
 export const MODERN_TRADES: Readonly<Record<ModernTradeCode, ModernTradeDefinition>> = {
   TWD: {
@@ -85,9 +83,9 @@ export const MODERN_TRADES: Readonly<Record<ModernTradeCode, ModernTradeDefiniti
     navigationLabel: 'DoHome',
     sourceGroupCode: 'DH',
     sourceOwnerCode: 'DH',
-    inventoryMetrics: ['stockOh', 'stockValue'],
-    activeCapabilities: dhActive,
-    plannedCapabilities: dhPlanned,
+    inventoryMetrics: ['stockOh'],
+    activeCapabilities: complete,
+    plannedCapabilities: [],
   },
   SCG: {
     code: 'SCG',

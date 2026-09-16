@@ -8,6 +8,7 @@ const api = vi.hoisted(() => ({
   confirmFolderImportBatch: vi.fn(),
   confirmHpMhImport: vi.fn(),
   confirmImport: vi.fn(),
+  confirmDhImport: vi.fn(),
   createFolderImportBatch: vi.fn(),
   fetchFileShareReady: vi.fn(),
   fetchFolderImportBatch: vi.fn(),
@@ -16,6 +17,7 @@ const api = vi.hoisted(() => ({
   previewFileShareImport: vi.fn(),
   previewHpMhImport: vi.fn(),
   previewImport: vi.fn(),
+  previewDhImport: vi.fn(),
   uploadFolderImportFile: vi.fn(),
 }))
 
@@ -119,6 +121,31 @@ describe('ImportPage', () => {
       sourceFileId: 21,
     })
     api.previewHpMhImport.mockResolvedValue(hpMhPreview)
+    api.previewDhImport.mockResolvedValue({
+      detectedSourceGroup: 'DH',
+      detectedMtCode: 'DH',
+      dataDate: '2026-09-14',
+      salesDate: '2026-09-14',
+      stockDate: '2026-09-15',
+      stockFilename: 'stock.xlsx',
+      salesFilename: 'sales.xlsx',
+      businessFingerprint: 'd'.repeat(64),
+      summary: {
+        rowCount: 90,
+        skuCount: 20,
+        branchCount: 8,
+        sourceAmount: 12500,
+        amount: 12400,
+        salesQty: 30,
+        stockOnHand: 220,
+        negativeRowCount: 1,
+      },
+      warnings: [],
+      canImport: true,
+      duplicateReason: null,
+      operation: 'import',
+      replacementBatchId: null,
+    })
     api.confirmImport.mockResolvedValue(success)
     api.confirmFileShareImport.mockResolvedValue(success)
     api.confirmHpMhImport.mockResolvedValue({
@@ -126,6 +153,12 @@ describe('ImportPage', () => {
       batchIds: { HP: 31, MH: 32 },
       status: 'imported',
       dataDate: '2026-09-09',
+    })
+    api.confirmDhImport.mockResolvedValue({
+      batchId: 41,
+      status: 'imported',
+      message: 'นำเข้าข้อมูล DoHome สำเร็จ',
+      dataDate: '2026-09-14',
     })
     api.createFolderImportBatch.mockResolvedValue(folderBatch)
     api.uploadFolderImportFile.mockResolvedValue({
@@ -327,5 +360,26 @@ describe('ImportPage', () => {
     expect(screen.getByLabelText(/Runglawan-YYYY-MM-DD/)).toBeInTheDocument()
     expect(screen.getByText(/ลบ 1 วันเป็นวันที่ข้อมูล/)).toBeInTheDocument()
     expect(screen.getByLabelText('เลือก Folder สำหรับ TA')).toHaveAttribute('webkitdirectory')
+  })
+
+  it('offers DH pair and Admin Folder Import with the DH API contract', async () => {
+    render(<ImportPage />)
+
+    await userEvent.click(screen.getByRole('tab', { name: /DH/ }))
+    expect(screen.getByRole('heading', { name: 'DoHome (DH)' })).toBeInTheDocument()
+
+    const stock = new File(['stock'], 'stock.xlsx')
+    const sales = new File(['sales'], 'sales.xlsx')
+    await userEvent.upload(screen.getByLabelText('Stock workbook (.xlsx)'), stock)
+    await userEvent.upload(screen.getByLabelText('Sales workbook (.xlsx)'), sales)
+    await userEvent.click(screen.getByRole('button', { name: 'ตรวจสอบคู่ไฟล์ DH' }))
+
+    expect(await screen.findByText('DoHome · 14/09/2026')).toBeInTheDocument()
+    expect(api.previewDhImport).toHaveBeenCalledWith(stock, sales, expect.any(Function))
+
+    await userEvent.click(screen.getByRole('button', { name: 'ยืนยันนำเข้า DoHome' }))
+    expect(api.confirmDhImport).toHaveBeenCalledWith(stock, sales, 'd'.repeat(64), expect.any(Function))
+    expect(await screen.findByText('นำเข้าข้อมูล DoHome สำเร็จ')).toBeInTheDocument()
+    expect(screen.getByLabelText('เลือก Folder สำหรับ DH')).toHaveAttribute('webkitdirectory')
   })
 })

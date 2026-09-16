@@ -20,10 +20,7 @@ describe('Modern Trade registry', () => {
 
   it('locks shared reporting capabilities to all active MT packages', () => {
     ;['dashboard', 'performance', 'mapping', 'shoPro', 'monitoring', 'settings', 'excel'].forEach((capability) => {
-      const expected = capability === 'mapping' || capability === 'shoPro' || capability === 'monitoring'
-        ? ['TWD', 'HP', 'MH', 'HH', 'GH', 'TA']
-        : ['TWD', 'HP', 'MH', 'HH', 'GH', 'DH', 'TA']
-      expect(activeModernTradeCodes(capability as Parameters<typeof activeModernTradeCodes>[0])).toEqual(expected)
+      expect(activeModernTradeCodes(capability as Parameters<typeof activeModernTradeCodes>[0])).toEqual(['TWD', 'HP', 'MH', 'HH', 'GH', 'DH', 'TA'])
     })
   })
 
@@ -38,12 +35,12 @@ describe('Modern Trade registry', () => {
     expect(MODERN_TRADES.TA.plannedCapabilities).toEqual([])
   })
 
-  it('opens DH reporting while keeping import and operational capabilities planned', () => {
+  it('keeps DH on the complete shared package with Price Master as its extension', () => {
     expect(MODERN_TRADES.DH.name).toBe('DoHome')
     expect(MODERN_TRADES.DH.sourceOwnerCode).toBe('DH')
-    expect(MODERN_TRADES.DH.activeCapabilities).toEqual(['dashboard', 'performance', 'settings', 'excel'])
-    expect(MODERN_TRADES.DH.plannedCapabilities).not.toContain('dashboard')
-    expect(MODERN_TRADES.DH.plannedCapabilities).not.toContain('performance')
+    expect(MODERN_TRADES.DH.inventoryMetrics).toEqual(['stockOh'])
+    expect(MODERN_TRADES.DH.activeCapabilities).toEqual(MODERN_TRADE_CAPABILITIES)
+    expect(MODERN_TRADES.DH.plannedCapabilities).toEqual([])
     expect(ACTIVE_MODERN_TRADES.map((item) => item.code)).toContain('DH')
   })
 })

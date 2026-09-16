@@ -44,6 +44,39 @@ describe('App navigation', () => {
   it('uses collapsible submenus and one settings workspace', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input)
+      if (url.includes('/api/admin/fileshare-settings')) {
+        return new Response(JSON.stringify({
+          baseUnc: '\\\\server\\share',
+          domain: 'WA',
+          username: 'service-user',
+          passwordConfigured: true,
+          passwordMasked: '********',
+          lastTestAt: null,
+          lastTestStatus: null,
+          lastTestResults: [],
+          profiles: [{
+            code: 'DH',
+            name: 'DoHome',
+            subfolder: 'DoHome',
+            enabled: false,
+            fullPath: '\\\\server\\share\\DoHome',
+            scheduleEnabled: false,
+            scheduleTime: null,
+            initialScanCompleted: false,
+            lastRun: null,
+            nextRunAt: null,
+            sourceGroup: 'DH',
+          }],
+        }), { status: 200 })
+      }
+      if (url.includes('/api/dh-prices?')) {
+        return new Response(JSON.stringify({
+          items: [],
+          total: 0,
+          page: 1,
+          page_size: 25,
+        }), { status: 200 })
+      }
       if (url.includes('/api/dashboards/twd')) {
         return new Response(JSON.stringify(emptyTwdDashboardResponse), { status: 200 })
       }
@@ -128,7 +161,7 @@ describe('App navigation', () => {
     expect(screen.getByRole('button', { name: 'การตั้งค่า' })).toHaveAttribute('aria-current', 'page')
     expect(screen.queryByText('มี Token บันทึกอยู่')).not.toBeInTheDocument()
     expect(screen.getByDisplayValue('https://api.telegram.org')).toBeInTheDocument()
-    expect(screen.getByPlaceholderText('********')).toBeInTheDocument()
+    expect(screen.getByLabelText('Bot Token ID')).toHaveAttribute('placeholder', '********')
     expect(screen.getByRole('heading', { name: 'Technical Health' })).toBeInTheDocument()
     expect(screen.getByLabelText('เวลารายงาน Technical Health')).toHaveValue('07:00')
 
@@ -153,6 +186,16 @@ describe('App navigation', () => {
     expect(screen.getByRole('heading', { name: 'การแสดงผลรายงาน' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'ความครบถ้วนของข้อมูล' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'ข้อมูลที่ยังไม่ Mapping' })).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('tab', { name: /DH/ }))
+    expect(screen.getByRole('heading', { name: 'FileShare · DH' })).toBeInTheDocument()
+    expect(screen.getByText('Schedule รายวัน')).toBeInTheDocument()
+    expect(screen.getByLabelText('เวลา Schedule DH')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'DH Price Master' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Item และ Branch Mapping' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'ดึงข้อมูลย้อนหลังเฉพาะ SKU' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'การแสดงผลรายงาน' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'ความครบถ้วนของข้อมูล' })).toBeInTheDocument()
   }, 10_000)
 
   it('opens the TWD dashboard from its own navigation group', async () => {
