@@ -20,7 +20,7 @@ const workspaceTabs: Array<{
   name: string
 }> = [
   { code: 'overview', label: 'ภาพรวม', name: 'ทุก Modern Trade' },
-  ...ACTIVE_MODERN_TRADES.map((definition) => ({
+  ...ACTIVE_MODERN_TRADES.filter((definition) => definition.activeCapabilities.includes('manualImport')).map((definition) => ({
     code: definition.code as ActiveModernTradeCode,
     label: definition.code,
     name: definition.name,

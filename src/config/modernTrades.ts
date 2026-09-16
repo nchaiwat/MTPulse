@@ -2,7 +2,7 @@ export const MODERN_TRADE_CAPABILITIES = ['dashboard', 'performance', 'manualImp
 
 export type ModernTradeCapability = (typeof MODERN_TRADE_CAPABILITIES)[number]
 export type ModernTradeCode = 'TWD' | 'HP' | 'MH' | 'HH' | 'GH' | 'DH' | 'SCG' | 'TA'
-export type ActiveModernTradeCode = 'TWD' | 'HP' | 'MH' | 'HH' | 'GH' | 'TA'
+export type ActiveModernTradeCode = 'TWD' | 'HP' | 'MH' | 'HH' | 'GH' | 'DH' | 'TA'
 
 export type ModernTradeDefinition = {
   code: ModernTradeCode
@@ -19,8 +19,8 @@ export type ModernTradeDefinition = {
 const complete = MODERN_TRADE_CAPABILITIES
 const hpMhActive = ['dashboard', 'performance', 'manualImport', 'folderImport', 'automaticImport', 'mapping', 'skuBackfill', 'shoPro', 'monitoring', 'settings', 'excel'] as const satisfies readonly ModernTradeCapability[]
 const hhActive = ['dashboard', 'performance', 'manualImport', 'folderImport', 'automaticImport', 'correctiveImport', 'mapping', 'skuBackfill', 'shoPro', 'monitoring', 'settings', 'excel'] as const satisfies readonly ModernTradeCapability[]
-const dhActive = ['settings'] as const satisfies readonly ModernTradeCapability[]
-const dhPlanned = ['dashboard', 'performance', 'manualImport', 'folderImport', 'automaticImport', 'correctiveImport', 'mapping', 'skuBackfill', 'shoPro', 'monitoring', 'excel'] as const satisfies readonly ModernTradeCapability[]
+const dhActive = ['dashboard', 'performance', 'settings', 'excel'] as const satisfies readonly ModernTradeCapability[]
+const dhPlanned = ['manualImport', 'folderImport', 'automaticImport', 'correctiveImport', 'mapping', 'skuBackfill', 'shoPro', 'monitoring'] as const satisfies readonly ModernTradeCapability[]
 
 export const MODERN_TRADES: Readonly<Record<ModernTradeCode, ModernTradeDefinition>> = {
   TWD: {
@@ -113,7 +113,7 @@ export const MODERN_TRADES: Readonly<Record<ModernTradeCode, ModernTradeDefiniti
   },
 }
 
-export const ACTIVE_MODERN_TRADES = (['TWD', 'HP', 'MH', 'HH', 'GH', 'TA'] as const).map((code) => MODERN_TRADES[code])
+export const ACTIVE_MODERN_TRADES = (['TWD', 'HP', 'MH', 'HH', 'GH', 'DH', 'TA'] as const).map((code) => MODERN_TRADES[code])
 
 export function activeModernTradeCodes(capability: ModernTradeCapability): ActiveModernTradeCode[] {
   return ACTIVE_MODERN_TRADES.filter((definition) => definition.activeCapabilities.includes(capability)).map((definition) => definition.code as ActiveModernTradeCode)

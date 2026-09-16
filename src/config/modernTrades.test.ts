@@ -4,7 +4,7 @@ import { ACTIVE_MODERN_TRADES, MODERN_TRADE_CAPABILITIES, MODERN_TRADES, activeM
 describe('Modern Trade registry', () => {
   it('contains current and future Modern Trades', () => {
     expect(Object.keys(MODERN_TRADES)).toEqual(['TWD', 'HP', 'MH', 'HH', 'GH', 'DH', 'SCG', 'TA'])
-    expect(ACTIVE_MODERN_TRADES.map((item) => item.code)).toEqual(['TWD', 'HP', 'MH', 'HH', 'GH', 'TA'])
+    expect(ACTIVE_MODERN_TRADES.map((item) => item.code)).toEqual(['TWD', 'HP', 'MH', 'HH', 'GH', 'DH', 'TA'])
   })
 
   it('uses the standard English name for TWD navigation', () => {
@@ -20,7 +20,10 @@ describe('Modern Trade registry', () => {
 
   it('locks shared reporting capabilities to all active MT packages', () => {
     ;['dashboard', 'performance', 'mapping', 'shoPro', 'monitoring', 'settings', 'excel'].forEach((capability) => {
-      expect(activeModernTradeCodes(capability as Parameters<typeof activeModernTradeCodes>[0])).toEqual(['TWD', 'HP', 'MH', 'HH', 'GH', 'TA'])
+      const expected = capability === 'mapping' || capability === 'shoPro' || capability === 'monitoring'
+        ? ['TWD', 'HP', 'MH', 'HH', 'GH', 'TA']
+        : ['TWD', 'HP', 'MH', 'HH', 'GH', 'DH', 'TA']
+      expect(activeModernTradeCodes(capability as Parameters<typeof activeModernTradeCodes>[0])).toEqual(expected)
     })
   })
 
@@ -35,11 +38,12 @@ describe('Modern Trade registry', () => {
     expect(MODERN_TRADES.TA.plannedCapabilities).toEqual([])
   })
 
-  it('opens only DH settings for the Price Master phase', () => {
+  it('opens DH reporting while keeping import and operational capabilities planned', () => {
     expect(MODERN_TRADES.DH.name).toBe('DoHome')
     expect(MODERN_TRADES.DH.sourceOwnerCode).toBe('DH')
-    expect(MODERN_TRADES.DH.activeCapabilities).toEqual(['settings'])
-    expect(MODERN_TRADES.DH.plannedCapabilities).not.toContain('settings')
-    expect(ACTIVE_MODERN_TRADES.map((item) => item.code)).not.toContain('DH')
+    expect(MODERN_TRADES.DH.activeCapabilities).toEqual(['dashboard', 'performance', 'settings', 'excel'])
+    expect(MODERN_TRADES.DH.plannedCapabilities).not.toContain('dashboard')
+    expect(MODERN_TRADES.DH.plannedCapabilities).not.toContain('performance')
+    expect(ACTIVE_MODERN_TRADES.map((item) => item.code)).toContain('DH')
   })
 })

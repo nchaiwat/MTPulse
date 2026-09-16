@@ -292,6 +292,38 @@ describe('App navigation', () => {
     expect(requested.some((url) => url.includes('mt_code=MH'))).toBe(true)
   })
 
+  it('opens DH dashboard and report pages with matching API routes', async () => {
+    const requested: string[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input)
+      requested.push(url)
+      if (url.includes('/api/dashboards/dh')) {
+        return new Response(JSON.stringify({
+          ...emptyTwdDashboardResponse,
+          meta: {
+            ...emptyTwdDashboardResponse.meta,
+            mtCode: 'DH',
+            mtName: 'DoHome',
+          },
+        }), { status: 200 })
+      }
+      if (url.includes('/api/dashboards/twd')) {
+        return new Response(JSON.stringify(emptyTwdDashboardResponse), { status: 200 })
+      }
+      return new Response(JSON.stringify(performanceResponse), { status: 200 })
+    })
+
+    render(<App />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'แดชบอร์ด DoHome' }))
+    expect(await screen.findByRole('heading', { level: 2, name: 'ภาพรวม Performance ของ DoHome (DH)' })).toBeInTheDocument()
+    expect(requested.some((url) => url.includes('/api/dashboards/dh'))).toBe(true)
+
+    await userEvent.click(screen.getByRole('button', { name: 'รายงาน DoHome' }))
+    expect(await screen.findByRole('heading', { level: 2, name: 'Matrix Performance ของ DoHome (DH)' })).toBeInTheDocument()
+    expect(requested.some((url) => url.includes('mt_code=DH'))).toBe(true)
+  })
+
   it('uses the compact Import-owned header without rendering the duplicate shell header', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => (
       String(input).includes('/api/dashboards/twd')
