@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Bell, Building2, CalendarClock, FileCog, FileSearch, Globe2, LockKeyhole, SlidersHorizontal } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { FileShareSettingsCard } from './FileShareSettingsCard'
+import { DhPriceMasterPanel } from './DhPriceMasterPanel'
 import { SystemSettingsPage } from './SystemSettingsPage'
 import { TwdSettingsPage } from './TwdSettingsPage'
 import { MODERN_TRADES, type ModernTradeCode } from '../../config/modernTrades'
@@ -185,6 +186,8 @@ export function SettingsPage({ focusCoverageKey = 0 }: { focusCoverageKey?: numb
             <TwdSettingsPage embedded mtCode="GH" mtName="Global House" />
           </>
         )}
+
+        {activeScope === 'DH' && <DhPriceMasterPanel />}
 
         {activeScope === 'TA' && (
           <>

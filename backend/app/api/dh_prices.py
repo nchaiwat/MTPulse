@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import require_data_operator
 from app.database import get_session
-from app.local_time import bangkok_today
+from app.local_time import bangkok_now, bangkok_today
 from app.services.dh_price_master import (
     DhPriceMasterError,
     DhPricePreviewStaleError,
@@ -73,7 +73,11 @@ async def confirm_dh_prices(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except DhPriceMasterError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return asdict(report)
+    return {
+        **asdict(report),
+        "confirmed_by": actor,
+        "confirmed_at": bangkok_now().isoformat(),
+    }
 
 
 @router.get("")

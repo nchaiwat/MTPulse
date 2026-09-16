@@ -1,0 +1,74 @@
+.dh-price-master { box-shadow: 0 3px 12px rgb(31 64 92 / .045); }
+.dh-price-master > header { min-height: 60px; padding: 9px 14px; }
+.dh-price-master > header h3 { margin: 1px 0; font-size: 15px; }
+.dh-price-master > header p { font-size: 9px; }
+.dh-price-master .primary-action,
+.dh-price-master .secondary-action { min-height: 44px; }
+.dh-price-upload { display: grid; grid-template-columns: minmax(280px, 1fr) auto; align-items: end; gap: 12px; padding: 12px 14px; background: #f8fbfc; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.dh-price-file { min-width: 0; display: grid; gap: 5px; }
+.dh-price-file label,
+.dh-price-filters label > span:first-child { color: var(--text-900); font-size: 10px; font-weight: 700; }
+.dh-price-file input { min-height: 44px; width: 100%; padding: 5px 7px; box-sizing: border-box; color: var(--text-900); background: var(--surface); border: 1px solid var(--line); border-radius: 4px; font-size: 11px; }
+.dh-price-file input::file-selector-button { min-height: 28px; margin-right: 9px; padding: 0 10px; color: var(--teal-700); background: white; border: 1px solid var(--teal-600); border-radius: 4px; cursor: pointer; font: inherit; font-weight: 700; }
+.dh-price-file small { color: var(--text-600); font-size: 9px; }
+.dh-price-upload-actions { display: flex; gap: 8px; }
+.dh-price-upload-actions button { white-space: nowrap; }
+.dh-price-message { margin: 10px 14px 0; padding: 9px 11px; color: var(--teal-700); background: var(--teal-100); border: 1px solid var(--teal-200); border-radius: 4px; font-size: 10px; }
+.dh-price-message[data-tone="error"] { color: var(--red-700); background: #fff2f3; border-color: #ebc5ca; }
+.dh-price-preview { display: grid; grid-template-columns: repeat(3, minmax(100px, 150px)) minmax(180px, 1fr); align-items: stretch; gap: 0; margin: 10px 14px 0; border: 1px solid var(--line); border-left: 4px solid var(--primary-500); }
+.dh-price-preview > div { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; padding: 8px 10px; border-right: 1px solid var(--line); }
+.dh-price-preview span { color: var(--text-600); font-size: 9px; }
+.dh-price-preview strong { color: var(--ink-900); font-family: "Cascadia Mono", Consolas, monospace; font-size: 15px; font-variant-numeric: tabular-nums; }
+.dh-price-preview > small { align-self: center; padding: 8px 10px; color: var(--text-600); font-size: 9px; }
+.dh-price-blocking { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 8px; margin: 10px 14px 0; padding: 10px 11px; color: var(--red-700); background: #fff2f3; border: 1px solid #ebc5ca; border-radius: 4px; }
+.dh-price-blocking strong { font-size: 10px; }
+.dh-price-blocking ul { margin: 4px 0 0; padding-left: 18px; color: var(--text-900); font-size: 10px; }
+.dh-price-list-heading { display: flex; align-items: end; justify-content: space-between; gap: 12px; padding: 14px 14px 8px; }
+.dh-price-list-heading h4 { margin: 2px 0 0; color: var(--ink-900); font-size: 13px; }
+.dh-price-list-heading > span { color: var(--text-600); font-family: "Cascadia Mono", Consolas, monospace; font-size: 10px; font-variant-numeric: tabular-nums; }
+.dh-price-filters { display: grid; grid-template-columns: minmax(200px, 320px) minmax(150px, 200px); gap: 10px; padding: 0 14px 10px; }
+.dh-price-filters label { display: grid; gap: 4px; }
+.dh-price-search { min-height: 44px; display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: center; gap: 3px; padding: 0 9px; background: var(--surface); border: 1px solid var(--line); border-radius: 4px; }
+.dh-price-search svg { color: var(--text-600); }
+.dh-price-search input { width: 100%; min-width: 0; height: 42px; padding: 0; color: var(--text-900); background: transparent; border: 0; outline: 0; font-size: 11px; }
+.dh-price-filters select { min-height: 44px; padding: 0 9px; color: var(--text-900); background: var(--surface); border: 1px solid var(--line); border-radius: 4px; font-size: 11px; }
+.dh-price-file input:focus-visible,
+.dh-price-search:focus-within,
+.dh-price-filters select:focus-visible,
+.dh-price-pagination button:focus-visible { outline: 2px solid var(--primary-500); outline-offset: 2px; }
+.dh-price-table-shell { max-width: 100%; overflow-x: auto; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.dh-price-table-shell table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 10px; }
+.dh-price-table-shell th,
+.dh-price-table-shell td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+.dh-price-table-shell thead th { color: var(--text-600); background: #f4f8fa; font-size: 9px; font-weight: 700; white-space: nowrap; }
+.dh-price-table-shell tbody tr:last-child th,
+.dh-price-table-shell tbody tr:last-child td { border-bottom: 0; }
+.dh-price-table-shell tbody th { color: var(--ink-900); font-family: "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
+.dh-price-table-shell td strong,
+.dh-price-table-shell td small { display: block; }
+.dh-price-table-shell td small { margin-top: 2px; color: var(--text-600); font-size: 8px; }
+.dh-price-number { text-align: right !important; font-family: "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
+.dh-price-status { display: inline-flex; align-items: center; min-height: 24px; padding: 0 7px; border: 1px solid var(--line); border-radius: 999px; font-size: 8px; font-weight: 800; white-space: nowrap; }
+.dh-price-status[data-status="current"] { color: var(--teal-700); background: var(--teal-100); border-color: var(--teal-200); }
+.dh-price-status[data-status="upcoming"] { color: var(--amber-700); background: #fff6dc; border-color: #ead79e; }
+.dh-price-status[data-status="expired"] { color: var(--text-600); background: #eef3f5; }
+.dh-price-table-state { height: 76px; color: var(--text-600); text-align: center !important; }
+.dh-price-table-state[data-tone="error"] { color: var(--red-700); }
+.dh-price-pagination { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 14px; }
+.dh-price-pagination > span { color: var(--text-600); font-family: "Cascadia Mono", Consolas, monospace; font-size: 9px; font-variant-numeric: tabular-nums; }
+.dh-price-pagination > div { display: flex; gap: 6px; }
+.dh-price-pagination button { width: 44px; height: 44px; display: grid; place-items: center; color: var(--ink-900); background: var(--surface); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
+.dh-price-pagination button:hover:not(:disabled) { color: white; background: var(--teal-700); border-color: var(--teal-700); }
+.dh-price-pagination button:disabled { color: #9ba7ae; background: #eef2f2; cursor: not-allowed; }
+
+@media (max-width: 760px) {
+  .dh-price-master > header { align-items: start; }
+  .dh-price-master > header .secondary-action { grid-column: 2; justify-self: start; }
+  .dh-price-upload { grid-template-columns: 1fr; }
+  .dh-price-upload-actions { flex-wrap: wrap; }
+  .dh-price-upload-actions button { flex: 1 1 180px; }
+  .dh-price-preview { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .dh-price-preview > div { grid-template-columns: 1fr; gap: 3px; }
+  .dh-price-preview > small { grid-column: 1 / -1; border-top: 1px solid var(--line); }
+  .dh-price-filters { grid-template-columns: 1fr; }
+}

@@ -165,6 +165,8 @@ def test_preview_confirm_and_paginated_list_are_one_audited_workflow(database) -
     assert confirmed.status_code == 200
     assert confirmed.json()["inserted"] == 1
     assert confirmed.json()["updated"] == 1
+    assert confirmed.json()["confirmed_by"] == "data-operator@test"
+    assert confirmed.json()["confirmed_at"].endswith("+07:00")
     with Session(database) as session:
         rows = session.scalars(
             select(DhEffectivePrice).order_by(DhEffectivePrice.source_sku)

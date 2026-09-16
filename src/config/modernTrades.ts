@@ -1,7 +1,7 @@
 export const MODERN_TRADE_CAPABILITIES = ['dashboard', 'performance', 'manualImport', 'folderImport', 'automaticImport', 'correctiveImport', 'mapping', 'skuBackfill', 'shoPro', 'monitoring', 'settings', 'excel'] as const
 
 export type ModernTradeCapability = (typeof MODERN_TRADE_CAPABILITIES)[number]
-export type ModernTradeCode = 'TWD' | 'HP' | 'MH' | 'HH' | 'GH' | 'SCG' | 'TA'
+export type ModernTradeCode = 'TWD' | 'HP' | 'MH' | 'HH' | 'GH' | 'DH' | 'SCG' | 'TA'
 export type ActiveModernTradeCode = 'TWD' | 'HP' | 'MH' | 'HH' | 'GH' | 'TA'
 
 export type ModernTradeDefinition = {
@@ -19,6 +19,8 @@ export type ModernTradeDefinition = {
 const complete = MODERN_TRADE_CAPABILITIES
 const hpMhActive = ['dashboard', 'performance', 'manualImport', 'folderImport', 'automaticImport', 'mapping', 'skuBackfill', 'shoPro', 'monitoring', 'settings', 'excel'] as const satisfies readonly ModernTradeCapability[]
 const hhActive = ['dashboard', 'performance', 'manualImport', 'folderImport', 'automaticImport', 'correctiveImport', 'mapping', 'skuBackfill', 'shoPro', 'monitoring', 'settings', 'excel'] as const satisfies readonly ModernTradeCapability[]
+const dhActive = ['settings'] as const satisfies readonly ModernTradeCapability[]
+const dhPlanned = ['dashboard', 'performance', 'manualImport', 'folderImport', 'automaticImport', 'correctiveImport', 'mapping', 'skuBackfill', 'shoPro', 'monitoring', 'excel'] as const satisfies readonly ModernTradeCapability[]
 
 export const MODERN_TRADES: Readonly<Record<ModernTradeCode, ModernTradeDefinition>> = {
   TWD: {
@@ -75,6 +77,17 @@ export const MODERN_TRADES: Readonly<Record<ModernTradeCode, ModernTradeDefiniti
     inventoryMetrics: ['stockOh', 'stockValue'],
     activeCapabilities: complete,
     plannedCapabilities: [],
+  },
+  DH: {
+    code: 'DH',
+    name: 'DoHome',
+    displayName: 'DoHome (DH)',
+    navigationLabel: 'DoHome',
+    sourceGroupCode: 'DH',
+    sourceOwnerCode: 'DH',
+    inventoryMetrics: ['stockOh', 'stockValue'],
+    activeCapabilities: dhActive,
+    plannedCapabilities: dhPlanned,
   },
   SCG: {
     code: 'SCG',

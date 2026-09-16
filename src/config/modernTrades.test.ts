@@ -3,7 +3,7 @@ import { ACTIVE_MODERN_TRADES, MODERN_TRADE_CAPABILITIES, MODERN_TRADES, activeM
 
 describe('Modern Trade registry', () => {
   it('contains current and future Modern Trades', () => {
-    expect(Object.keys(MODERN_TRADES)).toEqual(['TWD', 'HP', 'MH', 'HH', 'GH', 'SCG', 'TA'])
+    expect(Object.keys(MODERN_TRADES)).toEqual(['TWD', 'HP', 'MH', 'HH', 'GH', 'DH', 'SCG', 'TA'])
     expect(ACTIVE_MODERN_TRADES.map((item) => item.code)).toEqual(['TWD', 'HP', 'MH', 'HH', 'GH', 'TA'])
   })
 
@@ -33,5 +33,13 @@ describe('Modern Trade registry', () => {
     expect(MODERN_TRADES.TA.sourceOwnerCode).toBe('TA')
     expect(MODERN_TRADES.TA.activeCapabilities).toEqual(MODERN_TRADE_CAPABILITIES)
     expect(MODERN_TRADES.TA.plannedCapabilities).toEqual([])
+  })
+
+  it('opens only DH settings for the Price Master phase', () => {
+    expect(MODERN_TRADES.DH.name).toBe('DoHome')
+    expect(MODERN_TRADES.DH.sourceOwnerCode).toBe('DH')
+    expect(MODERN_TRADES.DH.activeCapabilities).toEqual(['settings'])
+    expect(MODERN_TRADES.DH.plannedCapabilities).not.toContain('settings')
+    expect(ACTIVE_MODERN_TRADES.map((item) => item.code)).not.toContain('DH')
   })
 })
