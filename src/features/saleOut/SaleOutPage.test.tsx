@@ -64,7 +64,7 @@ const response = {
 describe('SaleOutPage', () => {
   afterEach(() => vi.restoreAllMocks())
 
-  it('renders the common-cutoff ledger, KPIs, trend, MT summary, and monthly matrix', async () => {
+  it('renders the common-cutoff ledger and an Excel-style comparison heat map', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify(response), { status: 200 }),
     )
@@ -85,14 +85,22 @@ describe('SaleOutPage', () => {
     expect(within(cutoffLedger).getByText('DH')).toBeInTheDocument()
     expect(within(cutoffLedger).getByText('ไม่รวมใน Total')).toBeInTheDocument()
 
-    expect(screen.getByText('112 ล.')).toBeInTheDocument()
+    expect(screen.getAllByText('112 ล.').length).toBeGreaterThan(0)
     expect(screen.getAllByText('+12.0%').length).toBeGreaterThan(0)
-    expect(screen.getByRole('img', { name: /แนวโน้ม Sale Out ปี 2026 เทียบ 2025/ })).toBeInTheDocument()
     expect(screen.getByRole('table', { name: 'สรุป Sale Out ตาม Modern Trade' })).toBeInTheDocument()
-    expect(screen.getByRole('table', { name: 'Monthly Matrix' })).toBeInTheDocument()
+    const heatMap = screen.getByRole('table', { name: 'ตารางเปรียบเทียบ Sale Out แบบ Heat Map' })
+    expect(within(heatMap).getByText('ปี 2025')).toBeInTheDocument()
+    expect(within(heatMap).getByText('ปี 2026')).toBeInTheDocument()
+    expect(within(heatMap).getAllByText('+10.0%').length).toBeGreaterThan(0)
+    expect(within(heatMap).getByRole('cell', { name: /ม.ค. .*เติบโต \+10.0%/ })).not.toHaveAttribute('data-heat-tone', 'unavailable')
+    expect(screen.getByLabelText('คำอธิบายสี Heat Map')).toHaveTextContent('ลดลงมาก')
+    expect(screen.getByLabelText('คำอธิบายสี Heat Map')).toHaveTextContent('ใกล้เคียง')
+    expect(screen.getByLabelText('คำอธิบายสี Heat Map')).toHaveTextContent('เพิ่มขึ้นมาก')
+    expect(within(heatMap).getByText('11.63 ล.')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'สี Heat Map' }))
+    expect(within(heatMap).getByRole('cell', { name: /ม.ค. .*เติบโต \+10.0%/ })).toHaveAttribute('data-heat-enabled', 'false')
     expect(screen.getByRole('table', { name: 'สรุปตามช่วงเวลา' })).toBeInTheDocument()
-    const matrix = screen.getByRole('table', { name: 'Monthly Matrix' })
-    expect(within(matrix).getByRole('row', { name: /DHDoHome ไม่พร้อม/ })).toBeInTheDocument()
+    expect(within(heatMap).getByRole('row', { name: /DHDoHomeไม่พร้อม/ })).toBeInTheDocument()
   })
 
   it('refetches when the metric changes and keeps unavailable distinct from zero', async () => {

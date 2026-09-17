@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CalendarRange, CircleAlert, RefreshCw } from 'lucide-react'
 import { fetchSaleOutReport } from './saleOutApi'
-import { SaleOutTrend } from './SaleOutTrend'
+import { SaleOutComparisonLedger } from './SaleOutComparisonLedger'
 import type { SaleOutBasis, SaleOutFilters, SaleOutMetric, SaleOutModernTrade, SaleOutReport, SaleOutState, SaleOutValue } from './types'
 import './sale-out.css'
 
-const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
 const exact = new Intl.NumberFormat('th-TH', { maximumFractionDigits: 2 })
 
 const stateLabels: Record<SaleOutState, string> = {
@@ -58,12 +57,6 @@ function tone(value: number | null) {
   return value > 0 ? 'is-positive' : 'is-negative'
 }
 
-function emptyValueFor(item: SaleOutModernTrade): SaleOutValue {
-  return item.status === 'unavailable' || item.status === 'excluded' || item.status === 'missing_start_date'
-    ? { state: 'unavailable', value: null }
-    : { state: 'missing', value: null }
-}
-
 function ValueCell({ entry, metric }: { entry: SaleOutValue; metric: SaleOutMetric }) {
   return (
     <span className={`saleout-value state-${entry.state}`}>
@@ -94,6 +87,7 @@ export function SaleOutPage() {
   const [report, setReport] = useState<SaleOutReport | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const [showHeatmap, setShowHeatmap] = useState(true)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -132,7 +126,7 @@ export function SaleOutPage() {
     <div className="saleout-page">
       <header className="saleout-intro">
         <div>
-          <span className="eyebrow">Executive portfolio · ทุก Modern Trade</span>
+          <span className="eyebrow">REPORT SALE OUT · ทุก Modern Trade</span>
           <h1>Sale Out</h1>
           <p>ภาพรวมยอดขายบน Cut-off เดียวกัน พร้อมสถานะความพร้อมของข้อมูลแต่ละ MT</p>
         </div>
@@ -166,6 +160,15 @@ export function SaleOutPage() {
             </div>
           </section>
 
+          <SaleOutComparisonLedger
+            report={report}
+            metric={metric}
+            baseYear={baseYear}
+            comparisonYear={comparisonYear}
+            heatmap={showHeatmap}
+            onToggleHeatmap={() => setShowHeatmap((value) => !value)}
+          />
+
           <section className="saleout-kpi-strip" aria-label="KPI Sale Out">
             <Kpi label={`YTD ${comparisonYear}`} value={formatValue(report.kpis.comparisonYtd, metric, true)} detail={`01/01–${formatDate(report.meta.cutoff)}`} />
             <Kpi label={`YTD ${baseYear}`} value={formatValue(report.kpis.baseYtd, metric, true)} detail="ช่วงวันเดียวกันของปีก่อน" />
@@ -175,11 +178,7 @@ export function SaleOutPage() {
             <Kpi label="Data completeness" value={report.kpis.dataCompletenessPercent === null ? '—' : `${report.kpis.dataCompletenessPercent.toFixed(1)}%`} detail="MT ที่รวมในยอด Total" valueTone={report.kpis.dataCompletenessPercent !== null && report.kpis.dataCompletenessPercent < 100 ? 'is-warning' : 'is-positive'} />
           </section>
 
-          <div className="saleout-analysis-grid">
-            <section className="saleout-panel saleout-trend-panel">
-              <header><div><span className="eyebrow">MONTHLY TREND</span><h2>แนวโน้มรวมรายเดือน</h2></div><div className="saleout-legend"><span><i className="is-comparison" />{comparisonYear}</span><span><i className="is-base" />{baseYear}</span></div></header>
-              <SaleOutTrend rows={report.monthly} metric={metric} baseYear={baseYear} comparisonYear={comparisonYear} />
-            </section>
+          <div className="saleout-analysis-grid saleout-analysis-grid--single">
             <section className="saleout-panel saleout-period-panel">
               <header><div><span className="eyebrow">PERIOD SUMMARY</span><h2>สรุปตามช่วงเวลา</h2></div></header>
               <div className="saleout-table-scroll"><table aria-label="สรุปตามช่วงเวลา"><thead><tr><th>ช่วง</th><th>{baseYear}</th><th>{comparisonYear}</th><th>Growth</th></tr></thead><tbody>{report.periods.map((period) => <tr key={period.code}><th scope="row">{period.code}</th><td><ValueCell entry={period.base} metric={metric} /></td><td><ValueCell entry={period.comparison} metric={metric} /></td><td className={tone(period.growthPercent)}>{formatPercent(period.growthPercent)}</td></tr>)}</tbody></table></div>
@@ -191,10 +190,6 @@ export function SaleOutPage() {
             <div className="saleout-table-scroll"><table className="saleout-summary-table" aria-label="สรุป Sale Out ตาม Modern Trade"><thead><tr><th>MT</th><th>สถานะ</th><th>ข้อมูลล่าสุด</th><th>YTD {baseYear}</th><th>YTD {comparisonYear}</th><th>ผลต่าง</th><th>YTD Growth</th><th>MoM</th><th>YoY</th></tr></thead><tbody>{report.modernTrades.map((item) => <tr key={item.code}><th scope="row"><strong>{item.code}</strong><small>{item.name}</small></th><td><span className={`saleout-status is-${item.status}`}>{statusLabels[item.status] ?? item.status}</span></td><td>{formatDate(item.latestDailyDate)}</td><td><ValueCell entry={item.baseYtd} metric={metric} /></td><td><ValueCell entry={item.comparisonYtd} metric={metric} /></td><td className={tone(item.difference)}>{item.difference === null ? '—' : formatCompact(item.difference, metric)}</td><td className={tone(item.growthPercent)}>{formatPercent(item.growthPercent)}</td><td className={tone(item.momPercent)}>{formatPercent(item.momPercent)}</td><td className={tone(item.yoyPercent)}>{formatPercent(item.yoyPercent)}</td></tr>)}</tbody><tfoot><tr><th scope="row">Total<small>เฉพาะ MT ที่พร้อมรวม</small></th><td colSpan={2}>Cut-off {formatDate(report.meta.cutoff)}</td><td><ValueCell entry={report.kpis.baseYtd} metric={metric} /></td><td><ValueCell entry={report.kpis.comparisonYtd} metric={metric} /></td><td className={tone(report.kpis.difference)}>{formatCompact(report.kpis.difference, metric)}</td><td className={tone(report.kpis.growthPercent)}>{formatPercent(report.kpis.growthPercent)}</td><td className={tone(report.kpis.momPercent)}>{formatPercent(report.kpis.momPercent)}</td><td className={tone(report.kpis.yoyPercent)}>{formatPercent(report.kpis.yoyPercent)}</td></tr></tfoot></table></div>
           </section>
 
-          <section className="saleout-panel saleout-matrix-panel">
-            <header><div><span className="eyebrow">MONTHLY MATRIX</span><h2>Monthly Matrix</h2></div><small>เลื่อนแนวนอนเพื่อดูทั้ง 12 เดือน</small></header>
-            <div className="saleout-table-scroll"><table className="saleout-matrix" aria-label="Monthly Matrix"><thead><tr><th rowSpan={2}>MT</th>{months.map((month) => <th key={month} colSpan={2}>{month}</th>)}</tr><tr>{months.flatMap((month) => [<th key={`${month}-base`}>{baseYear}</th>, <th key={`${month}-comparison`}>{comparisonYear}</th>])}</tr></thead><tbody>{report.modernTrades.map((item) => <tr key={item.code}><th scope="row"><strong>{item.code}</strong><small>{item.name}</small></th>{Array.from({ length: 12 }, (_, index) => item.monthly.find((row) => row.month === index + 1)).flatMap((entry, index) => [<td key={`${item.code}-${index}-base`}><ValueCell entry={entry?.base ?? emptyValueFor(item)} metric={metric} /></td>, <td key={`${item.code}-${index}-comparison`}><ValueCell entry={entry?.comparison ?? emptyValueFor(item)} metric={metric} /></td>])}</tr>)}</tbody><tfoot><tr><th scope="row">Total</th>{Array.from({ length: 12 }, (_, index) => report.monthly.find((row) => row.month === index + 1)).flatMap((entry, index) => [<td key={`total-${index}-base`}><ValueCell entry={entry?.base ?? { state: 'missing', value: null }} metric={metric} /></td>, <td key={`total-${index}-comparison`}><ValueCell entry={entry?.comparison ?? { state: 'missing', value: null }} metric={metric} /></td>])}</tr></tfoot></table></div>
-          </section>
         </>
       )}
     </div>
