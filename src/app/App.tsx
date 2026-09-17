@@ -1,13 +1,14 @@
 import { useState } from 'react'
-import { Activity, BarChart3, ChevronDown, Database, HeartPulse, LayoutDashboard, PanelLeftClose, PanelLeftOpen, Settings } from 'lucide-react'
+import { Activity, BarChart3, ChevronDown, Database, HeartPulse, LayoutDashboard, PanelLeftClose, PanelLeftOpen, Settings, TrendingUp } from 'lucide-react'
 import { ImportPage } from '../features/imports/ImportPage'
 import { TwdDashboardPage } from '../features/dashboard/TwdDashboardPage'
 import { MonitoringPage } from '../features/monitoring/MonitoringPage'
 import { PerformancePage } from '../features/performance/PerformancePage'
 import { SettingsPage } from '../features/settings/SettingsPage'
+import { SaleOutPage } from '../features/saleOut/SaleOutPage'
 import { MODERN_TRADES } from '../config/modernTrades'
 
-type AppPage = 'dashboard' | 'dashboard-hp' | 'dashboard-mh' | 'dashboard-hh' | 'dashboard-gh' | 'dashboard-dh' | 'dashboard-ta' | 'performance' | 'performance-hp' | 'performance-mh' | 'performance-hh' | 'performance-gh' | 'performance-dh' | 'performance-ta' | 'imports' | 'monitoring' | 'settings'
+type AppPage = 'dashboard' | 'dashboard-hp' | 'dashboard-mh' | 'dashboard-hh' | 'dashboard-gh' | 'dashboard-dh' | 'dashboard-ta' | 'performance' | 'performance-hp' | 'performance-mh' | 'performance-hh' | 'performance-gh' | 'performance-dh' | 'performance-ta' | 'sale-out' | 'imports' | 'monitoring' | 'settings'
 
 const pageMeta: Record<AppPage, { eyebrow: string; title: string }> = {
   dashboard: {
@@ -66,6 +67,7 @@ const pageMeta: Record<AppPage, { eyebrow: string; title: string }> = {
     eyebrow: `รายงาน / ${MODERN_TRADES.TA.navigationLabel}`,
     title: `รายงาน ${MODERN_TRADES.TA.navigationLabel}`,
   },
+  'sale-out': { eyebrow: 'ภาพรวมทุก Modern Trade', title: 'Sale Out' },
   imports: { eyebrow: 'สถานะข้อมูล / นำเข้าข้อมูล', title: 'นำเข้าข้อมูล' },
   monitoring: { eyebrow: 'System health', title: 'Monitoring' },
   settings: { eyebrow: 'การตั้งค่า', title: 'การตั้งค่า' },
@@ -74,9 +76,9 @@ const pageMeta: Record<AppPage, { eyebrow: string; title: string }> = {
 export function App() {
   const [page, setPage] = useState<AppPage>('dashboard')
   const [openMenu, setOpenMenu] = useState({
-    dashboard: true,
-    reports: true,
-    data: true,
+    dashboard: false,
+    reports: false,
+    data: false,
   })
   const [navigationCollapsed, setNavigationCollapsed] = useState(false)
   const [correctiveBatchId, setCorrectiveBatchId] = useState<number | null>(null)
@@ -153,6 +155,11 @@ export function App() {
               </div>
             )}
           </section>
+
+          <button className="nav-item nav-main-item" aria-label="Sale Out" title={navigationCollapsed ? 'Sale Out' : undefined} data-active={page === 'sale-out' || undefined} aria-current={page === 'sale-out' ? 'page' : undefined} type="button" onClick={() => setPage('sale-out')}>
+            <TrendingUp size={17} aria-hidden="true" />
+            <span>Sale Out</span>
+          </button>
 
           <section className="nav-group">
             <button
@@ -269,7 +276,7 @@ export function App() {
       </aside>
 
       <main className="app-main" id="main-content">
-        {!page.startsWith('performance') && !page.startsWith('dashboard') && page !== 'imports' && page !== 'monitoring' && page !== 'settings' && (
+        {!page.startsWith('performance') && !page.startsWith('dashboard') && page !== 'sale-out' && page !== 'imports' && page !== 'monitoring' && page !== 'settings' && (
           <header className="top-bar">
             <div>
               <span className="eyebrow">{meta.eyebrow}</span>
@@ -291,6 +298,7 @@ export function App() {
         {page === 'performance-gh' && <PerformancePage mtCode="GH" />}
         {page === 'performance-dh' && <PerformancePage mtCode="DH" />}
         {page === 'performance-ta' && <PerformancePage mtCode="TA" />}
+        {page === 'sale-out' && <SaleOutPage />}
         {page === 'imports' && <ImportPage correctiveBatchId={correctiveBatchId} />}
         {page === 'monitoring' && (
           <MonitoringPage
