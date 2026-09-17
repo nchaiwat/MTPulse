@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SaleOutPage } from './SaleOutPage'
@@ -93,14 +93,47 @@ describe('SaleOutPage', () => {
     expect(within(heatMap).getByText('ปี 2026')).toBeInTheDocument()
     expect(within(heatMap).getAllByText('+10.0%').length).toBeGreaterThan(0)
     expect(within(heatMap).getByRole('cell', { name: /ม.ค. .*เติบโต \+10.0%/ })).not.toHaveAttribute('data-heat-tone', 'unavailable')
-    expect(screen.getByLabelText('คำอธิบายสี Heat Map')).toHaveTextContent('ลดลงมาก')
-    expect(screen.getByLabelText('คำอธิบายสี Heat Map')).toHaveTextContent('ใกล้เคียง')
-    expect(screen.getByLabelText('คำอธิบายสี Heat Map')).toHaveTextContent('เพิ่มขึ้นมาก')
+    expect(screen.getByLabelText('คำอธิบายสี Heat Map')).toHaveTextContent('ต่ำ')
+    expect(screen.getByLabelText('คำอธิบายสี Heat Map')).toHaveTextContent('สูง')
+    expect(screen.getByLabelText('คำอธิบายสี Heat Map')).toHaveTextContent('ลดลง')
     expect(within(heatMap).getByText('11.63 ล.')).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'สี Heat Map' }))
+    const heatmapToggle = screen.getByRole('checkbox', { name: 'Heatmap' })
+    expect(heatmapToggle).toBeChecked()
+    await userEvent.click(heatmapToggle)
     expect(within(heatMap).getByRole('cell', { name: /ม.ค. .*เติบโต \+10.0%/ })).toHaveAttribute('data-heat-enabled', 'false')
     expect(screen.getByRole('table', { name: 'สรุปตามช่วงเวลา' })).toBeInTheDocument()
     expect(within(heatMap).getByRole('row', { name: /DHDoHomeไม่พร้อม/ })).toBeInTheDocument()
+  })
+
+  it('uses the compact report header, dd/mm/yyyy cut-off and synchronized horizontal scrollbars', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(response), { status: 200 }),
+    )
+
+    render(<SaleOutPage />)
+    await screen.findByRole('heading', { level: 1, name: 'Sale Out' })
+
+    const header = screen.getByRole('banner', { name: 'ส่วนหัวรายงาน Sale Out' })
+    expect(header).toHaveClass('saleout-compact-header')
+    expect(within(header).getByText('03/08/2026')).toBeInTheDocument()
+
+    const cutoffInput = screen.getByRole('textbox', { name: 'Historical Cut-off' })
+    expect(cutoffInput).toHaveValue('03/08/2026')
+    expect(cutoffInput).toHaveAttribute('placeholder', 'dd/mm/yyyy')
+
+    const topScroll = screen.getByRole('region', { name: 'เลื่อนตาราง Sale Out แนวนอนด้านบน' })
+    const bottomScroll = document.querySelector<HTMLElement>('.saleout-ledger-scroll')
+    expect(bottomScroll).not.toBeNull()
+
+    topScroll.scrollLeft = 160
+    fireEvent.scroll(topScroll)
+    expect(bottomScroll?.scrollLeft).toBe(160)
+
+    if (bottomScroll) {
+      bottomScroll.scrollLeft = 48
+      fireEvent.scroll(bottomScroll)
+    }
+    expect(topScroll.scrollLeft).toBe(48)
   })
 
   it('refetches when the metric changes and keeps unavailable distinct from zero', async () => {

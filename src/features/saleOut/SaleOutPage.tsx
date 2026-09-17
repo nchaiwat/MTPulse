@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
-import { CalendarRange, CircleAlert, RefreshCw } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { CalendarDays, CalendarRange, CircleAlert, RefreshCw } from 'lucide-react'
+import { formatDisplayDate, parseDisplayDate } from '../../shared/dateFormat'
 import { fetchSaleOutReport } from './saleOutApi'
 import { SaleOutComparisonLedger } from './SaleOutComparisonLedger'
 import type { SaleOutBasis, SaleOutFilters, SaleOutMetric, SaleOutModernTrade, SaleOutReport, SaleOutState, SaleOutValue } from './types'
@@ -26,9 +27,7 @@ const statusLabels: Record<string, string> = {
 }
 
 function formatDate(value: string | null | undefined) {
-  if (!value) return '—'
-  const [year, month, day] = value.split('-')
-  return `${day}/${month}/${year}`
+  return formatDisplayDate(value, '—')
 }
 
 function formatCompact(value: number | null, metric: SaleOutMetric) {
@@ -82,12 +81,15 @@ export function SaleOutPage() {
   const [salesBasis, setSalesBasis] = useState<SaleOutBasis>('gross')
   const [metric, setMetric] = useState<SaleOutMetric>('amount')
   const [cutoff, setCutoff] = useState('')
+  const [cutoffInput, setCutoffInput] = useState('')
+  const [cutoffError, setCutoffError] = useState('')
   const [selectedCodes, setSelectedCodes] = useState<string[] | null>(null)
   const [catalog, setCatalog] = useState<SaleOutModernTrade[]>([])
   const [report, setReport] = useState<SaleOutReport | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
   const [showHeatmap, setShowHeatmap] = useState(true)
+  const cutoffPickerRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -103,6 +105,7 @@ export function SaleOutPage() {
       .then((nextReport) => {
         setReport(nextReport)
         setError(null)
+        setCutoffInput((current) => current || formatDate(nextReport.meta.activeCutoff))
         setCatalog((current) => current.length > 0 ? current : nextReport.modernTrades)
       })
       .catch((reason: unknown) => {
@@ -114,6 +117,21 @@ export function SaleOutPage() {
   const years = useMemo(() => Array.from(new Set([2025, 2026, ...(report?.meta.availableYears ?? [])])).sort(), [report])
   const effectiveCutoff = report?.meta.cutoff ?? cutoff
 
+  const applyCutoff = (value: string) => {
+    const parsed = parseDisplayDate(value)
+    if (!parsed) {
+      setCutoffError('กรุณาระบุวันที่เป็น dd/mm/yyyy')
+      return
+    }
+    if (report?.meta.activeCutoff && parsed > report.meta.activeCutoff) {
+      setCutoffError(`วันที่ต้องไม่เกิน ${formatDate(report.meta.activeCutoff)}`)
+      return
+    }
+    setCutoffError('')
+    setCutoffInput(formatDate(parsed))
+    setCutoff(parsed)
+  }
+
   const toggleModernTrade = (code: string) => {
     const allCodes = catalog.map((item) => item.code)
     const current = selectedCodes ?? allCodes
@@ -124,16 +142,11 @@ export function SaleOutPage() {
 
   return (
     <div className="saleout-page">
-      <header className="saleout-intro">
-        <div>
-          <span className="eyebrow">REPORT SALE OUT · ทุก Modern Trade</span>
-          <h1>Sale Out</h1>
-          <p>ภาพรวมยอดขายบน Cut-off เดียวกัน พร้อมสถานะความพร้อมของข้อมูลแต่ละ MT</p>
-        </div>
-        <div className="saleout-intro-meta" aria-label="ขอบเขตรายงานปัจจุบัน">
-          <span><CalendarRange size={15} aria-hidden="true" />Cut-off</span>
-          <strong>{formatDate(effectiveCutoff)}</strong>
-          <small>{salesBasis === 'gross' ? 'Gross' : 'Net'} · {metric === 'amount' ? 'Amount Ex.VAT' : metric === 'qty' ? 'Qty' : 'Average Price'}</small>
+      <header className="saleout-compact-header" aria-label="ส่วนหัวรายงาน Sale Out">
+        <h1>Sale Out</h1>
+        <div className="saleout-report-context" aria-label="บริบทข้อมูลรายงาน">
+          <div className="data-freshness"><CalendarRange size={17} aria-hidden="true" /><span>Cut-off</span><strong>{formatDate(effectiveCutoff)}</strong></div>
+          <div className="data-grain"><span>มุมมอง</span><strong>{salesBasis === 'gross' ? 'Gross' : 'Net'} · {metric === 'amount' ? 'Amount Ex.VAT' : metric === 'qty' ? 'Qty' : 'Average Price'}</strong></div>
         </div>
       </header>
 
@@ -142,7 +155,14 @@ export function SaleOutPage() {
         <label>ปีเปรียบเทียบ<select aria-label="ปีเปรียบเทียบ" value={comparisonYear} onChange={(event) => setComparisonYear(Number(event.target.value))}>{years.map((year) => <option key={year} value={year} disabled={year === baseYear}>{year}</option>)}</select></label>
         <fieldset><legend>Accounting basis</legend><div className="saleout-segmented"><button type="button" aria-pressed={salesBasis === 'gross'} onClick={() => setSalesBasis('gross')}>Gross</button><button type="button" aria-pressed={salesBasis === 'net'} onClick={() => setSalesBasis('net')}>Net</button></div></fieldset>
         <fieldset><legend>Metric</legend><div className="saleout-segmented"><button type="button" aria-pressed={metric === 'amount'} onClick={() => setMetric('amount')}>Amount Ex.VAT</button><button type="button" aria-pressed={metric === 'qty'} onClick={() => setMetric('qty')}>Qty</button><button type="button" aria-pressed={metric === 'average_price'} onClick={() => setMetric('average_price')}>Average Price</button></div></fieldset>
-        <label>Historical Cut-off<input aria-label="Historical Cut-off" type="date" value={cutoff || report?.meta.activeCutoff || ''} max={report?.meta.activeCutoff ?? undefined} onChange={(event) => setCutoff(event.target.value)} /></label>
+        <label className="saleout-cutoff-field">Historical Cut-off
+          <div className="date-entry">
+            <input aria-label="Historical Cut-off" aria-describedby={cutoffError ? 'saleout-cutoff-error' : undefined} type="text" inputMode="numeric" maxLength={10} placeholder="dd/mm/yyyy" value={cutoffInput} aria-invalid={Boolean(cutoffError)} onChange={(event) => setCutoffInput(event.target.value)} onBlur={(event) => applyCutoff(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') applyCutoff(event.currentTarget.value) }} />
+            <button type="button" aria-label="เปิดปฏิทิน Historical Cut-off" onClick={() => cutoffPickerRef.current?.showPicker()}><CalendarDays size={15} aria-hidden="true" /></button>
+            <input ref={cutoffPickerRef} className="native-date-picker" tabIndex={-1} aria-hidden="true" type="date" value={parseDisplayDate(cutoffInput) ?? ''} max={report?.meta.activeCutoff ?? undefined} onChange={(event) => applyCutoff(formatDate(event.target.value))} />
+          </div>
+          {cutoffError && <small id="saleout-cutoff-error" className="saleout-field-error" role="alert">{cutoffError}</small>}
+        </label>
         <fieldset className="saleout-mt-filter"><legend>Modern Trade</legend><div>{catalog.map((item) => { const checked = selectedCodes === null || selectedCodes.includes(item.code); const lastSelected = selectedCodes !== null && selectedCodes.length === 1 && checked; return <label key={item.code}><input type="checkbox" checked={checked} disabled={lastSelected} onChange={() => toggleModernTrade(item.code)} />{item.code}</label> })}</div></fieldset>
       </section>
 

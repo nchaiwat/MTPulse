@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react'
+import { useLayoutEffect, useRef, type ReactNode } from 'react'
+import { SlidersHorizontal } from 'lucide-react'
 import type { SaleOutMetric, SaleOutModernTrade, SaleOutReport, SaleOutValue } from './types'
 
 const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
@@ -28,11 +29,10 @@ function displayPercent(value: number | null) {
 
 function heatTone(value: number | null) {
   if (value === null) return 'unavailable'
-  if (value <= -10) return 'strong-negative'
-  if (value < -2) return 'negative'
-  if (value < 2) return 'neutral'
-  if (value < 10) return 'positive'
-  return 'strong-positive'
+  if (value < 0) return 'negative'
+  if (value < 2) return 'low'
+  if (value < 10) return 'medium'
+  return 'high'
 }
 
 function intensityTone(value: number | null, values: Array<number | null>) {
@@ -43,11 +43,9 @@ function intensityTone(value: number | null, values: Array<number | null>) {
   const maximum = Math.max(...available)
   if (minimum === maximum) return 'neutral'
   const position = (value - minimum) / (maximum - minimum)
-  if (position <= 0.2) return 'strong-negative'
-  if (position <= 0.4) return 'negative'
-  if (position < 0.6) return 'neutral'
-  if (position < 0.8) return 'positive'
-  return 'strong-positive'
+  if (position < 0.34) return 'low'
+  if (position < 0.67) return 'medium'
+  return 'high'
 }
 
 function unavailableFor(item: SaleOutModernTrade): SaleOutValue {
@@ -152,7 +150,7 @@ function LedgerRow({
         aria-label={`Diff เทียบ Run rate ${runRateDiff === null ? '—' : displayValue({ state: runRateDiff === 0 ? 'zero' : 'value', value: runRateDiff }, metric)}`}
         className="saleout-heat-cell"
         data-heat-enabled={heatmap ? 'true' : 'false'}
-        data-heat-tone={runRateDiff === null ? 'unavailable' : runRateDiff > 0 ? 'strong-positive' : runRateDiff < 0 ? 'strong-negative' : 'neutral'}
+        data-heat-tone={runRateDiff === null ? 'unavailable' : runRateDiff > 0 ? 'high' : runRateDiff < 0 ? 'negative' : 'low'}
       >
         {runRateDiff === null ? '—' : displayValue({ state: runRateDiff === 0 ? 'zero' : 'value', value: runRateDiff }, metric)}
       </td>
@@ -178,6 +176,10 @@ export function SaleOutComparisonLedger({
   heatmap: boolean
   onToggleHeatmap: () => void
 }) {
+  const topScrollRef = useRef<HTMLDivElement>(null)
+  const ledgerScrollRef = useRef<HTMLDivElement>(null)
+  const tableRef = useRef<HTMLTableElement>(null)
+  const topSpacerRef = useRef<HTMLDivElement>(null)
   const totalItem: SaleOutModernTrade = {
     code: 'Total',
     name: 'เฉพาะ MT ที่พร้อมรวม',
@@ -196,6 +198,25 @@ export function SaleOutComparisonLedger({
     monthly: report.monthly,
   }
 
+  useLayoutEffect(() => {
+    const table = tableRef.current
+    const spacer = topSpacerRef.current
+    if (!table || !spacer) return
+
+    const syncWidth = () => {
+      const ledgerScroll = ledgerScrollRef.current
+      const scrollbarWidth = Math.max(0, (ledgerScroll?.offsetWidth ?? 0) - (ledgerScroll?.clientWidth ?? 0))
+      spacer.style.width = `${table.scrollWidth + scrollbarWidth}px`
+    }
+    syncWidth()
+
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(syncWidth)
+    observer.observe(table)
+    if (ledgerScrollRef.current) observer.observe(ledgerScrollRef.current)
+    return () => observer.disconnect()
+  }, [report, metric, baseYear, comparisonYear])
+
   return (
     <section className="saleout-panel saleout-ledger-panel">
       <header>
@@ -205,18 +226,28 @@ export function SaleOutComparisonLedger({
           <small>โครงเดียวกับ Excel: ปีฐาน → ปีเปรียบเทียบ → Run rate และ Growth</small>
         </div>
         <div className="saleout-heatmap-controls">
-          <div className="saleout-heat-legend" aria-label="คำอธิบายสี Heat Map">
-            <span data-heat-tone="strong-negative">ยอดต่ำ / ลดลงมาก</span>
-            <span data-heat-tone="neutral">ค่ากลาง / ใกล้เคียง</span>
-            <span data-heat-tone="strong-positive">ยอดสูง / เพิ่มขึ้นมาก</span>
+          <div className="heat-legend" aria-label="คำอธิบายสี Heat Map">
+            <span>ต่ำ</span><i className="heat-low" /><i className="heat-medium" /><i className="heat-high" /><span>สูง</span><i className="heat-negative" /><span>ลดลง</span>
           </div>
-          <button type="button" aria-pressed={heatmap} onClick={onToggleHeatmap}>
-            สี Heat Map
-          </button>
+          <label className="heatmap-toggle">
+            <input type="checkbox" checked={heatmap} onChange={onToggleHeatmap} />
+            <span className="toggle-track" aria-hidden="true"><span /></span>
+            <span><SlidersHorizontal size={15} aria-hidden="true" />Heatmap</span>
+          </label>
         </div>
       </header>
-      <div className="saleout-ledger-scroll">
-        <table className="saleout-ledger" aria-label="ตารางเปรียบเทียบ Sale Out แบบ Heat Map">
+      <div
+        className="matrix-top-scroll saleout-ledger-top-scroll"
+        ref={topScrollRef}
+        role="region"
+        aria-label="เลื่อนตาราง Sale Out แนวนอนด้านบน"
+        tabIndex={0}
+        onScroll={(event) => { if (ledgerScrollRef.current) ledgerScrollRef.current.scrollLeft = event.currentTarget.scrollLeft }}
+      >
+        <div className="matrix-top-scroll-spacer" ref={topSpacerRef} />
+      </div>
+      <div className="saleout-ledger-scroll" ref={ledgerScrollRef} onScroll={(event) => { if (topScrollRef.current) topScrollRef.current.scrollLeft = event.currentTarget.scrollLeft }}>
+        <table ref={tableRef} className="saleout-ledger" aria-label="ตารางเปรียบเทียบ Sale Out แบบ Heat Map">
           <thead>
             <tr>
               <th rowSpan={2}>MT</th>

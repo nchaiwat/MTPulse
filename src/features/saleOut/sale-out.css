@@ -1,8 +1,37 @@
 .saleout-page {
   display: grid;
-  gap: var(--space-3);
+  gap: 8px;
   min-width: 0;
-  padding: 18px 20px 28px;
+  padding: 10px 20px 28px;
+}
+
+.saleout-compact-header {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.saleout-compact-header h1 {
+  margin: 0;
+  color: var(--ink-900);
+  font-size: var(--type-page-title-size);
+  font-weight: var(--weight-bold);
+  line-height: var(--type-page-title-line);
+  letter-spacing: -0.025em;
+}
+
+.saleout-report-context {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.saleout-report-context .data-freshness,
+.saleout-report-context .data-grain {
+  min-height: 34px;
+  padding-left: 10px;
 }
 
 .saleout-ledger-panel {
@@ -25,76 +54,33 @@
   gap: var(--space-2);
 }
 
-.saleout-heatmap-controls button {
-  min-height: 34px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-control);
-  background: var(--surface);
-  color: var(--text-700);
-  padding: 0 11px;
-  font-size: var(--type-control-size);
-  font-weight: var(--weight-bold);
-  cursor: pointer;
-}
-
-.saleout-heatmap-controls button[aria-pressed="true"] {
-  border-color: var(--primary-500);
-  background: var(--primary-50);
-  color: var(--ink-900);
-}
-
-.saleout-heat-legend {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--text-600);
-  font-size: var(--type-label-size);
-}
-
-.saleout-heat-legend span {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  white-space: nowrap;
-}
-
-.saleout-heat-legend span::before {
-  width: 12px;
-  height: 12px;
-  border: 1px solid rgb(16 42 67 / 12%);
-  border-radius: 2px;
-  content: '';
-}
-
-.saleout-heat-legend [data-heat-tone="strong-negative"]::before,
-.saleout-heat-cell[data-heat-enabled="true"][data-heat-tone="strong-negative"] {
-  background: #f8c8cd;
-}
-
 .saleout-heat-cell[data-heat-enabled="true"][data-heat-tone="negative"] {
-  background: #fde7e9;
+  background: var(--red-100);
 }
 
-.saleout-heat-legend [data-heat-tone="neutral"]::before,
+.saleout-heat-cell[data-heat-enabled="true"][data-heat-tone="low"] {
+  background: #eaf8ff;
+}
+
+.saleout-heat-cell[data-heat-enabled="true"][data-heat-tone="medium"],
 .saleout-heat-cell[data-heat-enabled="true"][data-heat-tone="neutral"] {
-  background: #fff4bf;
+  background: #c7ecff;
 }
 
-.saleout-heat-cell[data-heat-enabled="true"][data-heat-tone="positive"] {
-  background: #dff4fb;
+.saleout-heat-cell[data-heat-enabled="true"][data-heat-tone="high"] {
+  background: #82d4ff;
 }
 
-.saleout-heat-legend [data-heat-tone="strong-positive"]::before,
-.saleout-heat-cell[data-heat-enabled="true"][data-heat-tone="strong-positive"] {
-  background: #b9e8f8;
+.saleout-ledger-top-scroll {
+  border-top: 1px solid var(--line);
 }
 
 .saleout-ledger-scroll {
   max-width: 100%;
   max-height: 560px;
   overflow: auto;
+  scrollbar-gutter: stable;
   overscroll-behavior: contain;
-  border-top: 1px solid var(--line);
 }
 
 .saleout-ledger {
@@ -328,6 +314,8 @@
 }
 
 .saleout-toolbar legend { margin-bottom: 4px; padding: 0; }
+.saleout-cutoff-field { width: 142px; }
+.saleout-field-error { color: var(--red-700); font-size: 9px; font-weight: var(--weight-medium); }
 .saleout-toolbar select,
 .saleout-toolbar input[type="date"] {
   height: var(--control-height-compact);
@@ -510,11 +498,6 @@
   background: var(--ink-900);
 }
 
-.saleout-heatmap-controls button:focus-visible {
-  outline: 3px solid var(--primary-500);
-  outline-offset: 2px;
-}
-
 @media (max-width: 1200px) {
   .saleout-toolbar { flex-wrap: wrap; }
   .saleout-mt-filter { flex-basis: 100%; }
@@ -537,18 +520,18 @@
   .saleout-kpi:nth-child(3) { border-right: 1px solid var(--line); }
   .saleout-kpi:nth-child(-n + 4) { border-bottom: 1px solid var(--line); }
   .saleout-toolbar select,
-  .saleout-toolbar input[type="date"],
+  .saleout-toolbar .date-entry > input[type="text"],
   .saleout-segmented { min-height: 44px; }
   .saleout-segmented button { min-height: 44px; }
   .saleout-mt-filter > div { min-height: 44px; }
   .saleout-ledger-panel > header { align-items: flex-start; flex-direction: column; }
   .saleout-heatmap-controls { width: 100%; justify-content: space-between; }
-  .saleout-heatmap-controls button { min-height: 44px; }
+  .saleout-heatmap-controls .heatmap-toggle { min-height: 44px; }
 }
 
 @media (max-width: 480px) {
-  .saleout-intro { display: grid; }
-  .saleout-intro-meta { align-items: flex-start; border-right: 0; border-left: 3px solid var(--primary-500); padding-right: 0; padding-left: var(--space-2); }
+  .saleout-compact-header { align-items: flex-start; }
+  .saleout-report-context { align-items: flex-end; flex-direction: column; gap: 4px; }
   .saleout-toolbar > label,
   .saleout-toolbar fieldset:not(.saleout-mt-filter) { flex: 1 1 140px; }
   .saleout-segmented { width: 100%; }
@@ -560,7 +543,7 @@
   .saleout-kpi:nth-child(3) { border-right: 0; }
   .saleout-kpi:nth-child(5) { border-bottom: 1px solid var(--line); }
   .saleout-heatmap-controls { align-items: flex-start; flex-direction: column; }
-  .saleout-heat-legend { flex-wrap: wrap; }
+  .saleout-heatmap-controls .heat-legend { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
