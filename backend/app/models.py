@@ -51,6 +51,10 @@ class ModernTrade(Base):
     schedule_time: Mapped[time | None] = mapped_column()
     source_group_code: Mapped[str | None] = mapped_column(String(30), index=True)
     branch_prefix: Mapped[str | None] = mapped_column(String(10))
+    sale_out_start_date: Mapped[date | None] = mapped_column(Date)
+    sale_out_include_in_total: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
 
 
 class ImportBatch(Base):

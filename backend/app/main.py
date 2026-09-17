@@ -13,6 +13,7 @@ from app.api.item_mappings import router as item_mappings_router
 from app.api.manual_uploads import router as manual_uploads_router
 from app.api.monitoring import router as monitoring_router
 from app.api.performance import router as performance_router
+from app.api.sale_out_settings import router as sale_out_settings_router
 from app.api.sku_analysis_flags import router as sku_analysis_flags_router
 from app.api.sku_interests import router as sku_interests_router
 from app.api.system_settings import router as system_settings_router
@@ -35,6 +36,7 @@ app.include_router(dh_prices_router)
 app.include_router(automatic_imports_router)
 app.include_router(dashboards_router)
 app.include_router(performance_router)
+app.include_router(sale_out_settings_router)
 app.include_router(item_mappings_router)
 app.include_router(imports_router)
 app.include_router(manual_uploads_router)
