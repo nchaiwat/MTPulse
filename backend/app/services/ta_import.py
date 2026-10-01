@@ -41,8 +41,6 @@ def ensure_ta_trade(session: Session) -> ModernTrade:
     else:
         modern_trade.name = "Thai-Aust"
         modern_trade.vat_mode = "include"
-        modern_trade.show_unmatched_items = False
-        modern_trade.show_unmatched_branches = False
         modern_trade.source_group_code = "TA"
         modern_trade.source_subfolder = modern_trade.source_subfolder or "TA"
         modern_trade.branch_prefix = "GH"

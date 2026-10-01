@@ -46,8 +46,6 @@ def ensure_dh_trade(session: Session) -> ModernTrade:
     else:
         modern_trade.name = "DoHome"
         modern_trade.vat_mode = "exclude"
-        modern_trade.show_unmatched_items = True
-        modern_trade.show_unmatched_branches = True
         modern_trade.source_group_code = "DH"
     return modern_trade
 
