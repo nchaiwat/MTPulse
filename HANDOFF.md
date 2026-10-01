@@ -1,5 +1,81 @@
 # MTPulse — Handoff ก่อน Restart
 
+## HH swapped Stock/Sale validation and data correction — 1 October 2026
+
+- User explicitly authorized the code fix, deployment and correction on wa-mtpulse.
+- Branch: `codex/hh-file-validation`; deployed application commit:
+  `7f4c6013553a8aedab1a971e1c47d464ce070c2b`.
+- Isolated worktree: `D:\Python\MTPulse\.tmp\hh-file-validation`, based on the
+  previously deployed `f888b870171f7069e6242a470212779d70fc5625` to preserve Sale Out.
+- Changed code: `backend/app/importers/hh.py` checks all five branch metric header
+  pairs and the total pair: Stock requires `คงเหลือ/มูลค่า`, Sales requires
+  `จน.ขาย/ยอดขาย`. Wrong/renamed/mixed workbook kinds are rejected before import.
+- Changed tests: `backend/tests/test_hh.py` and
+  `backend/tests/test_manual_folder_import.py`. Existing fixtures now use actual
+  HH metric labels. No UI, other-MT parser, formula or schema changes.
+
+### Evidence and correction
+
+- HH batch 1757 / data date 2025-04-24 was manually replaced at 14:34 Bangkok
+  with SaleReport as Stock and StockReport as Sales. The swapped source pair
+  exactly reproduced its business fingerprint and report total 5,135,567.05 / 1,932.
+- Correct source pair under HomeHub/2025-04-25 has Sales 22,342.05 / 11 and
+  Stock Value 5,320,406.39 / Stock OH 2,107. NAS originals were only read.
+- Corrected batch 1757 atomically using `import_hh_pair`, guarded by the reviewed
+  old/new fingerprints; rebuilt daily/monthly summaries and preserved both HH
+  unmatched-visibility settings as false. Other batch metadata/totals fingerprint
+  was identical before/after. No bulk backfill or other-day correction was run.
+- Audit event 2390, `batch_replaced`, actor
+  `codex:user-authorized-hh-swap-correction-2026-10-01`, records before/after and
+  source checksums. Commit time 15:26:17 Bangkok.
+- New business fingerprint:
+  `c1772383436c789244c8442f4f950c02addff2eaf4e3a290165f3ba4d5296e1d`.
+- Source Stock SHA-256:
+  `eabc9717af9a76cb271c2bd2e6152ab0af724c763cf2fd5989427f8d092ba00a`.
+- Source Sale SHA-256:
+  `3d005bc3d8b24d7f6cf17bca2abece8d3aad6dbe1905f3b5c6da7d4c93dedb00`.
+
+### Verification and deployment
+
+- Red phase: 11 new regressions failed. Fixed focused suite: 25 passed.
+- Full backend: 260 passed, 2 skipped locally and in a disposable container using
+  the deployed image and fixture databases (no production credentials).
+- Full frontend: 128 passed with `--maxWorkers=2`; initial default parallel run
+  had 3 timing-only failures. No timeout relaxation or frontend changes.
+- ESLint, production build, focused Ruff and `git diff --check` passed.
+- Full Ruff still reports the two pre-existing errors in migration
+  `a7d4c2e91f30_add_manual_import_settings.py`; left untouched.
+- Paused idle worker, backed up DB, rebuilt API/worker, recreated API, corrected
+  data, then recreated/resumed worker. Web and DB containers were not rebuilt.
+- No new migration; Alembic remains `7b8293a4b5c6`.
+- Live wrong-pair preview HTTP 400 and confirm HTTP 409. Corrected HH Date and
+  Branch API totals, daily/monthly summaries: 22,342.05 / 11.
+- HH Excel Report column H numeric detail sums to 22,342.05; H4 contains
+  `=SUM(H6:H78)`. Excel SUM cells are formulas without cached results.
+- All seven dashboard endpoints and Sale Out return 200; global cutoff remains
+  2026-08-03. No active import runs after correction. API/Web/DB healthy, worker up.
+- Visual browser check remains unavailable due local Windows sandbox failure.
+  UAT: reload HH Report, Sales / Net Sales / Amount / Date 24/04/2025; verify
+  22,342.05 and Qty 11. Swapped files should show a header/type error on Preview.
+
+### Backup, rollback and workspace
+
+- Backup: `/opt/mtpulse/backups/before-hh-swap-fix-20261001.dump`, 213,328,396 bytes;
+  `pg_restore --list` verified. SHA-256:
+  `d9e6669a88b4e2ab1bc41728bb9ac4f18179ad4f3398946d7d6fc0f7a7dd391a`.
+- Application rollback point: `f888b870171f7069e6242a470212779d70fc5625`.
+  Git rollback does not reverse the corrected data. Do not restore the full dump
+  or undo the correction without separate authorization and checking newer data.
+- Runtime image rebuild resolves dependencies from existing pyproject ranges;
+  full backend regression was also run in the resulting image.
+- Existing dirty PRD/HANDOFF/implementation_plan and pre-existing temp files in
+  the primary checkout were not touched. This worktree has untracked
+  `.pytest-hh-red/`, `.pytest-hh-focused/`, `.pytest-hh-full/` diagnostic outputs.
+- One-off repair helper is outside the tracked worktree at
+  `D:\Python\MTPulse\.tmp\hh-repair-20251024.py` (filename is historical; target
+  is explicitly 2025-04-24). It defaults to dry-run and refuses reapplication once
+  the old fingerprint no longer matches. No source workbooks were committed.
+
 อัปเดตล่าสุด: 30 สิงหาคม 2026 (Asia/Bangkok)
 
 เอกสารนี้เป็นจุดเริ่มต้นสำหรับการทำงานต่อหลัง Restart เครื่อง ให้เปิดอ่านไฟล์นี้ก่อน แล้วจึงอ่าน `PROJECT_CONTEXT.md`, `PRD.md` และ `implementation_plan.md` เมื่อต้องการรายละเอียดเพิ่ม
