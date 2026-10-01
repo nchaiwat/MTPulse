@@ -685,3 +685,19 @@ Migration:
 - Verification: Backend full 115 tests + Ruff ผ่าน; focused performance/export 21 tests ผ่าน; Frontend 70 tests + ESLint + production build ผ่าน; `git diff --check` ผ่าน
 - Rebuild เฉพาะ Local API แล้วเพื่อ benchmark; ยังไม่ได้ Push หรือ Deploy ไป WA-MTPULSE-TEST
 - Browser visual/profiler smoke ยังทำไม่ได้เพราะ browser-control runtime บน Windows ติด `helper_unknown_error`; API behavior และ automated UI regression ผ่านครบ
+# 2026-10-01 — Performance KPI follows Sales / Inventory mode
+
+- User authorized the shared KPI correction across all seven active MTs and continuation on wa-mtpulse.
+- Branch: `codex/inventory-kpi`; application commit: `581eca17a24065ef9c0a42a05965e71704d3376c`. Worktree reused: `.tmp/hh-file-validation`, branched from prior HH fix/handoff `93cca50`.
+- Changed files: `backend/app/api/performance.py`, `backend/tests/test_performance.py`, `src/features/performance/PerformancePage.tsx`, `PerformancePage.test.tsx`, and `types.ts` in that feature directory.
+- Inventory KPI now uses additive API field `inventorySnapshot`: latest imported date inside selected ranges, same mapping/SKU/branch/status filters, summed across all matching rows before pagination. Existing matrix totals, inventorySummary, turnover and Sales calculations are unchanged.
+- KPI metrics follow registry intersected with API capabilities: TWD OH/order; HP/MH/HH/GH/TA OH/source value; DH OH only. Snapshot date is in helper text and hover title (existing compact desktop CSS hides helper text).
+- Regression: backend 281 passed / 2 skipped locally and in the built Linux API image against disposable test databases. Frontend 135 passed with `--maxWorkers=2`; lint, production build, focused backend Ruff and diff check passed. Full backend Ruff still has the two pre-existing errors in `a7d4c2e91f30_add_manual_import_settings.py`; not edited.
+- Deployment: API and Web rebuilt/deployed from clean application commit 581eca1; worker code/image unchanged and compatible. No migration added, Alembic remains `7b8293a4b5c6`; no data correction/import in this task.
+- Existing backup verified: `/opt/mtpulse/backups/before-hh-swap-fix-20261001.dump`, 213328396 bytes, SHA256 `d9e6669a88b4e2ab1bc41728bb9ac4f18179ad4f3398946d7d6fc0f7a7dd391a`. It predates the previous HH data correction; application rollback does not require restoring this database backup.
+- Live smoke: all seven MT Inventory APIs return identical snapshot values for latest-only versus month-to-date Date queries. HH 2025-04-24 day/day_total/month, page_size=1: OH 1932, source value 5135567.05; Sales amount 22342.05 / qty 11. HTTP 200 Web bundle contains inventorySnapshot handling.
+- Repeat on staging: switch Sales/Inventory on each MT; compare a multi-date Inventory range against its last date; set SKU/branch filters and change pages. Check DH omits unsupported value/order cards and Sales Net/Gross retains its original cards.
+- Limitation: browser visual verification at 375/768/1024/1440 could not run because CUA kernel exits with Windows sandbox helper_unknown_error. No CSS or matrix layout edits. New empty/missing snapshot renders zero from API or em dash while unavailable.
+- Rollback: checkout `7f4c6013553a8aedab1a971e1c47d464ce070c2b`, rebuild/recreate API and Web only. No database rollback needed.
+- Untouched/untracked: previous `.pytest-hh-focused/`, `.pytest-hh-full/`, `.pytest-hh-red/`; new `backend/.pytest-kpi-full/` test artifact excluded. Primary checkout's pre-existing documentation edits and temporary directories were not touched. Server retains untracked `backups/`.
+
