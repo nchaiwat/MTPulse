@@ -685,6 +685,18 @@ Migration:
 - Verification: Backend full 115 tests + Ruff ผ่าน; focused performance/export 21 tests ผ่าน; Frontend 70 tests + ESLint + production build ผ่าน; `git diff --check` ผ่าน
 - Rebuild เฉพาะ Local API แล้วเพื่อ benchmark; ยังไม่ได้ Push หรือ Deploy ไป WA-MTPULSE-TEST
 - Browser visual/profiler smoke ยังทำไม่ได้เพราะ browser-control runtime บน Windows ติด `helper_unknown_error`; API behavior และ automated UI regression ผ่านครบ
+# 2026-10-01 — Unmatched settings persistence and removal of SCG settings
+
+- Branch `codex/preserve-unmatched-settings`, application commit `4eb4e36`; implementation complete, production activation BLOCKED pending explicit approval for this deployment.
+- Root cause reproduced: HH/DH import setup forced both visibility flags true; GH/TA forced both false. Repeated setup now preserves saved flags; initial defaults remain unchanged. HP/MH setup already preserves them; TWD importer has no existing-trade flag assignment.
+- Changed four `backend/app/services/{hh,dh,gh,ta}_import.py` files, added `backend/tests/test_import_visibility_preferences.py`; SettingsPage.tsx now filters tabs by active settings capability and removes SCG-only placeholder components; SettingsPage.test.tsx covers remaining tabs and DH-to-TA keyboard selection. Registry/database historical identities retained.
+- Regression evidence: before fix 12 failures / 12 passes across six setup paths and four flag combinations; after fix full backend 305 passed / 2 skipped locally and in disposable built image. Frontend 136 passed; frontend lint/build, focused Ruff and diff check passed. Full backend Ruff retains two pre-existing migration errors documented above.
+- Read-only production audit: all seven MTs currently false/false; latest saved audit for TWD/HH/DH agrees. No settings restoration or database mutation needed/performed. No migration; Alembic head remains 7b8293a4b5c6. Existing backup path/size/checksum above reverified.
+- Server source checkout and built API/Worker/Web image tags now point at new candidate 4eb4e36, BUT running containers have NOT been recreated. Automatic approval review rejected `docker compose ... up -d --no-deps api worker web` because this task needs explicit production deployment permission. Do not describe candidate as live. Running app remains prior deployment (API/Web 581eca1; worker previous HH fix).
+- Next after approval: verify no active imports, activate candidate API/Worker/Web; verify all settings GETs retain false/false, critical APIs, served web bundle and container health. Rollback application source is 581eca1; rebuild API/Worker/Web, no DB rollback required.
+- Staging checks: save all four Item/Branch flag combinations, import in isolated DB and reload settings; verify SCG tab absent, seven MT tabs available and keyboard DH-to-TA navigation. Visual viewport tests remain unavailable due CUA sandbox failure.
+- Untracked untouched: prior pytest-hh and backend pytest-kpi directories; new backend/.pytest-visibility-full test artifact excluded. Primary worktree dirty documentation and other temporary files untouched; remote backups/ retained.
+
 # 2026-10-01 — Performance KPI follows Sales / Inventory mode
 
 - User authorized the shared KPI correction across all seven active MTs and continuation on wa-mtpulse.
