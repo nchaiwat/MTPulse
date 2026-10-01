@@ -700,4 +700,3 @@ Migration:
 - Limitation: browser visual verification at 375/768/1024/1440 could not run because CUA kernel exits with Windows sandbox helper_unknown_error. No CSS or matrix layout edits. New empty/missing snapshot renders zero from API or em dash while unavailable.
 - Rollback: checkout `7f4c6013553a8aedab1a971e1c47d464ce070c2b`, rebuild/recreate API and Web only. No database rollback needed.
 - Untouched/untracked: previous `.pytest-hh-focused/`, `.pytest-hh-full/`, `.pytest-hh-red/`; new `backend/.pytest-kpi-full/` test artifact excluded. Primary checkout's pre-existing documentation edits and temporary directories were not touched. Server retains untracked `backups/`.
-
