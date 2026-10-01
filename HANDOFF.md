@@ -687,6 +687,14 @@ Migration:
 - Browser visual/profiler smoke ยังทำไม่ได้เพราะ browser-control runtime บน Windows ติด `helper_unknown_error`; API behavior และ automated UI regression ผ่านครบ
 # 2026-10-01 — Unmatched settings persistence and removal of SCG settings
 
+## Deployment completed after explicit user approval
+
+- User explicitly approved production activation. Deployed application commit `4eb4e36dbdf88a1ff8ec4e6f4e3cdd906cb5dae3` via recreate of API, Worker and Web; this supersedes the pending/blocked deployment notes below.
+- Preflight found no active imports and all seven MT visibility settings false/false. Post-deploy settings GET and Inventory performance GET returned HTTP 200 for all seven, with settings still false/false. HH 2025-04-24 Sales remains 22342.05 / 11.
+- API/Web/DB healthy; Worker running and all four modified importer file SHA256 values match deployed source. Alembic remains 7b8293a4b5c6; no data mutation/import/migration performed.
+- Served bundle `/assets/index-B1a6eZ-Y.js` contains the active-settings capability filter and no SCG placeholder panel. Initial literal-string smoke assertion expected double quotes, but minifier emits backticks; inspected actual bundle to resolve this verification mismatch. Browser visual check remains unavailable as previously documented.
+- Tests, changed-file inventory, untouched files and rollback commit 581eca1 remain as documented below.
+
 - Branch `codex/preserve-unmatched-settings`, application commit `4eb4e36`; implementation complete, production activation BLOCKED pending explicit approval for this deployment.
 - Root cause reproduced: HH/DH import setup forced both visibility flags true; GH/TA forced both false. Repeated setup now preserves saved flags; initial defaults remain unchanged. HP/MH setup already preserves them; TWD importer has no existing-trade flag assignment.
 - Changed four `backend/app/services/{hh,dh,gh,ta}_import.py` files, added `backend/tests/test_import_visibility_preferences.py`; SettingsPage.tsx now filters tabs by active settings capability and removes SCG-only placeholder components; SettingsPage.test.tsx covers remaining tabs and DH-to-TA keyboard selection. Registry/database historical identities retained.
