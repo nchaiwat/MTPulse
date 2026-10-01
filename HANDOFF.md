@@ -689,6 +689,12 @@ Migration:
 
 ## 2026-10-01 — Sale Out partial-data option (candidate, not deployed)
 
+### Deployment completed after user instruction to deploy
+
+- Supersedes pending/candidate status below: deployed API/Web from application commit `95b56ac` after explicit user approval. Worker remains compatible and was not restarted. Preflight found no active imports; backup size/checksum reverified, Alembic unchanged at `7b8293a4b5c6`.
+- Built Linux API image passed full regression: 334 passed / 2 skipped. Live seven-MT Sale Out strict and available calls passed in 1.00 / 1.01 seconds. GH Mar 2025 strict is incomplete/null; available is 2734747.60 with 25/31 days, Qty 870; Growth null. Omitted option defaults to complete. All seven saved unmatched visibility settings remain false/false.
+- Web HTTP 200 serves `/assets/index-BB02lEO3.js` containing both options and local preference storage. No migration, data correction or import. Browser visual verification remains unverified as documented below. Rollback application is `4eb4e36`, rebuild/recreate API and Web only.
+
 - User accepted two modes: default complete-only and available-data with day coverage; persist selection locally. Implemented on `codex/sale-out-partial-option`, application commit `95b56ac`. Production remains `4eb4e36`; deployment permission for this feature is pending.
 - API accepts `completeness=complete|available`; default remains strict. Partial values retain incomplete state and carry coveredDays/expectedDays/coverageUnit. Total includes available contributions, with aggregate coverage explicitly labelled MT-days; fully missing ranges remain missing rather than zero. Growth, differences and derived Run rate are suppressed for incomplete operands. Unacknowledged reconciliation warnings and non-daily sales remain excluded from valid days.
 - Sale Out now applies current effective Item/Branch mapping and visibility preferences like Matrix, excluding inactive mapped items. Monthly summaries remain the fast path for complete full months; mapped-branch daily summaries serve partial periods, with raw daily facts only for MTs allowing unmatched branches. Mapping membership uses independent MT/SKU and MT/branch sets to avoid per-row correlated date queries.
