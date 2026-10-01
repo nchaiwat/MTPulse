@@ -62,7 +62,28 @@ const response = {
 }
 
 describe('SaleOutPage', () => {
-  afterEach(() => vi.restoreAllMocks())
+  afterEach(() => { vi.restoreAllMocks(); localStorage.removeItem('mtpulse.sale-out.completeness') })
+
+  it('defaults to complete data and remembers the available-data option with coverage', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      const partial = String(url).includes('completeness=available')
+      const next = structuredClone(response)
+      Object.assign(next.modernTrades[0].monthly[0].base, partial
+        ? { state: 'incomplete', value: 2734747.60, coveredDays: 25, expectedDays: 31 }
+        : { state: 'incomplete', value: null })
+      return new Response(JSON.stringify(next))
+    })
+    const user = userEvent.setup()
+    const view = render(<SaleOutPage />)
+    const option = screen.getByRole('combobox', { name: 'การแสดงข้อมูลไม่ครบ' })
+    expect(option).toHaveValue('complete')
+    await user.selectOptions(option, 'available')
+    expect(await screen.findByText('ข้อมูล 25/31 วัน')).toBeInTheDocument()
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('completeness=available'))).toBe(true)
+    view.unmount()
+    render(<SaleOutPage />)
+    expect(screen.getByRole('combobox', { name: 'การแสดงข้อมูลไม่ครบ' })).toHaveValue('available')
+  })
 
   it('renders the common-cutoff ledger and an Excel-style comparison heat map', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(

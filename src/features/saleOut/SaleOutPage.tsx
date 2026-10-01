@@ -3,6 +3,7 @@ import { CalendarDays, CalendarRange, CircleAlert, RefreshCw } from 'lucide-reac
 import { formatDisplayDate, parseDisplayDate } from '../../shared/dateFormat'
 import { fetchSaleOutReport } from './saleOutApi'
 import { SaleOutComparisonLedger } from './SaleOutComparisonLedger'
+import { coverageLabel } from './coverageLabel'
 import type { SaleOutBasis, SaleOutFilters, SaleOutMetric, SaleOutModernTrade, SaleOutReport, SaleOutState, SaleOutValue } from './types'
 import './sale-out.css'
 
@@ -60,7 +61,7 @@ function ValueCell({ entry, metric }: { entry: SaleOutValue; metric: SaleOutMetr
   return (
     <span className={`saleout-value state-${entry.state}`}>
       {formatValue(entry, metric)}
-      {entry.state === 'incomplete' && entry.value !== null && <small>ข้อมูลไม่ครบ</small>}
+      {entry.state === 'incomplete' && entry.value !== null && <small>{coverageLabel(entry)}</small>}
     </span>
   )
 }
@@ -80,6 +81,13 @@ export function SaleOutPage() {
   const [comparisonYear, setComparisonYear] = useState(2026)
   const [salesBasis, setSalesBasis] = useState<SaleOutBasis>('gross')
   const [metric, setMetric] = useState<SaleOutMetric>('amount')
+  const [completeness, setCompleteness] = useState<'complete' | 'available'>(() => {
+    try { return localStorage.getItem('mtpulse.sale-out.completeness') === 'available' ? 'available' : 'complete' }
+    catch { return 'complete' }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('mtpulse.sale-out.completeness', completeness) } catch { /* Storage may be disabled. */ }
+  }, [completeness])
   const [cutoff, setCutoff] = useState('')
   const [cutoffInput, setCutoffInput] = useState('')
   const [cutoffError, setCutoffError] = useState('')
@@ -98,6 +106,7 @@ export function SaleOutPage() {
       comparisonYear,
       salesBasis,
       metric,
+      completeness,
       ...(cutoff ? { cutoff } : {}),
       ...(selectedCodes ? { mtCodes: selectedCodes } : {}),
     }
@@ -112,7 +121,7 @@ export function SaleOutPage() {
         if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : 'ไม่สามารถโหลดรายงาน Sale Out ได้')
       })
     return () => controller.abort()
-  }, [baseYear, comparisonYear, salesBasis, metric, cutoff, selectedCodes, reloadKey])
+  }, [baseYear, comparisonYear, salesBasis, metric, cutoff, selectedCodes, reloadKey, completeness])
 
   const years = useMemo(() => Array.from(new Set([2025, 2026, ...(report?.meta.availableYears ?? [])])).sort(), [report])
   const effectiveCutoff = report?.meta.cutoff ?? cutoff
@@ -151,6 +160,7 @@ export function SaleOutPage() {
       </header>
 
       <section className="saleout-toolbar" aria-label="ตัวกรอง Sale Out">
+        <label>การแสดงข้อมูลไม่ครบ<select aria-label="การแสดงข้อมูลไม่ครบ" value={completeness} onChange={(event) => setCompleteness(event.target.value as 'complete' | 'available')}><option value="complete">เฉพาะข้อมูลครบ</option><option value="available">แสดงเท่าที่มี</option></select></label>
         <label>ปีฐาน<select aria-label="ปีฐาน" value={baseYear} onChange={(event) => setBaseYear(Number(event.target.value))}>{years.map((year) => <option key={year} value={year} disabled={year === comparisonYear}>{year}</option>)}</select></label>
         <label>ปีเปรียบเทียบ<select aria-label="ปีเปรียบเทียบ" value={comparisonYear} onChange={(event) => setComparisonYear(Number(event.target.value))}>{years.map((year) => <option key={year} value={year} disabled={year === baseYear}>{year}</option>)}</select></label>
         <fieldset><legend>Accounting basis</legend><div className="saleout-segmented"><button type="button" aria-pressed={salesBasis === 'gross'} onClick={() => setSalesBasis('gross')}>Gross</button><button type="button" aria-pressed={salesBasis === 'net'} onClick={() => setSalesBasis('net')}>Net</button></div></fieldset>
@@ -190,8 +200,8 @@ export function SaleOutPage() {
           />
 
           <section className="saleout-kpi-strip" aria-label="KPI Sale Out">
-            <Kpi label={`YTD ${comparisonYear}`} value={formatValue(report.kpis.comparisonYtd, metric, true)} detail={`01/01–${formatDate(report.meta.cutoff)}`} />
-            <Kpi label={`YTD ${baseYear}`} value={formatValue(report.kpis.baseYtd, metric, true)} detail="ช่วงวันเดียวกันของปีก่อน" />
+            <Kpi label={`YTD ${comparisonYear}`} value={formatValue(report.kpis.comparisonYtd, metric, true)} detail={coverageLabel(report.kpis.comparisonYtd) || `01/01–${formatDate(report.meta.cutoff)}`} />
+            <Kpi label={`YTD ${baseYear}`} value={formatValue(report.kpis.baseYtd, metric, true)} detail={coverageLabel(report.kpis.baseYtd) || 'ช่วงวันเดียวกันของปีก่อน'} />
             <Kpi label="ผลต่าง YTD" value={formatCompact(report.kpis.difference, metric)} detail="ปีเปรียบเทียบ − ปีฐาน" valueTone={tone(report.kpis.difference)} />
             <Kpi label="YTD Growth" value={formatPercent(report.kpis.growthPercent)} detail="เทียบช่วงวันเดียวกัน" valueTone={tone(report.kpis.growthPercent)} />
             <Kpi label="เดือนล่าสุด" value={formatValue(report.kpis.latestMonth, metric, true)} detail={`MoM ${formatPercent(report.kpis.momPercent)} · YoY ${formatPercent(report.kpis.yoyPercent)}`} />

@@ -8,6 +8,7 @@ export async function fetchSaleOutReport(filters: SaleOutFilters, signal?: Abort
     metric: filters.metric,
   })
   if (filters.cutoff) params.set('cutoff', filters.cutoff)
+  if (filters.completeness) params.set('completeness', filters.completeness)
   filters.mtCodes?.forEach((code) => params.append('mt_code', code))
 
   const response = await fetch(`/api/sale-out?${params.toString()}`, { signal })

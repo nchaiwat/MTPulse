@@ -3,6 +3,9 @@ export type SaleOutBasis = 'gross' | 'net'
 export type SaleOutState = 'value' | 'zero' | 'missing' | 'future' | 'unavailable' | 'incomplete'
 
 export interface SaleOutValue {
+  coveredDays?: number
+  expectedDays?: number
+  coverageUnit?: 'days' | 'mt_days'
   state: SaleOutState
   value: number | null
 }
@@ -66,6 +69,7 @@ export interface SaleOutReport {
 }
 
 export interface SaleOutFilters {
+  completeness?: 'complete' | 'available'
   baseYear: number
   comparisonYear: number
   cutoff?: string

@@ -10,8 +10,10 @@ from sqlalchemy.orm import Session
 from app.api.sale_out import get_sale_out_report
 from app.database import Base
 from app.models import (
+    BranchMapping,
     DailySkuSummary,
     ImportBatch,
+    ItemMapping,
     ModernTrade,
     MonthlySalesSummary,
     SystemSetting,
@@ -91,6 +93,31 @@ def _day(
 
 
 def _seed_report_data(session: Session) -> None:
+    for mt_id in [1, 3]:
+        session.add(
+            ItemMapping(
+                id=mt_id,
+                modern_trade_id=mt_id,
+                source_sku="SKU-1",
+                source_description="Item 1",
+                wa_item_code="WA-1",
+                status="confirmed",
+                effective_from=date(2025, 1, 1),
+                changed_by="test",
+            )
+        )
+        session.add(
+            BranchMapping(
+                id=mt_id,
+                modern_trade_id=mt_id,
+                source_branch_code="B1",
+                source_branch_description="B1",
+                wa_branch_code="WA-B1",
+                status="confirmed",
+                effective_from=date(2025, 1, 1),
+                changed_by="test",
+            )
+        )
     session.add_all(
         [
             ModernTrade(
@@ -166,6 +193,38 @@ def _seed_report_data(session: Session) -> None:
                 session.add(_batch(batch_id, 1, date(year, month, day)))
                 batch_id += 1
     session.commit()
+
+
+def test_partial_option_preserves_coverage_and_suppresses_comparisons():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        _seed_report_data(session)
+        batch = session.query(ImportBatch).filter_by(data_date=date(2025, 2, 2)).one()
+        session.delete(batch)
+        session.commit()
+        kwargs = dict(
+            base_year=2025,
+            comparison_year=2026,
+            cutoff=None,
+            sales_basis="gross",
+            metric="amount",
+            mt_codes=["TWD"],
+        )
+        strict = build_sale_out_report(session, **kwargs)
+        partial = build_sale_out_report(session, **kwargs, completeness="available")
+        assert strict["kpis"]["baseYtd"]["value"] is None
+        assert partial["kpis"]["baseYtd"] == {
+            "state": "incomplete",
+            "value": 110.0,
+            "coveredDays": 32,
+            "expectedDays": 33,
+            "coverageUnit": "mt_days",
+        }
+        assert partial["kpis"]["growthPercent"] is None
+        assert partial["modernTrades"][0]["monthly"][1]["base"]["coveredDays"] == 1
+        assert partial["modernTrades"][0]["monthly"][1]["growthPercent"] is None
+        assert partial["meta"]["cutoff"] == strict["meta"]["cutoff"]
 
 
 def test_sale_out_report_uses_monthly_for_complete_and_daily_for_partial_months() -> None:

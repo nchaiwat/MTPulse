@@ -19,6 +19,7 @@ def get_sale_out_report(
     sales_basis: Annotated[Literal["net", "gross"], Query()] = "gross",
     metric: Annotated[Literal["amount", "qty", "average_price"], Query()] = "amount",
     mt_code: Annotated[list[str] | None, Query()] = None,
+    completeness: Annotated[Literal["complete", "available"], Query()] = "complete",
 ) -> dict:
     try:
         return build_sale_out_report(
@@ -29,6 +30,7 @@ def get_sale_out_report(
             sales_basis=sales_basis,
             metric=metric,
             mt_codes=mt_code,
+            completeness=completeness,
         )
     except SaleOutReportError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

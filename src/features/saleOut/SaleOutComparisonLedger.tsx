@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react'
 import { SlidersHorizontal } from 'lucide-react'
 import type { SaleOutMetric, SaleOutModernTrade, SaleOutReport, SaleOutValue } from './types'
+import { coverageLabel } from './coverageLabel'
 
 const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
 const exact = new Intl.NumberFormat('th-TH', { maximumFractionDigits: 2 })
@@ -55,6 +56,7 @@ function unavailableFor(item: SaleOutModernTrade): SaleOutValue {
 }
 
 function comparableRunRate(item: Pick<SaleOutModernTrade, 'latestMonth' | 'momPercent'>) {
+  if (!['value', 'zero'].includes(item.latestMonth.state)) return null
   const current = item.latestMonth.value
   const growth = item.momPercent
   if (current === null || growth === null || growth === -100) return null
@@ -117,15 +119,16 @@ function LedgerRow({
           <HeatCell
             key={`base-${month}`}
             value={null}
-            label={`${month} ${displayValue(entry, metric)}`}
+            label={`${month} ${displayValue(entry, metric)} ${coverageLabel(entry)}`}
             heatmap={heatmap}
             tone={intensityTone(entry.value, baseValues)}
           >
             <span>{displayValue(entry, metric)}</span>
+            {entry.state === 'incomplete' && entry.value !== null && <small>{coverageLabel(entry)}</small>}
           </HeatCell>
         )
       })}
-      <td className="saleout-ledger-total">{displayValue(item.baseYtd, metric)}</td>
+      <td className="saleout-ledger-total">{displayValue(item.baseYtd, metric)}<small>{coverageLabel(item.baseYtd)}</small></td>
       {months.map((month, index) => {
         const entry = monthRows[index]
         const comparison = entry?.comparison ?? fallback
@@ -133,18 +136,19 @@ function LedgerRow({
           <HeatCell
             key={`comparison-${month}`}
             value={entry?.growthPercent ?? null}
-            label={`${month} ${displayValue(comparison, metric)} เติบโต ${displayPercent(entry?.growthPercent ?? null)}`}
+            label={`${month} ${displayValue(comparison, metric)} เติบโต ${displayPercent(entry?.growthPercent ?? null)} ${coverageLabel(comparison)}`}
             heatmap={heatmap}
             tone={intensityTone(comparison.value, comparisonValues)}
           >
             <span>{displayValue(comparison, metric)}</span>
+            {comparison.state === 'incomplete' && comparison.value !== null && <small>{coverageLabel(comparison)}</small>}
             {entry?.growthPercent !== null && entry?.growthPercent !== undefined && (
               <small data-growth-tone={heatTone(entry.growthPercent)}>{displayPercent(entry.growthPercent)}</small>
             )}
           </HeatCell>
         )
       })}
-      <td className="saleout-ledger-total">{displayValue(item.comparisonYtd, metric)}</td>
+      <td className="saleout-ledger-total">{displayValue(item.comparisonYtd, metric)}<small>{coverageLabel(item.comparisonYtd)}</small></td>
       <td>{runRate === null ? '—' : displayValue({ state: runRate === 0 ? 'zero' : 'value', value: runRate }, metric)}</td>
       <td
         aria-label={`Diff เทียบ Run rate ${runRateDiff === null ? '—' : displayValue({ state: runRateDiff === 0 ? 'zero' : 'value', value: runRateDiff }, metric)}`}

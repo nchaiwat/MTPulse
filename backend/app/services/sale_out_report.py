@@ -6,10 +6,18 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Literal
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, or_, select, tuple_
 from sqlalchemy.orm import Session
 
-from app.models import DailySkuSummary, ImportBatch, ModernTrade, MonthlySalesSummary
+from app.models import (
+    BranchMapping,
+    DailySkuSummary,
+    ImportBatch,
+    ItemMapping,
+    ModernTrade,
+    MonthlySalesSummary,
+    SalesInventoryFact,
+)
 from app.modern_trade_registry import active_modern_trade_codes
 from app.sales_grain import SALES_GRAIN_DAILY
 from app.services.sale_out import (
@@ -51,6 +59,10 @@ class MetricResult:
     state: DataState
     value: Decimal | None
     totals: Totals = Totals()
+    covered_days: int = 0
+    expected_days: int = 0
+    partial: bool = False
+    aggregate: bool = False
 
 
 @dataclass
@@ -60,6 +72,42 @@ class SaleOutCube:
     valid_days: dict[int, set[date]]
     latest_source: dict[int, date]
     latest_daily: dict[int, date]
+    show_partial: bool = False
+
+
+def _scope_filters(model, *, branch_scoped=True):
+    # Independent mapping sets let PostgreSQL hash the scope once, not resolve
+    # the latest import date again for every historical summary row.
+    latest = select(
+        ImportBatch.modern_trade_id,
+        func.max(ImportBatch.data_date).label("reference_date"),
+    ).where(ImportBatch.status.in_(AVAILABLE_BATCH_STATUSES)).group_by(
+        ImportBatch.modern_trade_id
+    ).subquery()
+    items = select(ItemMapping.modern_trade_id, ItemMapping.source_sku).join(
+        latest, latest.c.modern_trade_id == ItemMapping.modern_trade_id
+    ).where(
+        ItemMapping.effective_from <= latest.c.reference_date,
+        or_(ItemMapping.effective_to.is_(None),
+            ItemMapping.effective_to >= latest.c.reference_date),
+    )
+    item_key = tuple_(model.modern_trade_id, model.source_sku)
+    filters = [
+        ~item_key.in_(items.where(ItemMapping.report_status == "inactive")),
+        or_(ModernTrade.show_unmatched_items,
+            item_key.in_(items.where(ItemMapping.report_status == "active"))),
+    ]
+    if branch_scoped:
+        branches = select(BranchMapping.modern_trade_id, BranchMapping.source_branch_code).join(
+            latest, latest.c.modern_trade_id == BranchMapping.modern_trade_id
+        ).where(
+            BranchMapping.effective_from <= latest.c.reference_date,
+            or_(BranchMapping.effective_to.is_(None),
+                BranchMapping.effective_to >= latest.c.reference_date),
+        )
+        filters.append(or_(ModernTrade.show_unmatched_branches,
+                           tuple_(model.modern_trade_id, model.source_branch_code).in_(branches)))
+    return filters
 
 
 def _totals(values: tuple[Decimal | None, ...]) -> Totals:
@@ -85,7 +133,9 @@ def _load_cube(
             func.sum(MonthlySalesSummary.gross_amount),
             func.sum(MonthlySalesSummary.gross_sales_qty),
         )
+        .join(ModernTrade, ModernTrade.id == MonthlySalesSummary.modern_trade_id)
         .where(
+            *_scope_filters(MonthlySalesSummary),
             MonthlySalesSummary.modern_trade_id.in_(modern_trade_ids),
             MonthlySalesSummary.month_start >= range_from,
             MonthlySalesSummary.month_start <= range_to,
@@ -104,12 +154,38 @@ def _load_cube(
             func.sum(DailySkuSummary.gross_amount),
             func.sum(DailySkuSummary.gross_sales_qty),
         )
+        .join(ModernTrade, ModernTrade.id == DailySkuSummary.modern_trade_id)
         .where(
+            *_scope_filters(DailySkuSummary, branch_scoped=False),
+            ModernTrade.show_unmatched_branches.is_(False),
             DailySkuSummary.modern_trade_id.in_(modern_trade_ids),
             DailySkuSummary.data_date >= range_from,
             DailySkuSummary.data_date <= range_to,
         )
         .group_by(DailySkuSummary.modern_trade_id, DailySkuSummary.data_date)
+    ).all()
+    # Daily summaries contain mapped branches only; include raw daily facts when
+    # the user's report preference explicitly includes unmatched branches.
+    daily_rows += session.execute(
+        select(
+            SalesInventoryFact.modern_trade_id,
+            SalesInventoryFact.data_date,
+            func.sum(SalesInventoryFact.amount),
+            func.sum(SalesInventoryFact.sales_qty),
+            func.sum(case((SalesInventoryFact.amount > 0, SalesInventoryFact.amount), else_=0)),
+            func.sum(
+                case((SalesInventoryFact.sales_qty > 0, SalesInventoryFact.sales_qty), else_=0)
+            ),
+        )
+        .join(ModernTrade, ModernTrade.id == SalesInventoryFact.modern_trade_id)
+        .where(
+            SalesInventoryFact.modern_trade_id.in_(modern_trade_ids),
+            SalesInventoryFact.data_date.between(range_from, range_to),
+            SalesInventoryFact.sales_grain == SALES_GRAIN_DAILY,
+            ModernTrade.show_unmatched_branches.is_(True),
+            *_scope_filters(SalesInventoryFact),
+        )
+        .group_by(SalesInventoryFact.modern_trade_id, SalesInventoryFact.data_date)
     ).all()
     batches = session.scalars(
         select(ImportBatch)
@@ -127,10 +203,7 @@ def _load_cube(
         valid = (
             batch.status in AVAILABLE_BATCH_STATUSES
             and batch.sales_grain == SALES_GRAIN_DAILY
-            and (
-                not batch.reconciliation_errors
-                or batch.warning_resolution == "acknowledged"
-            )
+            and (not batch.reconciliation_errors or batch.warning_resolution == "acknowledged")
         )
         if not valid:
             continue
@@ -188,18 +261,26 @@ def _range_result(
     covered_days = sum(
         1
         for offset in range(expected_days)
-        if effective_from + timedelta(days=offset)
-        in cube.valid_days.get(modern_trade.id, set())
+        if effective_from + timedelta(days=offset) in cube.valid_days.get(modern_trade.id, set())
     )
     if covered_days == 0:
-        return MetricResult("missing", None)
-    if covered_days < expected_days:
-        return MetricResult("incomplete", None)
+        return MetricResult(
+            "missing", None, covered_days=0, expected_days=expected_days, partial=cube.show_partial
+        )
+    incomplete = covered_days < expected_days
+    if incomplete and not cube.show_partial:
+        return MetricResult(
+            "incomplete", None, covered_days=covered_days, expected_days=expected_days
+        )
     totals = Totals()
     cursor = effective_from
     while cursor <= range_to:
         segment_end = min(_month_end(cursor), range_to)
-        if cursor.day == 1 and segment_end == _month_end(cursor):
+        segment_complete = all(
+            cursor + timedelta(days=offset) in cube.valid_days.get(modern_trade.id, set())
+            for offset in range((segment_end - cursor).days + 1)
+        )
+        if segment_complete and cursor.day == 1 and segment_end == _month_end(cursor):
             totals += cube.monthly.get(
                 (modern_trade.id, cursor.replace(day=1)),
                 Totals(),
@@ -207,48 +288,89 @@ def _range_result(
         else:
             day = cursor
             while day <= segment_end:
-                totals += cube.daily.get((modern_trade.id, day), Totals())
+                if day in cube.valid_days.get(modern_trade.id, set()):
+                    totals += cube.daily.get((modern_trade.id, day), Totals())
                 day += timedelta(days=1)
         cursor = _next_month(cursor)
     value = _metric_value(totals, basis, metric)
     if value is None:
-        return MetricResult("unavailable", None, totals)
-    return MetricResult("zero" if value == 0 else "value", value, totals)
+        return MetricResult("incomplete" if incomplete else "unavailable", None, totals,
+                            covered_days, expected_days, cube.show_partial)
+    return MetricResult(
+        "incomplete" if incomplete else "zero" if value == 0 else "value",
+        value,
+        totals,
+        covered_days,
+        expected_days,
+        cube.show_partial,
+    )
 
 
 def _total_result(results: list[MetricResult], basis: SalesBasis, metric: Metric) -> MetricResult:
     applicable = [
-        result
-        for result in results
-        if result.state != "unavailable" or result.totals != Totals()
+        result for result in results if result.state != "unavailable" or result.totals != Totals()
     ]
     if not applicable:
         return MetricResult("unavailable", None)
-    if any(result.state == "missing" for result in applicable):
+    partial = any(result.partial for result in applicable)
+    incomplete = any(result.state in {"missing", "incomplete"} for result in applicable)
+    if not partial and any(result.state == "missing" for result in applicable):
         return MetricResult("missing", None)
-    if any(result.state == "incomplete" for result in applicable):
+    if not partial and any(result.state == "incomplete" for result in applicable):
         return MetricResult("incomplete", None)
     totals = sum((result.totals for result in applicable), Totals())
+    covered = sum(result.covered_days for result in applicable)
+    expected = sum(result.expected_days for result in applicable)
+    if partial and not any(result.value is not None for result in applicable):
+        return MetricResult(
+            "missing",
+            None,
+            covered_days=covered,
+            expected_days=expected,
+            partial=True,
+            aggregate=True,
+        )
     value = _metric_value(totals, basis, metric)
     if value is None:
         return MetricResult("unavailable", None, totals)
-    return MetricResult("zero" if value == 0 else "value", value, totals)
+    return MetricResult(
+        "incomplete" if incomplete else "zero" if value == 0 else "value",
+        value,
+        totals,
+        covered,
+        expected,
+        partial,
+        True,
+    )
 
 
 def _payload(result: MetricResult) -> dict:
     return {
         "state": result.state,
         "value": float(result.value) if result.value is not None else None,
+        **(
+            {
+                "coveredDays": result.covered_days,
+                "expectedDays": result.expected_days,
+                "coverageUnit": "mt_days" if result.aggregate else "days",
+            }
+            if result.partial
+            else {}
+        ),
     }
 
 
 def _difference(comparison: MetricResult, base: MetricResult) -> float | None:
+    if comparison.state not in {"value", "zero"} or base.state not in {"value", "zero"}:
+        return None
     if comparison.value is None or base.value is None:
         return None
     return float(comparison.value - base.value)
 
 
 def _growth(comparison: MetricResult, base: MetricResult) -> float | None:
+    if comparison.state not in {"value", "zero"} or base.state not in {"value", "zero"}:
+        return None
     if comparison.value is None or base.value is None:
         return None
     value = growth_percent(comparison.value, base.value)
@@ -354,6 +476,7 @@ def build_sale_out_report(
     sales_basis: SalesBasis,
     metric: Metric,
     mt_codes: list[str] | None,
+    completeness: Literal["complete", "available"] = "complete",
 ) -> dict:
     if base_year == comparison_year:
         raise SaleOutReportError("ปีฐานและปีเปรียบเทียบต้องไม่ซ้ำกัน")
@@ -368,19 +491,13 @@ def build_sale_out_report(
     supported_codes = active_modern_trade_codes("settings")
     explicit_codes = mt_codes is not None
     requested_codes = (
-        [code.strip().upper() for code in mt_codes]
-        if explicit_codes
-        else sorted(supported_codes)
+        [code.strip().upper() for code in mt_codes] if explicit_codes else sorted(supported_codes)
     )
     invalid_codes = sorted(set(requested_codes) - supported_codes)
     if invalid_codes:
-        raise SaleOutReportError(
-            f"ไม่รองรับ Modern Trade รหัส {', '.join(invalid_codes)}"
-        )
+        raise SaleOutReportError(f"ไม่รองรับ Modern Trade รหัส {', '.join(invalid_codes)}")
     modern_trades = session.scalars(
-        select(ModernTrade)
-        .where(ModernTrade.code.in_(requested_codes))
-        .order_by(ModernTrade.code)
+        select(ModernTrade).where(ModernTrade.code.in_(requested_codes)).order_by(ModernTrade.code)
     ).all()
     found_codes = {modern_trade.code for modern_trade in modern_trades}
     missing_codes = sorted(set(requested_codes) - found_codes)
@@ -403,6 +520,7 @@ def build_sale_out_report(
         first_year,
         last_year,
     )
+    cube.show_partial = completeness == "available"
 
     base_ytd = _total_for_range(
         modern_trades, cube, date(base_year, 1, 1), base_end, sales_basis, metric
@@ -427,8 +545,7 @@ def build_sale_out_report(
         if month > selected_cutoff.month:
             comparison_total = MetricResult("future", None)
             comparison_members = {
-                modern_trade.code: MetricResult("future", None)
-                for modern_trade in modern_trades
+                modern_trade.code: MetricResult("future", None) for modern_trade in modern_trades
             }
         else:
             comparison_month_to = (
@@ -622,20 +739,52 @@ def build_sale_out_report(
     quarter_start = ((selected_cutoff.month - 1) // 3) * 3 + 1
     periods = [
         _period_row(
-            "Q1", 1, 3, modern_trades, cube, base_year, comparison_year,
-            selected_cutoff, sales_basis, metric,
+            "Q1",
+            1,
+            3,
+            modern_trades,
+            cube,
+            base_year,
+            comparison_year,
+            selected_cutoff,
+            sales_basis,
+            metric,
         ),
         _period_row(
-            "Q2", 4, 6, modern_trades, cube, base_year, comparison_year,
-            selected_cutoff, sales_basis, metric,
+            "Q2",
+            4,
+            6,
+            modern_trades,
+            cube,
+            base_year,
+            comparison_year,
+            selected_cutoff,
+            sales_basis,
+            metric,
         ),
         _period_row(
-            "H1", 1, 6, modern_trades, cube, base_year, comparison_year,
-            selected_cutoff, sales_basis, metric,
+            "H1",
+            1,
+            6,
+            modern_trades,
+            cube,
+            base_year,
+            comparison_year,
+            selected_cutoff,
+            sales_basis,
+            metric,
         ),
         _period_row(
-            "QTD", quarter_start, selected_cutoff.month, modern_trades, cube,
-            base_year, comparison_year, selected_cutoff, sales_basis, metric,
+            "QTD",
+            quarter_start,
+            selected_cutoff.month,
+            modern_trades,
+            cube,
+            base_year,
+            comparison_year,
+            selected_cutoff,
+            sales_basis,
+            metric,
         ),
         {
             "code": "YTD",
@@ -666,6 +815,7 @@ def build_sale_out_report(
             "activeCutoff": active_cutoff,
             "salesBasis": sales_basis,
             "metric": metric,
+            "completeness": completeness,
             "mtCodes": [modern_trade.code for modern_trade in modern_trades],
             "availableYears": available_years,
         },
@@ -678,9 +828,7 @@ def build_sale_out_report(
             "momPercent": _growth(latest_month, mom),
             "yoyPercent": _growth(latest_month, yoy),
             "dataCompletenessPercent": (
-                round(len(complete_rows) / len(included_rows) * 100, 1)
-                if included_rows
-                else 0.0
+                round(len(complete_rows) / len(included_rows) * 100, 1) if included_rows else 0.0
             ),
         },
         "monthly": monthly,
