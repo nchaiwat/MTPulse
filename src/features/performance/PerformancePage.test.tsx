@@ -5,6 +5,7 @@ import { PerformancePage } from './PerformancePage'
 import { samplePerformanceResponse } from './sampleData'
 import type { PerformanceResponse } from './types'
 afterEach(() => {
+  for (const code of ['hh', 'gh', 'dh', 'ta']) window.localStorage.removeItem(`mtpulse.performance.${code}.current-view`)
   window.localStorage.removeItem('mtpulse.performance.twd.current-view')
   window.localStorage.removeItem('mtpulse.performance.hp.current-view')
   window.localStorage.removeItem('mtpulse.performance.mh.current-view')
@@ -13,6 +14,31 @@ afterEach(() => {
 
 
 describe('PerformancePage', () => {
+  it.each(['TWD', 'HP', 'MH', 'HH', 'GH', 'DH', 'TA'] as const)('shows inventory snapshot KPIs for %s and restores sales KPIs', async (mtCode) => {
+    const user = userEvent.setup()
+    const response: PerformanceResponse = {
+      ...samplePerformanceResponse,
+      inventorySnapshot: { date: '2026-08-17', stockOh: 1932, stockOnOrder: 45, stockValue: 5135567.05 },
+      inventorySummary: { stockOh: 9999, stockOnOrder: 999, stockValue: 9999999 },
+      metricCapabilities: { sales: ['amount', 'qty'], inventory: mtCode === 'TWD' ? ['stockOh', 'stockOnOrder'] : ['stockOh', 'stockValue'] },
+    }
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => new Response(JSON.stringify(
+      String(input).includes('/sku-options') ? { items: [] } : response,
+    )))
+    render(<PerformancePage mtCode={mtCode} />)
+    await user.click(await screen.findByRole('button', { name: 'Inventory' }))
+    const ledger = within(screen.getByRole('region', { name: 'สรุป Performance' }))
+    await waitFor(() => expect(ledger.getByText('Stock On Hand').closest('article')).toHaveTextContent('1,932'))
+    expect(ledger.queryByText(/Sales Qty/)).not.toBeInTheDocument()
+    expect(ledger.queryByText(/Amount/)).not.toBeInTheDocument()
+    if (mtCode === 'TWD') expect(ledger.getByText('Stock On Order').closest('article')).toHaveTextContent('45')
+    else if (mtCode !== 'DH') expect(ledger.getByText('Stock Value (Source)').closest('article')).toHaveTextContent('5,135,567.05')
+    else expect(ledger.queryByText('Stock Value (Source)')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Sales' }))
+    expect(ledger.getByText('Sales Qty · Net')).toBeInTheDocument()
+    expect(ledger.queryByText('Stock On Hand')).not.toBeInTheDocument()
+  })
+
   it('distinguishes a confirmed mapping without WA description from an unmatched item', () => {
     const confirmedWithoutDescription: PerformanceResponse = {
       ...samplePerformanceResponse,
@@ -69,7 +95,7 @@ describe('PerformancePage', () => {
     expect(screen.getByRole('columnheader', { name: 'TOD' })).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'สถานะ Sho/Pro' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Stock value' }))
-    expect(screen.getByText(/Stock Value \(Source\)/)).toBeInTheDocument()
+    expect(document.querySelector('.matrix-heading')).toHaveTextContent('Stock Value (Source)')
   })
 
   it('defaults to Net Sales and persists the selected Gross Sale Out basis', async () => {

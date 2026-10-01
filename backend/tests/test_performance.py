@@ -30,6 +30,53 @@ def test_month_bounds_supports_leap_year() -> None:
     assert _month_bounds("2024-02") == (date(2024, 2, 1), date(2024, 2, 29))
 
 
+@pytest.mark.parametrize("mt_code", ["TWD", "HP", "MH", "HH", "GH", "DH", "TA"])
+@pytest.mark.parametrize("grain", ["day", "day_total", "month"])
+def test_inventory_kpi_uses_latest_snapshot_across_all_pages(mt_code, grain):
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(ModernTrade(
+            id=1, code=mt_code, name=mt_code,
+            show_unmatched_items=True, show_unmatched_branches=True,
+        ))
+        for day in [1, 2]:
+            session.add(ImportBatch(
+                id=day, modern_trade_id=1, data_date=date(2026, 8, day),
+                status="imported", source_path=f"/{day}.xlsx",
+                source_filename=f"{day}.xlsx", checksum_sha256=str(day),
+                row_count=2, store_count=1, sku_count=2, negative_row_count=0,
+                source_amount=200, amount=200, sales_qty=2, stock_on_hand=day * 20,
+                reported_stock_on_hand=day * 20, stock_on_order=day * 2,
+            ))
+            for index, sku in enumerate(["A", "B"]):
+                session.add(SalesInventoryFact(
+                    id=day * 10 + index, modern_trade_id=1, batch_id=day,
+                    data_date=date(2026, 8, day), source_sku=sku,
+                    source_description=sku, source_branch_code="X", source_branch_name="X",
+                    source_amount=100, amount=100, sales_qty=1,
+                    stock_on_hand=day * 10, stock_on_order=day,
+                    stock_value=Decimal("123.45") * day,
+                ))
+        session.commit()
+        result = performance(session, mt_code=mt_code, report_mode="inventory",
+                             grain=grain, page_size=1)
+        assert len(result["items"]) == 1
+        assert result["inventorySnapshot"] == {
+            "date": "2026-08-02", "stockOh": 40.0,
+            "stockOnOrder": 4.0, "stockValue": 493.8,
+        }
+        filtered = performance(
+            session, mt_code=mt_code, report_mode="inventory", grain=grain,
+            date_from=date(2026, 8, 1), date_to=date(2026, 8, 1), sku_ids="A",
+        )
+        assert filtered["inventorySnapshot"]["stockOh"] == 10
+        assert filtered["inventorySnapshot"]["date"] == "2026-08-01"
+        empty = performance(session, mt_code=mt_code, report_mode="inventory",
+                            grain=grain, sku_ids="missing")
+        assert empty["inventorySnapshot"]["stockOh"] == 0
+
+
 def test_month_bounds_rejects_invalid_month() -> None:
     with pytest.raises(ValueError):
         _month_bounds("2026-13")

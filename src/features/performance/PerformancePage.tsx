@@ -373,6 +373,8 @@ export function PerformancePage({ initialData, mtCode = 'TWD' }: PerformancePage
   const totalAmount = hasServerSummary ? hasServerSummary.amount : sumMetric(allPoints, 'amount')
   const totalQty = hasServerSummary ? hasServerSummary.qty : sumMetric(allPoints, 'qty')
   const inventoryMetrics = data?.metricCapabilities?.inventory ?? mt.inventoryMetrics
+  const inventoryKpiMetrics = mt.inventoryMetrics.filter((value) => inventoryMetrics.includes(value))
+  const inventorySnapshotDate = initialData ? selectedDates.at(-1) : data?.inventorySnapshot?.date
   const selectedMetricTotal = mode === 'sales'
     ? data?.summary?.[metric as 'amount' | 'qty'] ?? sumMetric(allPoints, metric)
     : data?.inventorySummary?.[metric as 'stockOh' | 'stockOnOrder' | 'stockValue'] ?? sumMetric(allPoints, metric)
@@ -442,8 +444,20 @@ export function PerformancePage({ initialData, mtCode = 'TWD' }: PerformancePage
         {loadError && <div className="empty-state" role="alert"><strong>เชื่อมต่อ Backend ไม่สำเร็จ</strong><span>{loadError}</span></div>}
 
         <section className="kpi-ledger" aria-label="สรุป Performance">
+          {mode === 'inventory' ? inventoryKpiMetrics.map((inventoryMetric) => (
+            <article key={inventoryMetric} title={`ณ ${formatDisplayDate(inventorySnapshotDate, '—')} · ตามตัวกรองทั้งหมด`}>
+              <span>{metricLabel[inventoryMetric]}</span>
+              <strong>{initialData
+                ? formatMetric(sumMetric(allPoints, inventoryMetric), inventoryMetric)
+                : data?.inventorySnapshot
+                  ? formatMetric(data.inventorySnapshot[inventoryMetric as 'stockOh' | 'stockOnOrder' | 'stockValue'], inventoryMetric)
+                  : '—'}</strong>
+              <small>ณ {formatDisplayDate(inventorySnapshotDate, '—')} · ตามตัวกรองทั้งหมด</small>
+            </article>
+          )) : <>
           <article><span>Amount · {salesBasis === 'gross' ? 'Gross' : 'Net'}</span><strong>{formatMetric(totalAmount, 'amount')}</strong><small>{salesBasis === 'gross' ? 'เฉพาะยอดมากกว่า 0 ไม่รวม Return' : hasServerSummary ? 'ยอดสุทธิ รวม Return และ Adjustment' : 'ยอดสุทธิของข้อมูลที่แสดง'}</small></article>
           <article><span>Sales Qty · {salesBasis === 'gross' ? 'Gross' : 'Net'}</span><strong>{formatMetric(totalQty, 'qty')}</strong><small>{salesBasis === 'gross' ? 'เฉพาะจำนวนมากกว่า 0 ไม่รวม Return' : totalQty < 0 ? 'ยอด Return สุทธิ' : 'รวม Return และ Adjustment'}</small></article>
+          </>}
           <article><span>SKU ที่แสดง</span><strong>{visibleItems.length.toLocaleString('en-US')}</strong><small>จาก {(data?.meta.totalSkus ?? 0).toLocaleString('en-US')} SKU</small></article>
           <article><span>Branch ที่มียอด</span><strong>{activeBranches}</strong><small>จาก {data?.meta.totalBranches ?? 0} Branch ของ {mtCode}</small></article>
         </section>
