@@ -194,6 +194,22 @@ def _read_matrix(
         sheet = workbook.active
         if sheet.max_column < 18 or sheet.max_row < 4:
             raise HhFormatError(f"โครงสร้างไฟล์ {path.name} ไม่ครบ 18 columns")
+        expected_headers = (
+            ("คงเหลือ", "มูลค่า") if kind == "inventory" else ("จน.ขาย", "ยอดขาย")
+        )
+        report_name = "StockReport.xlsx" if kind == "inventory" else "SaleReport.xlsx"
+        for qty_column in range(7, 18, 2):
+            actual_headers = tuple(
+                _text(sheet.cell(3, column).value)
+                for column in (qty_column, qty_column + 1)
+            )
+            if actual_headers != expected_headers:
+                raise HhFormatError(
+                    f"หัวคอลัมน์ {path.name} ไม่ตรงกับ {report_name}: "
+                    f"ต้องเป็น {expected_headers[0]}/{expected_headers[1]} "
+                    f"ที่คอลัมน์ {qty_column}-{qty_column + 1}; "
+                    "กรุณาตรวจว่าเลือกไฟล์ Stock และ Sale ถูกช่อง"
+                )
         data_date = _extract_date(str(sheet.cell(1, 1).value or ""))
         values: dict[tuple[str, str], _Values] = defaultdict(_Values)
         skus: set[str] = set()

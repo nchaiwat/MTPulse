@@ -35,7 +35,7 @@ def _detection(group: str = "TWD"):
     )
 
 
-def _hh_report(path, *, report_date: str = "10-09-2026") -> None:
+def _hh_report(path, *, kind: str, report_date: str = "10-09-2026") -> None:
     workbook = Workbook()
     sheet = workbook.active
     sheet.cell(1, 1, f"Report date {report_date}")
@@ -43,8 +43,8 @@ def _hh_report(path, *, report_date: str = "10-09-2026") -> None:
         sheet.cell(2, column, heading)
     for index, branch in enumerate(["Ubon", "Chayangkun", "Warin", "Khon Kaen", "Amnat", "Total"]):
         sheet.cell(2, 7 + index * 2, branch)
-        sheet.cell(3, 7 + index * 2, "Qty")
-        sheet.cell(3, 8 + index * 2, "Value")
+        sheet.cell(3, 7 + index * 2, "คงเหลือ" if kind == "stock" else "จน.ขาย")
+        sheet.cell(3, 8 + index * 2, "มูลค่า" if kind == "stock" else "ยอดขาย")
     for row_number, sku in enumerate(["00001", "SKU-A7"], 4):
         sheet.cell(row_number, 1, row_number - 3)
         sheet.cell(row_number, 2, "Category")
@@ -274,8 +274,8 @@ def test_hh_folder_import_pairs_stock_and_sales_without_sku_pattern(
     monkeypatch.setattr(manual_upload_batches, "get_settings", lambda: _settings(tmp_path))
     stock = tmp_path / "source-StockReport.xlsx"
     sales = tmp_path / "source-SaleReport.xlsx"
-    _hh_report(stock)
-    _hh_report(sales)
+    _hh_report(stock, kind="stock")
+    _hh_report(sales, kind="sales")
     imported_pairs = []
     audit_ids = count(1)
     monkeypatch.setattr(
