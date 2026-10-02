@@ -1627,3 +1627,31 @@ Discovery สำหรับ Frontend UX Milestone ได้รับอนุ�
 - Status: Discovery complete; รอ Product Owner ยืนยัน PRD และ implementation plan
 - Priority: (1) schema/parser/domain repository, (2) preview/confirm/list API,
   (3) UI, (4) Manual/Automatic/Backfill integration, (5) full regression/release gate
+
+
+## CIAM Login — 2026-10-02
+
+Owner approved implementation after main synchronization (a242b52).
+- Mode B outbound OIDC/PKCE S256; no inbound directory/provisioning webhooks.
+- Registered callback: https://wa-mtpulse.wa.net/auth/callback.
+- New identities provision as Viewer; System Admin assigns Data Operator/System Admin.
+- Roles retain the existing PRD boundaries: Viewer reports/downloads; Operator manual
+  uploads/mapping/correctives/import logs; Admin settings/secrets/automatic operations.
+- Fixed session lifetime defaults to 480 minutes, configurable in Settings. No sliding
+  refresh that extends this window. Local deactivation revokes sessions immediately;
+  CIAM-only offboarding is checked upon fresh authentication (no immediate webhook).
+- Global Settings owns CIAM URLs/client ID/encrypted secret/SSO/break-glass/session TTL.
+  Infrastructure encryption key and deployment auth mode remain outside the database.
+- Server-managed opaque HttpOnly Secure sessions, CSRF protection, state/nonce/PKCE,
+  issuer/subject identity and validated RS256 tokens supersede illustrative browser-token
+  storage and email-based account linking in the supplied specification.
+- Login follows existing design tokens. SSO primary action, emergency local form,
+  explicit error/loading states; real user identity and Logout in the app shell.
+- CA/AD CS setup, public exposure and Production activation are deferred. Real SSO
+  acceptance requires working trusted HTTPS/DNS and the registered client credentials.
+- Owner selected emergency Local Admin, independent of AD. Bootstrap via server console;
+  hashed password, login throttling, audit and self-service password change in Settings.
+  Direct AD Gateway is out of scope.
+- Success: unauthenticated data access denied, role boundaries enforced server-side,
+  rejected forged/replayed/expired OIDC flows, seven-MT regressions unchanged, secret
+  redaction/audit, settings updates effective across processes without restart.

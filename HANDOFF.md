@@ -738,3 +738,54 @@ Migration:
 - Limitation: browser visual verification at 375/768/1024/1440 could not run because CUA kernel exits with Windows sandbox helper_unknown_error. No CSS or matrix layout edits. New empty/missing snapshot renders zero from API or em dash while unavailable.
 - Rollback: checkout `7f4c6013553a8aedab1a971e1c47d464ce070c2b`, rebuild/recreate API and Web only. No database rollback needed.
 - Untouched/untracked: previous `.pytest-hh-focused/`, `.pytest-hh-full/`, `.pytest-hh-red/`; new `backend/.pytest-kpi-full/` test artifact excluded. Primary checkout's pre-existing documentation edits and temporary directories were not touched. Server retains untracked `backups/`.
+
+
+## 2026-10-02 — CIAM Login implementation (not deployed)
+
+- Branch `codex/ciam-login`, separate worktree `.tmp/ciam-login`, based on synchronized
+  main `a242b52`. Application commit `bce80d6ab34b0da452a76df479b527f587c3a9e2`.
+- Owner approved implementation and selected emergency Local Admin independent of AD.
+  Mode B, Viewer auto-provision, 480-minute absolute sessions and registered callback
+  `https://wa-mtpulse.wa.net/auth/callback` are implemented. CA installation is deferred.
+- Added Settings/SSO APIs, encrypted DB settings, signed OIDC/PKCE validation with
+  state/nonce/browser binding/single-use attempts, hashed server sessions, CSRF and
+  role/status enforcement. Provider tokens are not stored or returned to the browser.
+- Added Local Admin console bootstrap, password hashing/throttling/rotation, redacted
+  security audit, role/status management and revocation. Shared API guard protects
+  every business endpoint in ciam mode, with default Admin for unknown API areas.
+- Frontend: Login/callback/expiry/logout, current user, CIAM/user settings, role-aware
+  navigation and flags, shared fetch and XHR cookie/CSRF handling. Operator retains
+  MT mapping access; Global/credentials/scheduling and Folder/UNC remain Admin-only.
+- Existing import/mapping/settings audit actors now use the authenticated user. Business
+  parsing, report aggregation, source data and Worker scheduling logic are unchanged.
+- Additive migration `8c9304b5c6d7` creates four auth tables; staging SQLite upgrade/
+  downgrade and model-column parity tested. No production migration/data mutation.
+- Opt-in `compose.ciam.yaml` and `deploy/nginx.ciam.conf` prepare secure-cookie HTTPS
+  rollout; no certificate/private key supplied. Existing nginx suppresses callback
+  access logs and adds no-referrer/nosniff. Actual rollout requires the overlay's
+  ciam mode, trusted TLS/DNS, local bootstrap and registered client configuration.
+- Verification: full backend 369 passed / 2 skipped; full frontend 146 passed (31 files),
+  ESLint and production build passed. App/tests/new migration Ruff and diff checks pass.
+  Full Ruff still reports pre-existing I001/E501 in unchanged migration
+  `a7d4c2e91f30_add_manual_import_settings.py`. Vite warns main bundle is ~500.62 kB
+  (125.49 kB gzip); no unrelated bundle refactor included.
+- Regression refinement: existing FileShare preview timing unit test failed under the
+  full suite (>50 ms) but passed alone. It now uses deterministic timing and is
+  parameterized to verify authenticated and legacy audit actors, retaining read-only
+  assertions. Mapping session fixtures gained Session.info; authenticated audit tested.
+- 33 CIAM tests cover anonymous routes, roles/CSRF, expiry/revocation, local password,
+  secret redaction/storage, valid signed callback, invalid claims/signature/keys,
+  issuer/endpoint/S256 discovery rejection, browser binding/replay/config rotation,
+  identity isolation, migration and emergency state. XHR transport integration also tested.
+- NOT VERIFIED: actual registered CIAM client/secret login; PostgreSQL concurrency/
+  migration on staging; browser visual checks at 375/768/1024/1440. Browser tool retry
+  failed with Windows sandbox helper_unknown_error. Do not claim production-ready SSO
+  or deploy until these acceptance items are resolved. Detailed steps and verification
+  limits: `docs/CIAM_RUNBOOK.md`.
+- Rollback code baseline `a242b52` (deployed app remains `95b56ac`). That baseline has
+  no authentication, so rollback access exposure must be reviewed. Prefer Local Admin
+  during CIAM outages. Keep additive auth tables; no automatic destructive downgrade.
+- Primary checkout's existing modified HANDOFF/PRD/implementation_plan and pytest/temp
+  files are untouched. Prior `.tmp/hh-file-validation` artifacts untouched. New local
+  `.venv`, build and cache files are ignored; no credentials, source workbooks, dumps
+  or private keys are committed. No deployment, import, NAS or AD changes performed.

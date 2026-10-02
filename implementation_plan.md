@@ -2230,3 +2230,28 @@ Phase 1 ยังไม่เปิด UI, ไม่เชื่อม productio
 - First implementation phase: tests + additive schema + workbook/domain repository
   โดยยังไม่เปิด UI/import route จริง
 - ต้องได้รับ Product Owner ยืนยันแผนนี้ก่อนเริ่ม Phase 1 coding
+
+
+## CIAM implementation — 2026-10-02
+
+Branch codex/ciam-login; separate worktree .tmp/ciam-login; base origin/main a242b52.
+1. Add isolated regression fixtures and additive user/session/login-attempt/rate-limit
+   schema. Keep business facts/imports and workers independent of browser sessions.
+2. Implement DB-backed configuration, encrypted secret, discovery/JWKS validation,
+   PKCE browser binding and single-use callback, fixed-lifetime server sessions,
+   role/deactivation management and redacted AuditEvent records.
+3. Protect every business API through a central default-deny authorization dependency;
+   retain explicit development mode for existing fixtures, never use it in CIAM rollout.
+4. Add Login/callback/session handling, shared authenticated fetch and settings/user
+   administration with existing tokens/components and keyboard-accessible controls.
+5. Run negative auth/security tests and full frontend/backend tests, lint, build,
+   migration checks on isolated DB and viewport checks when tooling permits.
+6. Supply setup/rollback runbook and PR. Production migration/deploy require separate
+   authorization and a newly verified backup; no CA installation in this task.
+
+Dependencies: existing FastAPI/SQLAlchemy/httpx/cryptography plus PyJWT for vetted RS256
+verification. No external session service. Read runtime settings from DB per request
+rather than stale process-local caches. Store only session hashes and encrypted PKCE.
+Do not store provider access/refresh tokens or AD passwords. Settings save invalidates
+pending logins; changing roles/status revokes user sessions. Tests use fake signed OIDC
+responses; live CIAM login must be reported separately from simulated integration.
