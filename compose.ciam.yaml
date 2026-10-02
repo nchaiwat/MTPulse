@@ -4,6 +4,7 @@ services:
   api:
     environment:
       MTPULSE_AUTH_MODE: ciam
+      MTPULSE_AUDIT_PROXY_HOST: web
       MTPULSE_CORS_ORIGINS: '["https://wa-mtpulse.wa.net"]'
   worker:
     environment:

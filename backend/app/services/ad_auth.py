@@ -212,6 +212,9 @@ def test_credentials(
         actor,
         {
             "tested_username": tested_username,
+            "gateway": cfg["ciam_ad_gateway_url"],
+            "app_id": cfg["ciam_ad_app_id"],
+            "auth_method": "AD_GATEWAY_V2_DIAGNOSTIC",
             "provider": "ad",
             "gateway_status": gateway_status,
             "mtpulse_status": mtpulse_status,

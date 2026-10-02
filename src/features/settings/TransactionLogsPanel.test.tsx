@@ -22,3 +22,21 @@ it('shows failures and allows retry', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent('network unavailable')
   expect(screen.getByRole('button', { name: 'ลองใหม่' })).toBeInTheDocument()
 })
+
+
+it('explains historical AD tests using stored target and separate actor', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({
+    items: [{ id: 8, event_code: 'CFG-03', category: 'system_setting', action: 'ad_gateway_test',
+      status: 'success', message: 'ทดสอบบัญชีกับ AD Gateway: mtpulse-emergency',
+      triggered_by: 'user:mtpulse-emergency', created_at: '2026-10-02T09:26:34Z',
+      details: { tested_username: 'chaiwat.n', gateway_status: 'success', mtpulse_status: 'ready',
+        ip: '172.18.0.3', ip_source: 'server_observed' }, records_count: 0, duration_ms: 100 }],
+    total: 1, page: 1, page_size: 25,
+  }) }))
+  render(<TransactionLogsPanel />)
+  expect(await screen.findByRole('cell', { name: /ทดสอบบัญชี AD: chaiwat.n/ })).toBeInTheDocument()
+  expect(screen.getByRole('cell', { name: /mtpulse-emergency/ })).toBeInTheDocument()
+  expect(screen.getByText('AD ยืนยันตัวตนสำเร็จ')).toBeInTheDocument()
+  expect(screen.getByText(/มีสิทธิ์เข้า MTPulse/)).toBeInTheDocument()
+  expect(screen.getByText(/IP ที่ Server เห็น/)).toBeInTheDocument()
+})

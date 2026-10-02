@@ -15,6 +15,7 @@ from app.config import get_settings
 from app.database import get_session
 from app.models import AuditEvent, AuthSession, AuthUser, TransactionLog
 from app.services import ad_auth, ciam, local_auth
+from app.services.audit_request import request_details
 
 Db = Annotated[Session, Depends(get_session)]
 Admin = Annotated[str, Depends(require_system_admin)]
@@ -27,7 +28,7 @@ def audit_context(request: Request, session: Db):
         "/api/auth/ad/login": "ad",
     }.get(request.url.path)
     session.info["audit_context"] = {
-        "ip": request.client.host if request.client else None,
+        **request_details(request),
         "started": perf_counter(),
         "provider": provider,
     }

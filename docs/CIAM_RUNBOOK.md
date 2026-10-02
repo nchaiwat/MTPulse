@@ -281,3 +281,10 @@ missing configuration and rate limits are handled separately.
 Limit: 10 test attempts per Admin per 5-minute bucket, also sharing existing AD IP/account
 limits. Tests do contact the real gateway when used and therefore count toward its own
 authentication/lockout policy. No background retries and no database migration.
+
+
+### AD diagnostic audit attribution
+
+CFG-03 distinguishes the authenticated Admin actor from `tested_username`. `gateway_status=success` means the gateway verified the submitted account; `mtpulse_status=ready` means the account is eligible locally. The diagnostic never issues a login session. Historical summaries use stored target/outcome metadata without rewriting records.
+
+New audit context includes request method/path, peer IP and IP provenance. The CIAM Compose API config trusts `X-Real-IP` only from the internal `web` service resolved through Docker DNS; nginx must overwrite that header with `$remote_addr`. Do not point `MTPULSE_AUDIT_PROXY_HOST` to an untrusted service or expose API directly as a substitute. DNS failure/untrusted peer/invalid header falls back to observed peer. Historical records remain labelled server-observed and missing destinations stay unknown. Source IP may represent NAT/upstream proxy, not a uniquely identified workstation.

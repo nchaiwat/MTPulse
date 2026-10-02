@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
@@ -988,6 +989,13 @@ def test_ad_gateway_test_checks_unknown_user_without_changing_session(auth_clien
     assert log and log.status == "success" and log.triggered_by == "user:tester"
     assert "private-test-password" not in log.details and "fixture-ad-secret" not in log.details
     assert "new.employee" in log.details
+    details = json.loads(log.details)
+    assert details["request_method"] == "POST"
+    assert details["request_path"] == "/api/settings/ciam-sso/test-ad-login"
+    assert details["gateway"] == "http://192.168.12.11:3100/api/v2/login"
+    assert details["auth_method"] == "AD_GATEWAY_V2_DIAGNOSTIC"
+    assert details["tested_username"] == "new.employee"
+    assert "new.employee" in log.message
 
 
 @pytest.mark.parametrize("role", ["viewer", "operator"])
@@ -1159,3 +1167,26 @@ def test_ad_gateway_test_rejects_changed_saved_config(auth_client, monkeypatch):
     )
     assert result.json()["gateway_status"] == "settings_changed"
     assert result.json()["mtpulse_status"] == "not_checked"
+
+
+def test_ad_test_log_names_actor_and_target_separately(auth_client):
+    from app.models import TransactionLog
+
+    client, session = auth_client
+    admin = account(session)
+    ciam.audit(
+        session,
+        "ad_gateway_test",
+        "user:" + admin.id,
+        {
+            "tested_username": "chaiwat.n",
+            "gateway_status": "success",
+            "mtpulse_status": "ready",
+            "status": "success",
+        },
+    )
+    session.commit()
+    row = session.scalar(select(TransactionLog).where(TransactionLog.event_code == "CFG-03"))
+    assert row.triggered_by == "user:tester"
+    assert "chaiwat.n" in row.message
+    assert "AD" in row.message

@@ -101,7 +101,8 @@ USER_FIELDS = ("id", "username", "role", "active", "ad_username", "ad_enabled", 
 
 def record(session: Session, action: str, actor: str, source: dict):
     context = session.info.get("audit_context", {})
-    details = {"ip": context.get("ip"), "ip_source": "server_observed"}
+    details = {key: context.get(key) for key in ("ip", "peer_ip", "request_method", "request_path")}
+    details["ip_source"] = context.get("ip_source", "server_observed")
     provider = source.get("provider", context.get("provider"))
     user = session.get(AuthUser, actor[5:]) if actor.startswith("user:") else None
     if user:
@@ -162,6 +163,8 @@ def record(session: Session, action: str, actor: str, source: dict):
         "tested_username",
         "gateway_status",
         "mtpulse_status",
+        "app_id",
+        "auth_method",
     ):
         if key in source:
             details[key] = source[key]
@@ -192,7 +195,10 @@ def record(session: Session, action: str, actor: str, source: dict):
         message += ": ENABLED" if source.get("active") else ": DISABLED"
     if action in ("connection_test", "ad_gateway_test"):
         status = source.get("status", "failed")
-    if details.get("username"):
+    if action == "ad_gateway_test":
+        target = source.get("tested_username") or "ไม่ระบุบัญชี (ข้อมูลไม่ผ่านการตรวจสอบ)"
+        message = "ทดสอบบัญชี AD: " + target
+    elif details.get("username"):
         message += ": " + str(details["username"])
     started = context.get("started")
     session.add(
