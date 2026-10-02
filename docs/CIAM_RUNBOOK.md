@@ -1,6 +1,6 @@
 # CIAM Mode B — setup and acceptance
 
-This feature is not deployed. Production remains the pre-authentication release.
+Production application activated on 2026-10-02 at c916ff3 with trusted local HTTPS and Local Admin. CIAM SSO and AD Login remain disabled until real credentials are entered and accepted.
 CA/AD CS installation is a separate IT task. Do not enable production authentication
 until trusted HTTPS/DNS and the registered CIAM client are ready. Do not paste the
 client secret, local password, encryption key or certificate private key into Git/chat.
@@ -154,3 +154,43 @@ Rollback extension only: revert the AD feature application commit to 0c7039e whi
 keeping the additive nullable column. Disable emergency mode before rollback; old
 application code does not enforce AD-provider mode checks. Do not drop auth tables or
 restore old business-data backups as part of application rollback.
+
+
+## Production activation — 2026-10-02
+
+Owner explicitly approved deployment and a certificate without a CA VM. Deployed
+c916ff3cddbaba2dead13ce5791fa0aef4958af7, using image tags mtpulse-api:ciam-c916ff3
+(API/Worker) and mtpulse-web:ciam-c916ff3. Active compose command:
+`docker compose -p mtpulse --env-file .env.server -f compose.server.yaml -f compose.ciam.yaml -f releases/c916ff3/compose.images.yaml ...`
+Always include the TLS/image overlays. MTPULSE_AUTH_MODE=ciam is also persisted in
+.env.server to prevent accidental development-mode bypass if an overlay is omitted.
+
+Self-signed server certificate (CA:FALSE, serverAuth, SAN wa-mtpulse.wa.net) and RSA3072
+private key are under /opt/mtpulse/certificates, key mode 600. No CA VM, domain-wide
+GPO change or public exposure configured. Certificate validity ends 2027-10-02 04:27:29 UTC.
+SHA256 4F6304A701BD71E3051EC03BA9EEBBE4D536ECCFFEB6C2D3CC69461B85394F9A.
+Public certificate was verified and imported into CurrentUser\Root on this Windows
+account only. Other employees need the same certificate trusted on their own machines.
+
+Emergency admin mtpulse-emergency bootstrapped in production; only its password hash
+is in PostgreSQL. Initial password delivered as a current-user DPAPI encrypted credential
+file under D:/Downloads/MTPulse-Access with restricted directory ACL, never in Git/chat.
+README.md and Show-Emergency-Login.ps1 in that directory explain local retrieval and
+password rotation. Do not distribute the credential XML or server private key. Real
+CIAM client secret and AD secret were NOT supplied; SSO/break-glass remain disabled.
+
+Backup before additive migration: /opt/mtpulse/backups/before-ciam-f7f30a1-20261002T042136Z.dump,
+213755414 bytes, SHA256 f47c870ad80a54d1f1076acd8e07f097d8b1347299a1989743f4115acda55506;
+checksum reverified before upgrade. Production schema now 9da415c6d7e8.
+HTTPS page/assets/health and Local Admin login/logout passed using OS certificate trust
+(no TLS verification bypass). Anonymous reports return 401; cookie Secure/HttpOnly.
+All seven MT report APIs returned 200. HH 2025-04-24 remained 22342.05 / 11; GH March
+2025 gross remained 2734747.60 / 870; Sale Out available returned 200. API/Web/DB healthy,
+Worker running. Live external CIAM/AD authentication and responsive visual acceptance
+are still pending. Earlier statements that no production activation occurred describe
+prior steps and are superseded by this section.
+
+Rollback images retained: mtpulse-api:pre-ciam-95b56ac, mtpulse-web:pre-ciam-95b56ac,
+mtpulse-worker:pre-ciam-95b56ac. A rollback to that pre-authentication release requires
+explicit consideration of restored anonymous access and infrastructure auth mode;
+do not downgrade/drop the additive auth schema or restore older business data.
