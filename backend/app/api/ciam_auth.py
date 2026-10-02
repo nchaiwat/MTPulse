@@ -495,3 +495,12 @@ def transaction_logs(
             for r in rows
         ]
     return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+@router.post("/api/settings/ciam-sso/test-ad-login")
+def test_ad_login(
+    payload: LocalLogin, request: Request, response: Response, session: Db, actor: Admin
+):
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    return ad_auth.test_credentials(session, request, payload.username, payload.password, actor)

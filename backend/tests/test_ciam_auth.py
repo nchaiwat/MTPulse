@@ -954,3 +954,208 @@ def test_transaction_matrix_config_breakglass_and_ad(auth_client, monkeypatch):
     legacy = client.get("/api/settings/transaction-logs", params={"legacy": True}).json()
     assert legacy["total"] > 0 and legacy["items"][0]["status"] is None
     assert legacy["items"][0]["details"] == {}
+
+
+def test_ad_gateway_test_checks_unknown_user_without_changing_session(auth_client, monkeypatch):
+    from app.models import TransactionLog
+
+    client, session = auth_client
+    admin = account(session)
+    sign_in(client, session, admin)
+    ciam.save_config(session, {"ciam_ad_secret": "fixture-ad-secret"}, "test")
+    before = list(session.scalars(select(AuthSession.token_hash)))
+
+    def gateway(_client, url, **kwargs):
+        assert url == "http://192.168.12.11:3100/api/v2/login"
+        assert kwargs["json"]["username"] == "new.employee"
+        assert kwargs["json"]["secret_key"] == "fixture-ad-secret"
+        return httpx.Response(200, json={"status": "success", "data": {"username": "New.Employee"}})
+
+    monkeypatch.setattr(httpx.Client, "post", gateway)
+    result = client.request(
+        "POST",
+        "/api/settings/ciam-sso/test-ad-login",
+        json={"username": "New.Employee", "password": "private-test-password"},
+    )
+    assert result.status_code == 200
+    assert result.json()["gateway_status"] == "success"
+    assert result.json()["mtpulse_status"] == "account_missing"
+    assert "set-cookie" not in result.headers
+    assert list(session.scalars(select(AuthSession.token_hash))) == before
+    assert len(list(session.scalars(select(AuthUser)))) == 1
+    assert client.get("/api/auth/me").json()["user"]["id"] == admin.id
+    log = session.scalar(select(TransactionLog).where(TransactionLog.event_code == "CFG-03"))
+    assert log and log.status == "success" and log.triggered_by == "user:tester"
+    assert "private-test-password" not in log.details and "fixture-ad-secret" not in log.details
+    assert "new.employee" in log.details
+
+
+@pytest.mark.parametrize("role", ["viewer", "operator"])
+def test_ad_gateway_test_requires_admin(auth_client, monkeypatch, role):
+    client, session = auth_client
+    sign_in(client, session, account(session, role))
+    called = []
+    monkeypatch.setattr(httpx.Client, "post", lambda *a, **k: called.append(True))
+    response = client.request(
+        "POST",
+        "/api/settings/ciam-sso/test-ad-login",
+        json={"username": "ad.user", "password": "test-password"},
+    )
+    assert response.status_code == 403 and called == []
+
+
+@pytest.mark.parametrize(
+    "case,expected",
+    [
+        ("bad_password", "rejected"),
+        ("wrong_username", "rejected"),
+        ("timeout", "timeout"),
+        ("server_error", "unavailable"),
+        ("rate_limit", "rate_limited"),
+        ("invalid_json", "unavailable"),
+    ],
+)
+def test_ad_gateway_test_failure_redacted_and_session_preserved(
+    auth_client, monkeypatch, case, expected
+):
+    from app.models import TransactionLog
+
+    client, session = auth_client
+    admin = account(session)
+    sign_in(client, session, admin)
+    ciam.save_config(session, {"ciam_ad_secret": "secret-not-in-audit"}, "test")
+
+    def gateway(*args, **kwargs):
+        if case == "timeout":
+            raise httpx.ReadTimeout("private-password and secret-not-in-audit")
+        if case == "invalid_json":
+            return httpx.Response(200, text="private-password and secret-not-in-audit")
+        return httpx.Response(
+            500
+            if case == "server_error"
+            else 429
+            if case == "rate_limit"
+            else 401
+            if case == "bad_password"
+            else 200,
+            json={
+                "status": "success",
+                "data": {"username": "someone.else"},
+                "message": "private-password",
+            },
+        )
+
+    monkeypatch.setattr(httpx.Client, "post", gateway)
+    result = client.request(
+        "POST",
+        "/api/settings/ciam-sso/test-ad-login",
+        json={"username": "ad.user", "password": "private-password"},
+    )
+    assert result.status_code == 200
+    assert result.json()["gateway_status"] == expected
+    assert result.json()["mtpulse_status"] == "not_checked"
+    assert "private-password" not in result.text
+    assert "set-cookie" not in result.headers
+    assert client.get("/api/auth/me").json()["user"]["id"] == admin.id
+    log = session.scalar(select(TransactionLog).where(TransactionLog.event_code == "CFG-03"))
+    assert log.status == "failed" and expected in log.details
+    assert "private-password" not in log.details and "secret-not-in-audit" not in log.details
+
+
+@pytest.mark.parametrize(
+    "active,binding,issuer,expected",
+    [
+        (True, "ad.user", ciam.MANAGED_ISSUER, "ready"),
+        (False, "ad.user", ciam.MANAGED_ISSUER, "disabled"),
+        (True, None, ciam.MANAGED_ISSUER, "ad_not_enabled"),
+        (True, None, ciam.LOCAL_ISSUER, "local_account"),
+    ],
+)
+def test_ad_gateway_test_reports_mtpulse_eligibility(
+    auth_client, monkeypatch, active, binding, issuer, expected
+):
+    client, session = auth_client
+    sign_in(client, session, account(session))
+    ciam.save_config(session, {"ciam_ad_secret": "test-secret"}, "test")
+    user = account(session, "operator", issuer)
+    user.username, user.active, user.ad_username = "AD.User", active, binding
+    session.commit()
+    monkeypatch.setattr(
+        httpx.Client,
+        "post",
+        lambda *a, **k: httpx.Response(
+            200, json={"status": "success", "data": {"username": "ad.user"}}
+        ),
+    )
+    response = client.request(
+        "POST",
+        "/api/settings/ciam-sso/test-ad-login",
+        json={"username": "AD.User", "password": "password"},
+    )
+    assert response.status_code == 200
+    assert response.json()["gateway_status"] == "success"
+    assert response.json()["mtpulse_status"] == expected
+    session.refresh(user)
+    assert (user.active, user.ad_username, user.role) == (active, binding, "operator")
+
+
+def test_ad_gateway_test_guards_and_rate_limit(auth_client, monkeypatch):
+    # Keep all attempts in one 5-minute bucket, even when the suite crosses a boundary.
+    fixed_now = datetime.now(UTC)
+
+    class FixedClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now if tz else fixed_now.replace(tzinfo=None)
+
+    monkeypatch.setattr(ciam, "datetime", FixedClock)
+    client, session = auth_client
+    sign_in(client, session, account(session))
+    calls = []
+
+    def gateway(*a, **k):
+        calls.append(k)
+        return httpx.Response(200, json={"status": "success", "data": {"username": "ad.user"}})
+
+    monkeypatch.setattr(httpx.Client, "post", gateway)
+    payload = {"username": "ad.user", "password": "password"}
+    endpoint = "/api/settings/ciam-sso/test-ad-login"
+    missing = client.request("POST", endpoint, json=payload)
+    assert missing.json()["gateway_status"] == "not_configured"
+    ciam.save_config(session, {"ciam_ad_secret": "test-secret"}, "test")
+    assert (
+        client.request("POST", endpoint, json=payload, headers={"X-CSRF-Token": ""}).status_code
+        == 403
+    )
+    assert (
+        client.request(
+            "POST", endpoint, json=payload, headers={"Origin": "https://untrusted.test"}
+        ).status_code
+        == 403
+    )
+    invalid = client.request("POST", endpoint, json={"username": "*()", "password": "password"})
+    assert invalid.json()["gateway_status"] == "invalid_username"
+    assert calls == []
+    for _ in range(9):
+        assert client.request("POST", endpoint, json=payload).json()["gateway_status"] == "success"
+    assert client.request("POST", endpoint, json=payload).json()["gateway_status"] == "rate_limited"
+    assert len(calls) == 9
+
+
+def test_ad_gateway_test_rejects_changed_saved_config(auth_client, monkeypatch):
+    client, session = auth_client
+    sign_in(client, session, account(session))
+    ciam.save_config(session, {"ciam_ad_secret": "test-secret"}, "test")
+
+    def gateway(*a, **k):
+        ciam.save_config(session, {"ciam_ad_app_id": "CHANGED"}, "test")
+        return httpx.Response(200, json={"status": "success", "data": {"username": "ad.user"}})
+
+    monkeypatch.setattr(httpx.Client, "post", gateway)
+    result = client.request(
+        "POST",
+        "/api/settings/ciam-sso/test-ad-login",
+        json={"username": "ad.user", "password": "password"},
+    )
+    assert result.json()["gateway_status"] == "settings_changed"
+    assert result.json()["mtpulse_status"] == "not_checked"

@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 
 import httpx
 from fastapi import HTTPException, Request, Response
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.auth import SESSION_COOKIE
@@ -50,6 +50,35 @@ def validate_gateway_url(value: str) -> str:
     return value
 
 
+def verify_gateway(cfg: dict, username: str, password: str):
+    with httpx.Client(timeout=10, follow_redirects=False, trust_env=False) as client:
+        result = client.post(
+            validate_gateway_url(cfg["ciam_ad_gateway_url"]),
+            json={
+                "app_id": cfg["ciam_ad_app_id"],
+                "secret_key": cfg["ciam_ad_secret"],
+                "username": username,
+                "password": password,
+                "timestamp": datetime.now(UTC).isoformat(),
+            },
+        )
+    if result.status_code == 429:
+        raise HTTPException(429, "AD Gateway จำกัดจำนวนคำขอ กรุณาลองใหม่ภายหลัง")
+    if result.status_code >= 500:
+        raise HTTPException(502, "AD Gateway ไม่พร้อมใช้งาน")
+    if result.status_code != 200:
+        raise HTTPException(401, "ยืนยันตัวตน AD ไม่สำเร็จ")
+    body = result.json()
+    if (
+        not isinstance(body, dict)
+        or body.get("status") != "success"
+        or not isinstance(body.get("data"), dict)
+        or not isinstance(body["data"].get("username"), str)
+        or normalize_username(body["data"]["username"]) != username
+    ):
+        raise HTTPException(401, "ผลยืนยันตัวตน AD ไม่ถูกต้อง")
+
+
 def login(session: Session, request: Request, response: Response, username: str, password: str):
     cfg = ciam.config(session, ad_secret=True)
     ciam.same_origin(request, cfg)
@@ -65,32 +94,7 @@ def login(session: Session, request: Request, response: Response, username: str,
         user = session.scalar(select(AuthUser).where(AuthUser.ad_username == username))
         if not user or not user.active or user.issuer == ciam.LOCAL_ISSUER:
             raise HTTPException(401, "ยืนยันตัวตน AD ไม่สำเร็จ หรือยังไม่ได้รับสิทธิ์เข้าใช้งาน")
-        with httpx.Client(timeout=10, follow_redirects=False, trust_env=False) as client:
-            result = client.post(
-                validate_gateway_url(cfg["ciam_ad_gateway_url"]),
-                json={
-                    "app_id": cfg["ciam_ad_app_id"],
-                    "secret_key": cfg["ciam_ad_secret"],
-                    "username": username,
-                    "password": password,
-                    "timestamp": datetime.now(UTC).isoformat(),
-                },
-            )
-        if result.status_code == 429:
-            raise HTTPException(429, "AD Gateway จำกัดจำนวนคำขอ กรุณาลองใหม่ภายหลัง")
-        if result.status_code >= 500:
-            raise HTTPException(502, "AD Gateway ไม่พร้อมใช้งาน")
-        if result.status_code != 200:
-            raise HTTPException(401, "ยืนยันตัวตน AD ไม่สำเร็จ")
-        body = result.json()
-        if (
-            not isinstance(body, dict)
-            or body.get("status") != "success"
-            or not isinstance(body.get("data"), dict)
-            or not isinstance(body["data"].get("username"), str)
-            or normalize_username(body["data"]["username"]) != username
-        ):
-            raise HTTPException(401, "ผลยืนยันตัวตน AD ไม่ถูกต้อง")
+        verify_gateway(cfg, username, password)
         # Discard the earlier transaction/snapshot after network I/O and lock the user.
         user_id = user.id
         session.rollback()
@@ -125,3 +129,98 @@ def login(session: Session, request: Request, response: Response, username: str,
         if isinstance(exc, HTTPException):
             raise
         raise HTTPException(502, "ติดต่อหรืออ่านผล AD Gateway ไม่สำเร็จ") from exc
+
+
+def test_credentials(
+    session: Session, request: Request, username: str, password: str, actor: str
+) -> dict:
+    """Probe saved gateway credentials without issuing a session or mutating accounts."""
+    cfg = ciam.config(session, ad_secret=True)
+    ciam.same_origin(request, cfg)
+    tested_username = None
+    gateway_status = "unavailable"
+    mtpulse_status = "not_checked"
+    messages = {
+        "success": "AD Gateway ยืนยันตัวตนสำเร็จ",
+        "rejected": "AD Gateway ไม่ยืนยันตัวตน ตรวจสอบบัญชี รหัสผ่าน และสิทธิ์ที่ Gateway",
+        "timeout": "AD Gateway ไม่ตอบกลับภายในเวลาที่กำหนด",
+        "unavailable": "ติดต่อหรืออ่านผล AD Gateway ไม่สำเร็จ",
+        "rate_limited": "ทดสอบถี่เกินไป กรุณารอสักครู่แล้วลองใหม่",
+        "not_configured": "ยังตั้งค่า AD Gateway ไม่ครบ กรุณาบันทึกการตั้งค่าก่อน",
+        "invalid_username": "ใช้ AD sAMAccountName โดยไม่มี domain หรืออักขระพิเศษของ LDAP",
+        "settings_changed": "การตั้งค่าเปลี่ยนระหว่างทดสอบ กรุณาทดสอบใหม่",
+    }
+    try:
+        try:
+            tested_username = normalize_username(username)
+        except ValueError:
+            raise HTTPException(422) from None
+        ciam.throttle(session, "ad-test-admin:" + actor, 10)
+        ciam.throttle(
+            session, "ad-ip:" + (request.client.host if request.client else "unknown"), 40
+        )
+        ciam.throttle(session, "ad-account:" + tested_username, 10)
+        if not cfg["ciam_ad_secret"] or not cfg["ciam_ad_app_id"].strip():
+            raise HTTPException(503)
+        verify_gateway(cfg, tested_username, password)
+        session.rollback()
+        session.expire_all()
+        if ciam.fingerprint(ciam.config(session, ad_secret=True)) != ciam.fingerprint(cfg):
+            raise HTTPException(409)
+        # Match the real login's binding first; a same-name account alone is not permission.
+        user = session.scalar(select(AuthUser).where(AuthUser.ad_username == tested_username))
+        if user is None:
+            matches = list(
+                session.scalars(
+                    select(AuthUser).where(
+                        func.lower(func.trim(AuthUser.username)) == tested_username
+                    )
+                )
+            )
+            if len(matches) > 1:
+                mtpulse_status = "ambiguous"
+            elif matches:
+                user = matches[0]
+            else:
+                mtpulse_status = "account_missing"
+        if user:
+            if user.issuer == ciam.LOCAL_ISSUER:
+                mtpulse_status = "local_account"
+            elif not user.active:
+                mtpulse_status = "disabled"
+            elif user.ad_username != tested_username:
+                mtpulse_status = "ad_not_enabled"
+            else:
+                mtpulse_status = "ready"
+        gateway_status = "success"
+    except HTTPException as exc:
+        gateway_status = {
+            401: "rejected",
+            429: "rate_limited",
+            503: "not_configured",
+            409: "settings_changed",
+            422: "invalid_username",
+        }.get(exc.status_code, "unavailable")
+    except httpx.TimeoutException:
+        gateway_status = "timeout"
+    except (httpx.HTTPError, ValueError, TypeError):
+        gateway_status = "unavailable"
+    session.rollback()
+    ciam.audit(
+        session,
+        "ad_gateway_test",
+        actor,
+        {
+            "tested_username": tested_username,
+            "provider": "ad",
+            "gateway_status": gateway_status,
+            "mtpulse_status": mtpulse_status,
+            "status": "success" if gateway_status == "success" else "failed",
+        },
+    )
+    session.commit()
+    return {
+        "gateway_status": gateway_status,
+        "mtpulse_status": mtpulse_status,
+        "message": messages[gateway_status],
+    }

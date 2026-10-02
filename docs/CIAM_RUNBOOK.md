@@ -256,3 +256,28 @@ failed login, query logs as Admin, confirm Viewer denial and redaction. Compare 
 metadata and persisted entries after the failed response. Production migration requires
 fresh verified pg_dump. Code rollback target is protected release 6971a73; retain the
 additive table/history on rollback, never run destructive downgrade on production.
+
+
+## AD Gateway credential test (owner option 1)
+
+System Setting > Central IAM / AD > ทดสอบ AD Gateway accepts an AD sAMAccountName
+and password using saved URL/App ID/Secret only. Unsaved settings are not submitted.
+The Admin-only POST /api/settings/ciam-sso/test-ad-login requires CSRF and same Origin.
+It shares gateway protocol validation with actual AD login, but never issues a session,
+creates/links users, changes permissions or replaces the current Admin login.
+
+The result separates gateway_status from mtpulse_status. A successful AD response can
+still report account_missing, disabled, ad_not_enabled or local_account; ready means
+the current account snapshot is eligible, not that a new MTPulse login occurred.
+Gateway rejection is a diagnostic HTTP 200 result, not HTTP 401, so an incorrect test
+password does not trigger session expiration. Authentication/authorization failures
+for the actual Admin request still use normal 401/403 handling.
+
+The password is cleared from the form when submitting; there is no credential storage.
+Only normalized tested_username, sanitized gateway/MTPulse outcome and Admin actor are
+audited under CFG-03 / system_setting / ad_gateway_test. Gateway bodies and exception
+messages are not returned or logged. Timeouts, unexpected payloads, changed saved config,
+missing configuration and rate limits are handled separately.
+Limit: 10 test attempts per Admin per 5-minute bucket, also sharing existing AD IP/account
+limits. Tests do contact the real gateway when used and therefore count toward its own
+authentication/lockout policy. No background retries and no database migration.

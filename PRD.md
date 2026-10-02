@@ -1685,3 +1685,18 @@ Source: D:/Downloads/CIAM_SPOKE_ENTERPRISE_INTEGRATION_SPECIFICATION.md v2.3, se
 - Admin-only read-only log viewer: newest first, paginated, date range/category/status/actor filtering, readable Thai summary and redacted detail view. No edit/delete controls. No new automated retention/deletion rule absent an owner policy.
 - Non-goals: Mode A inbound M2M/directory APIs, external SIEM shipping, MT business logic changes, retrospective reconstruction of missing audit fields.
 - Acceptance: correct menu/tab visibility and Admin enforcement; seven specification cases with persisted fields and redaction; failed/disabled authentication recorded; existing login/user-management behavior unchanged; ModernTrade settings retained; full frontend/backend regression/lint/build and responsive checks at 375/768/1024/1440; isolated PostgreSQL migration and API smoke before release.
+
+## AD Gateway credential test — 2026-10-02 approved
+
+Owner requests a username/password test in the Central IAM / AD settings page.
+Add an Admin-only test form using the saved AD Gateway URL/App ID/Secret. Clearly
+state that unsaved settings are not tested. Show sanitized success/rejection,
+timeout/unavailable and configuration errors. Keep current Admin session unchanged:
+no session issuance, account creation/linking, permission change or password storage.
+Clear the test password after each attempt; audit the test outcome without credentials.
+Use CSRF, same-origin and rate limiting; preserve strict v2 response username matching.
+
+Owner chose option 1: test AD credentials even before an MTPulse account exists,
+then report MTPulse account/active/AD-permission status separately.
+This diagnostic never grants access or bypasses actual login authorization.
+No schema migration is expected. Production deployment needs explicit authorization.

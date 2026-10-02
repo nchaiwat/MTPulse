@@ -8,6 +8,13 @@ from sqlalchemy.orm import Session
 from app.models import AuthUser, TransactionLog
 
 EVENTS = {
+    "ad_gateway_test": (
+        "CFG-03",
+        "system_setting",
+        "ad_gateway_test",
+        "success",
+        "ทดสอบบัญชีกับ AD Gateway",
+    ),
     "auto_provision": (
         "SSO-03",
         "ciam_sso",
@@ -152,6 +159,9 @@ def record(session: Session, action: str, actor: str, source: dict):
         "prev_state",
         "key",
         "user_id",
+        "tested_username",
+        "gateway_status",
+        "mtpulse_status",
     ):
         if key in source:
             details[key] = source[key]
@@ -180,7 +190,7 @@ def record(session: Session, action: str, actor: str, source: dict):
         details["reason"] = str(source.get("reason", ""))[:300]
         status = "warning" if source.get("active") else "success"
         message += ": ENABLED" if source.get("active") else ": DISABLED"
-    if action == "connection_test":
+    if action in ("connection_test", "ad_gateway_test"):
         status = source.get("status", "failed")
     if details.get("username"):
         message += ": " + str(details["username"])

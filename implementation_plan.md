@@ -2279,3 +2279,19 @@ Status: owner confirmed the PRD and additive database scope. Continue the existi
 4. Add Admin-only paginated read API and Transaction Logs tab with server-side filters and safe details rendering. Retain legacy CIAM audit access with an explicit legacy label where shown, without inventing missing fields. No retention cleanup job or log mutation API.
 5. Run focused tests, full backend pytest/Ruff and frontend tests/lint/build. Validate diff and additive migration on isolated PostgreSQL; exercise logging persistence, access control and redaction through API. Verify responsive layout and keyboard controls. Record any unavailable checks explicitly.
 6. Before production schema migration, create and verify a fresh database backup (path, size, checksum, readable dump); build immutable candidate images, stage and deploy only within explicit owner authorization. Verify schema/head, health, login/log viewer, and seven MT critical APIs. Roll back application to 6971a73 if needed; leave additive log table intact. Record SHA, files, tests, risks and untouched work in HANDOFF.
+
+## AD Gateway credential test — 2026-10-02 approved
+
+1. Owner confirmed option 1: gateway verification plus separate MTPulse eligibility report.
+2. Add regression tests for Admin/CSRF/origin enforcement, saved settings,
+   strict matching response, redacted failures, timeout/rate limiting, unchanged
+   session/accounts, and durable test-outcome Transaction Log.
+3. Reuse the existing AD Gateway request/validation logic through a small shared
+   function; retain actual login checks and locks. Add a dedicated Admin test endpoint
+   whose failed credential result does not trigger the application's session-expired
+   handler. Never return raw gateway responses or exception text.
+4. Add labeled username/password/test controls to Central IAM / AD, password hidden
+   by default with eye control, clear pending/error/result feedback and password
+   cleanup. Keep this separate from settings-save payload and User Management.
+5. Run focused/full regression, lint/build and responsive checks; update runbook
+   and HANDOFF. Test integration with fixtures, not guessed real AD credentials.

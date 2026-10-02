@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { AdGatewayTestPanel } from './AdGatewayTestPanel'
 import { CiamSecretField } from './CiamSecretField'
 import { authRequest, setSessionToken, type LoginSession, type AuthUser } from '../auth/authApi'
 import '../auth/auth.css'
@@ -80,6 +81,7 @@ export function CiamSettingsPanel({ mode = 'ciam', onDirtyChange }: { mode?: 'ci
             setMessage(result.message)
           })}>ทดสอบการเชื่อมต่อที่บันทึกไว้</button></div></fieldset>
         </form>
+        <AdGatewayTestPanel disabled={busy} />
         <p>Session ที่ออกใหม่ใช้เวลาที่ตั้งไว้ การระงับผู้ใช้จาก CIAM จะมีผลเมื่อยืนยันตัวตนใหม่ ส่วนการปิดบัญชีที่นี่มีผลทันที</p>
         <fieldset disabled={busy}><legend>โหมดฉุกเฉิน: {cfg.ciam_break_glass_active ? 'เปิด' : 'ปิด'}</legend>
           <label className="ciam-reason">เหตุผล<input value={reason} maxLength={300} onChange={e => { setReason(e.target.value); mark('reason', true) }} /></label>
