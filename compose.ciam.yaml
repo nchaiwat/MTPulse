@@ -15,3 +15,15 @@ services:
     volumes:
       - ./deploy/nginx.ciam.conf:/etc/nginx/conf.d/default.conf:ro
       - ./certificates:/etc/nginx/tls:ro
+
+  ciam-agent:
+    build: ./backend
+    restart: unless-stopped
+    command: ["python", "-m", "app.ciam_agent"]
+    environment:
+      MTPULSE_DATABASE_URL: postgresql+psycopg://mtpulse:${POSTGRES_PASSWORD}@db:5432/mtpulse
+      MTPULSE_SETTINGS_ENCRYPTION_KEY: ${MTPULSE_SETTINGS_ENCRYPTION_KEY:?required}
+      MTPULSE_AUTH_MODE: ciam
+    depends_on:
+      api:
+        condition: service_healthy

@@ -918,3 +918,66 @@ Production activation remains blocked by absent certificates/fullchain.pem and p
 - All seven MT performance reads passed; HH 24-Apr amount 22342.05 / qty 11 and GH March gross 2734747.60 / qty 870 unchanged. API/Web/DB healthy; Worker running. Prior full regression and isolated proxy staging apply to this exact application commit.
 - Rollback: 32e8199 plus releases/32e8199/compose.images.yaml; no database downgrade. Old IP remains server-observed; full AD login is distinct from diagnostic. This turn changes deployment state and HANDOFF only, leaving unrelated primary/old worktrees untouched; their full inventories remain unknown. Server untracked backups/ and releases/ preserved.
 - Two shell transport attempts encountered Windows CRLF before deployment mutation; binary LF input resolved it. Final deployment and smoke completed successfully.
+
+## 2026-10-02 — Mode C discovery started
+
+Owner authorized Mode C continuation. Created isolated codex/ciam-mode-c at
+D:/Python/MTPulse/.tmp/ciam-mode-c from existing CIAM integration 05a2339 (application
+1d26186 deployed). Remote fetch confirms origin/main remains older a242b52; CIAM source
+is on origin/codex/ciam-login. Preserved all prior worktrees and their edits.
+Read repository rules, context/design/PRD/plan, source auth/session/settings/worker paths
+and supplied v2.4.0 Group D. Added scoped PRD then implementation plan drafts. Asked
+for authoritative CIAM heartbeat source/API path; response pending. No implementation,
+tests, production changes, database migration or account export performed this turn.
+Do not fabricate queue acknowledgement/ordering semantics or remote-enable precedence.
+Known seam: ciam.save_config invalidates login attempts; Agent-only settings need an
+independent narrow save path. Existing import worker blocks during run processing,
+so heartbeat requires a separate process. No schema drafted beyond conceptual needs.
+
+
+## 2026-10-02 — Mode C candidate implemented, not deployed
+
+- Owner selected CIAM authoritative re-enable (option 2) and confirmed proceeding. No
+  further implementation approval pending. Branch codex/ciam-mode-c, base 05a2339
+  (deployed app 1d26186); main and live deployment unchanged.
+- Added separate outbound Agent, database-backed encrypted Admin settings, UI/status,
+  key reveal audit, full directory sync and DISABLE/ENABLE command handling. Agent
+  defaults off. Existing SSO/AD/session/Import logic untouched. Actor/target and real
+  state changes are audited; no invented CIAM human initiator. Local emergency and
+  last active administrator protected. CIAM can restore locally disabled ordinary users.
+- Additive migration bc2637e8f901 creates durable command inbox/results plus agent
+  state. Commands/session revocation/audit commit atomically; duplicate IDs return
+  original outcome; conflict/stale command handling, retained ACK journal, startup
+  resume and PostgreSQL advisory lock prevent duplicate agents. Runtime configuration
+  is isolated from ciam.save_config to preserve existing login attempts/sessions.
+- Changed files: backend/app/{main.py,models.py,ciam_agent.py,api/ciam_agent.py,
+  services/ciam_agent.py}; migration bc2637e8f901; backend/tests/test_ciam_agent.py;
+  compose.ciam.yaml; src/features/settings/{CiamAgentPanel.tsx,CiamAgentPanel.test.tsx,
+  CiamSettingsPanel.tsx,CiamSettingsPanel.test.tsx,TransactionLogsPanel.tsx}; PRD.md,
+  implementation_plan.md, docs/CIAM_RUNBOOK.md, HANDOFF.md.
+- Reproduction: new regression initially failed on missing CiamAgentCommand; focused
+  suite then 13 passed. Full backend 435 passed/2 skipped. Frontend 163 passed/36 files
+  using one worker/testTimeout=20000 after initial parallel run timed out in two
+  unchanged report tests at 5 seconds. Frontend lint/build passed, bundle warning
+  528.45 kB. Changed Python Ruff passed; full Ruff retains old I001/E501 in unchanged
+  a7d4c2e91f30. diff --check passed. Four-width browser fixtures 375/768/1024/1440,
+  all three System Setting tabs: no browser errors or viewport overflow; reviewed UI.
+- SSH/SCP to 192.168.10.20 timed out, so Linux/production-version staging not performed.
+  Used isolated local PostgreSQL 15.6 on loopback 15439 instead, with synthetic accounts
+  and mocked CIAM, no production credentials/DB. Fresh migrations to head passed.
+  Verified durable inbox after simulated post-receipt crash and fresh Session, account
+  disable/all sessions revoked, result ACK, re-enable, redaction, and exclusion/recovery
+  of a second Agent using actual PostgreSQL advisory locks. Server stopped after test.
+  Compose config validation passed with fixture env values. Preview server stopped.
+- CIAM v2.4 is the owner-specified contract, not verified live provider behavior. HTTP
+  ACKNOWLEDGED interpreted as accepting supplied results; provider redelivery after a
+  lost response, null department, DEGRADED status and exact M2M registration remain
+  integration acceptance checks. No live directory export or command executed.
+- Pending release work: Linux candidate build/staging on PostgreSQL 17 when accessible,
+  real CIAM test with approved registration, fresh production backup, explicit Deploy.
+  Rollback stops Agent, restores 1d26186 API/Web and retains additive tables/history.
+  Code rollback cannot undo already applied account changes. No production migration,
+  business data mutation, settings/account change, merge or main push in this task.
+- Ignored .tmp/mode-c-qa holds fixture screenshots/scripts/archive/local test DB only.
+  New worktree tracked changes all belong to this task. Unrelated primary/old worktree
+  modifications remain untouched; their full inventories not re-audited.

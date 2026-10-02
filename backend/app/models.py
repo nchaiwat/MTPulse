@@ -651,3 +651,22 @@ class TransactionLog(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )
+
+
+class CiamAgentState(Base):
+    __tablename__ = "ciam_agent_state"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    payload: Mapped[str] = mapped_column(Text, default="{}")
+
+
+class CiamAgentCommand(Base):
+    __tablename__ = "ciam_agent_commands"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    scope: Mapped[str] = mapped_column(String(64), index=True)
+    command_id: Mapped[str] = mapped_column(String(200))
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    username: Mapped[str] = mapped_column(String(200), index=True)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    payload: Mapped[str] = mapped_column(Text)
+    result: Mapped[str] = mapped_column(Text)
+    acknowledged: Mapped[bool] = mapped_column(Boolean, default=False)
