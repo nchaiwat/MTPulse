@@ -172,7 +172,7 @@ describe('App navigation', () => {
     expect(screen.getByRole('button', { name: 'แดชบอร์ด Thai Watsadu' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('button', { name: 'Monitoring' })).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'ModernTrade Setting' })).toHaveLength(1)
-    expect(screen.getByRole('button', { name: 'System Setting', exact: true })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'System Setting' })).toBeInTheDocument()
     expect(within(screen.getByRole('navigation', { name: 'Primary navigation' })).queryByText('Mapping')).not.toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: 'รายงาน' }))
