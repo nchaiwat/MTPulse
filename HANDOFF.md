@@ -789,3 +789,19 @@ Migration:
   files are untouched. Prior `.tmp/hh-file-validation` artifacts untouched. New local
   `.venv`, build and cache files are ignored; no credentials, source workbooks, dumps
   or private keys are committed. No deployment, import, NAS or AD changes performed.
+
+
+## 2026-10-02 — AD Gateway emergency login extension
+
+- Branch: codex/ciam-login, isolated worktree .tmp/ciam-login. Feature commit: 95ed672.
+- Owner chose explicit Admin binding from AD username to existing CIAM account, HTTP LAN endpoint http://192.168.12.11:3100/api/v2/login, app ID MTPULSE. No v3; blank required_group unrestricted by owner definition. No real AD secret supplied; ABCDE is illustrative only.
+- Implemented admin-only unique AD binding/unbinding with audit and AD-session revocation; no automatic linking/provisioning. Same CIAM user ID, role/status and fixed TTL. Local Admin remains separate. AD login requires manually activated break-glass, same Origin, explicit binding and strict success/username response; passwords never persist. Settings hold encrypted AD secret and runtime URL/app ID. No fabricated forwarded IP, no automatic fallback, no redirects/proxy-env on gateway HTTP client.
+- PostgreSQL advisory lock serializes settings changes against AD session issuance; user-row locks serialize bindings/status. Real PostgreSQL concurrency acceptance remains pending (automated auth fixtures are SQLite).
+- Files changed: backend/app/{auth.py,models.py,api/ciam_auth.py,services/ciam.py,services/ad_auth.py}; backend/alembic/versions/9da415c6d7e8_add_ad_binding.py; backend/tests/test_ciam_auth.py; src/features/auth/{AuthRoot.tsx,AuthRoot.test.tsx,authApi.ts,auth.css}; src/features/settings/{CiamSettingsPanel.tsx,CiamSettingsPanel.test.tsx}; PRD.md, implementation_plan.md, docs/CIAM_RUNBOOK.md and this handoff.
+- Verification: full backend 388 passed/2 skipped; focused final auth suite 52 passed; full frontend 148 passed/31 files; frontend lint/build passed. Changed backend source/test/migration Ruff passed. Full Ruff still reports pre-existing I001/E501 in unchanged a7d4c2e91f30_add_manual_import_settings.py. Build warns about 503.15 kB main chunk. git diff --check passed; Alembic head 9da415c6d7e8.
+- New migration is additive nullable auth_users.ad_username + unique index. Migration/model shape checked on isolated SQLite. No production migration, account bootstrap, real import, secret setting or deployment performed.
+- Read-only network smoke: TCP 192.168.12.11:3100 reachable from production API container; no credentials sent. Not proof of AD login or whitelist acceptance.
+- Staging: follow docs/CIAM_RUNBOOK.md; apply migrations to isolated DB, bootstrap Local Admin, configure real CIAM/AD secrets through Settings, complete SSO once, bind AD usernames, toggle emergency and test mapped/unmapped/disabled users plus role enforcement and revocation. Confirm real gateway blank-group semantics; the local ADSyncAgent copy's memberOf.some(...) may reject users with no listed memberships. Gateway source/AD untouched.
+- Pending: trusted browser HTTPS/certificate, real credentials and live gateway/CIAM acceptance. Browser tool initialization failed again, so visual 375/768/1024/1440 acceptance is unverified. HTTP LAN gateway transport is an explicit owner choice, does not remove browser HTTPS requirement.
+- Extension rollback point: 0c7039e; disable emergency mode/revoke AD sessions before rollback, keep additive nullable column. Production remains 95b56ac from preflight; no server app files or DB modified this turn.
+- Worktree had no pre-existing changes at start. Primary checkout and old worktree dirty/untracked files were not modified or removed; their complete current inventories were not re-audited this turn.
