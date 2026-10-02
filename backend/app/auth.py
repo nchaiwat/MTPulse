@@ -19,6 +19,7 @@ PUBLIC_PATHS = {
     "/api/auth/sso/authorize-url",
     "/api/auth/sso/callback",
     "/api/auth/local/login",
+    "/api/auth/ad/login",
 }
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
@@ -76,6 +77,11 @@ def authorize_request(request: Request, session: Annotated[Session, Depends(get_
     login = session.get(AuthSession, digest(token))
     if login is None or utc(login.expires_at) <= datetime.now(UTC):
         raise HTTPException(401, "Session หมดอายุ กรุณาเข้าสู่ระบบใหม่")
+    if login.provider == "ad":
+        from app.services.ciam import config
+
+        if not config(session)["ciam_break_glass_active"]:
+            raise HTTPException(401, "โหมดฉุกเฉินปิดแล้ว กรุณาเข้าสู่ระบบผ่าน CIAM")
     user = session.get(AuthUser, login.user_id)
     if not user or not user.active:
         raise HTTPException(401, "บัญชีถูกระงับ กรุณาติดต่อผู้ดูแลระบบ")

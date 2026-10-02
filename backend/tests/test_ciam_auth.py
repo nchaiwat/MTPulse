@@ -436,6 +436,11 @@ def test_additive_auth_migration_matches_models():
         context = MigrationContext.configure(connection)
         with Operations.context(context):
             migration.upgrade()
+            binding_path = path.with_name("9da415c6d7e8_add_ad_binding.py")
+            binding_spec = importlib.util.spec_from_file_location("ad_migration", binding_path)
+            binding_migration = importlib.util.module_from_spec(binding_spec)
+            binding_spec.loader.exec_module(binding_migration)
+            binding_migration.upgrade()
             inspector = inspect(connection)
             for model in [AuthUser, AuthSession, SsoAttempt, AuthRateLimit]:
                 columns = {c["name"] for c in inspector.get_columns(model.__tablename__)}
@@ -501,3 +506,212 @@ def test_discovery_rejects_unsafe_metadata(auth_client, monkeypatch, invalid):
     with pytest.raises(HTTPException) as error:
         ciam.discovery(cfg)
     assert error.value.status_code == 502
+
+
+def test_ad_emergency_requires_mode_and_binding(auth_client, monkeypatch):
+    client, session = auth_client
+    client.headers["Origin"] = ORIGIN
+    monkeypatch.setattr(httpx.Client, "post", lambda *a, **k: pytest.fail("Gateway not expected"))
+    assert (
+        client.request(
+            "POST", "/api/auth/ad/login", json={"username": "tester", "password": "test"}
+        ).status_code
+        == 503
+    )
+    ciam.save_config(
+        session, {"ciam_break_glass_active": True, "ciam_ad_secret": "test-secret"}, "test"
+    )
+    assert (
+        client.request(
+            "POST", "/api/auth/ad/login", json={"username": "tester", "password": "test"}
+        ).status_code
+        == 401
+    )
+
+
+def test_ad_binding_reuses_role_and_revokes_on_exit(auth_client, monkeypatch):
+    client, session = auth_client
+    admin = account(session)
+    user = account(session, "operator")
+    sign_in(client, session, admin)
+    result = client.put(
+        f"/api/settings/ciam-sso/users/{user.id}/ad-binding", json={"username": "  AD.Tester "}
+    )
+    assert result.status_code == 200
+    assert result.json()["ad_username"] == "ad.tester"
+    ciam.save_config(
+        session, {"ciam_break_glass_active": True, "ciam_ad_secret": "test-secret"}, "test"
+    )
+
+    def gateway(_self, url, **kwargs):
+        assert url == "http://192.168.12.11:3100/api/v2/login"
+        payload = kwargs["json"]
+        assert payload["app_id"] == "MTPULSE"
+        assert payload["secret_key"] == "test-secret"
+        assert payload["username"] == "ad.tester"
+        assert payload["password"] == "ad-password"
+        assert (
+            abs((datetime.now(UTC) - datetime.fromisoformat(payload["timestamp"])).total_seconds())
+            < 10
+        )
+        assert "headers" not in kwargs
+        return httpx.Response(200, json={"status": "success", "data": {"username": "AD.Tester"}})
+
+    monkeypatch.setattr(httpx.Client, "post", gateway)
+    client.cookies.clear()
+    response = client.request(
+        "POST", "/api/auth/ad/login", json={"username": "AD.Tester", "password": "ad-password"}
+    )
+    assert response.status_code == 200
+    assert response.json()["user"]["id"] == user.id
+    assert response.json()["user"]["role"] == "operator"
+    assert response.json()["provider"] == "ad"
+    assert client.get("/api/auth/me").status_code == 200
+    ciam.save_config(session, {"ciam_break_glass_active": False}, "test")
+    assert client.get("/api/auth/me").status_code == 401
+    logs = " ".join(x.after_json or "" for x in session.scalars(select(AuditEvent)))
+    assert "ad-password" not in logs and "test-secret" not in logs
+
+
+@pytest.mark.parametrize(
+    "body,status",
+    [
+        ({"status": "error", "message": "password leak"}, 200),
+        ({"status": "success", "data": {"username": "other"}}, 200),
+        ({"status": "success"}, 200),
+        ([], 200),
+        ({"authenticated": True, "username": "tester"}, 200),
+        ({"status": "success", "data": {"username": "tester"}}, 302),
+        ({"message": "secret leak"}, 403),
+        ({"message": "secret leak"}, 500),
+        ({"message": "secret leak"}, 429),
+    ],
+)
+def test_ad_rejects_untrusted_gateway_results(auth_client, monkeypatch, body, status):
+    client, session = auth_client
+    user = account(session, "viewer")
+    user.ad_username = "tester"
+    session.commit()
+    ciam.save_config(
+        session, {"ciam_break_glass_active": True, "ciam_ad_secret": "ad-secret"}, "test"
+    )
+    client.headers["Origin"] = ORIGIN
+    monkeypatch.setattr(httpx.Client, "post", lambda *a, **k: httpx.Response(status, json=body))
+    result = client.request(
+        "POST", "/api/auth/ad/login", json={"username": "tester", "password": "password"}
+    )
+    assert result.status_code in (401, 429, 502)
+    assert "leak" not in result.text
+    assert session.scalar(select(AuthSession)) is None
+
+
+def test_ad_bindings_unique_admin_only_and_never_local(auth_client):
+    client, session = auth_client
+    admin = account(session)
+    user = account(session, "viewer")
+    local = local_auth.bootstrap(session, "emergency", "test-long-password")
+    sign_in(client, session, admin)
+    path = "/api/settings/ciam-sso/users/"
+    assert (
+        client.put(path + user.id + "/ad-binding", json={"username": "Tester"}).status_code == 200
+    )
+    assert (
+        client.put(path + admin.id + "/ad-binding", json={"username": "TESTER"}).status_code == 409
+    )
+    assert (
+        client.put(path + local.id + "/ad-binding", json={"username": "local"}).status_code == 422
+    )
+    sign_in(client, session, user, "ad")
+    ciam.save_config(session, {"ciam_break_glass_active": True}, "test")
+    assert client.put(path + user.id + "/ad-binding", json={"username": ""}).status_code == 403
+    sign_in(client, session, admin)
+    assert client.put(path + user.id + "/ad-binding", json={"username": ""}).status_code == 200
+    assert not session.scalars(select(AuthSession).where(AuthSession.provider == "ad")).all()
+
+
+def test_ad_settings_encrypt_secret_and_keep_it_when_blank(auth_client):
+    client, session = auth_client
+    sign_in(client, session, account(session))
+    cfg = client.get("/api/settings/ciam-sso").json()
+    cfg["ciam_ad_secret"] = "private-ad-secret"
+    saved = client.put("/api/settings/ciam-sso", json=cfg)
+    assert saved.status_code == 200
+    assert saved.json()["ad_secret_configured"] is True
+    assert "private-ad-secret" not in saved.text
+    assert "private-ad-secret" not in session.get(SystemSetting, "ciam_ad_secret").value
+    cfg["ciam_ad_secret"] = ""
+    assert client.put("/api/settings/ciam-sso", json=cfg).status_code == 200
+    assert ciam.config(session, ad_secret=True)["ciam_ad_secret"] == "private-ad-secret"
+    cfg["ciam_ad_gateway_url"] = "http://public.example.com/api/v2/login"
+    assert client.put("/api/settings/ciam-sso", json=cfg).status_code == 422
+    assert "private-ad-secret" not in client.get("/api/settings/ciam-sso").text
+
+
+@pytest.mark.parametrize("change", ["disabled", "unbound", "mode", "secret"])
+def test_ad_rechecks_identity_and_settings_after_gateway(auth_client, monkeypatch, change):
+    client, session = auth_client
+    user = account(session, "operator")
+    user.ad_username = "tester"
+    session.commit()
+    ciam.save_config(session, {"ciam_break_glass_active": True, "ciam_ad_secret": "secret"}, "test")
+    client.headers["Origin"] = ORIGIN
+
+    def gateway(*args, **kwargs):
+        if change == "disabled":
+            user.active = False
+            session.commit()
+        elif change == "unbound":
+            user.ad_username = None
+            session.commit()
+        elif change == "mode":
+            ciam.save_config(session, {"ciam_break_glass_active": False}, "test")
+        else:
+            ciam.save_config(session, {"ciam_ad_secret": "rotated"}, "test")
+        return httpx.Response(200, json={"status": "success", "data": {"username": "tester"}})
+
+    monkeypatch.setattr(httpx.Client, "post", gateway)
+    assert (
+        client.request(
+            "POST", "/api/auth/ad/login", json={"username": "tester", "password": "password"}
+        ).status_code
+        == 401
+    )
+    assert session.scalar(select(AuthSession)) is None
+
+
+def test_ad_rejects_origin_and_ldap_filter_input(auth_client, monkeypatch):
+    client, session = auth_client
+    ciam.save_config(session, {"ciam_break_glass_active": True, "ciam_ad_secret": "secret"}, "test")
+    monkeypatch.setattr(httpx.Client, "post", lambda *a, **k: pytest.fail("Gateway not expected"))
+    payload = {"username": "*)(objectClass=*)", "password": "do-not-echo"}
+    assert client.request("POST", "/api/auth/ad/login", json=payload).status_code == 403
+    client.headers["Origin"] = ORIGIN
+    response = client.request("POST", "/api/auth/ad/login", json=payload)
+    assert response.status_code == 422
+    assert "do-not-echo" not in response.text
+
+
+def test_ad_timeout_is_redacted_and_rate_limited(auth_client, monkeypatch):
+    client, session = auth_client
+    user = account(session)
+    user.ad_username = "tester"
+    session.commit()
+    ciam.save_config(session, {"ciam_break_glass_active": True, "ciam_ad_secret": "secret"}, "test")
+    client.headers["Origin"] = ORIGIN
+
+    def timeout(*args, **kwargs):
+        raise httpx.ReadTimeout("secret-and-password")
+
+    monkeypatch.setattr(httpx.Client, "post", timeout)
+    for _ in range(10):
+        response = client.request(
+            "POST", "/api/auth/ad/login", json={"username": "tester", "password": "password"}
+        )
+        assert response.status_code == 502
+        assert "secret-and-password" not in response.text
+    assert (
+        client.request(
+            "POST", "/api/auth/ad/login", json={"username": "tester", "password": "password"}
+        ).status_code
+        == 429
+    )

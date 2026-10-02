@@ -24,3 +24,6 @@
 @media (max-width: 600px) { .ciam-form { grid-template-columns: minmax(0, 1fr); } .auth-panel { padding: 20px; } }
 
 .ciam-panel fieldset { min-width: 0; max-width: 100%; }
+
+.ciam-ad-binding { display: grid; gap: 6px; min-width: 180px; }
+.ciam-ad-binding input { width: 100%; min-width: 0; min-height: 40px; padding: 8px; border: 1px solid var(--line, #d7e0e3); border-radius: 6px; }

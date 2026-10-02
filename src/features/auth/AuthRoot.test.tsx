@@ -42,3 +42,21 @@ describe('CIAM Login', () => {
     expect(screen.getByRole('button', { name: 'เข้าสู่ระบบด้วย CIAM' })).toBeEnabled()
   })
 })
+
+
+it('uses AD only in emergency mode and retains a separate Local Admin action', async () => {
+  const fetchMock = vi.fn().mockResolvedValueOnce(response({ ...cfg, break_glass_active: true, ad_login_enabled: true })).mockResolvedValueOnce(response({}, 401)).mockResolvedValueOnce(response({ user, provider: 'ad', csrf_token: 'csrf', expires_at: null }))
+  vi.stubGlobal('fetch', fetchMock)
+  render(<AuthRoot />)
+  expect(await screen.findByRole('button', { name: 'เข้าสู่ระบบด้วย AD' })).toBeEnabled()
+  expect(screen.queryByRole('button', { name: 'เข้าสู่ระบบด้วย CIAM' })).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'บัญชี Local สำหรับผู้ดูแลระบบฉุกเฉิน' }))
+  expect(screen.getByRole('button', { name: 'เข้าสู่ระบบ' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'กลับไปเข้าสู่ระบบด้วย AD' }))
+  fireEvent.change(screen.getByLabelText('ชื่อผู้ใช้'), { target: { value: 'ad.tester' } })
+  fireEvent.change(screen.getByLabelText('รหัสผ่าน'), { target: { value: 'password' } })
+  fireEvent.click(screen.getByRole('button', { name: 'เข้าสู่ระบบด้วย AD' }))
+  expect(await screen.findByText('Authenticated Viewer User')).toBeInTheDocument()
+  expect(fetchMock.mock.calls[2][0]).toBe('/api/auth/ad/login')
+  expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({ username: 'ad.tester', password: 'password' })
+})

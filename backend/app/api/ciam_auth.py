@@ -3,13 +3,14 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth import SESSION_COOKIE, digest, require_system_admin, utc
 from app.config import get_settings
 from app.database import get_session
 from app.models import AuthSession, AuthUser
-from app.services import ciam, local_auth
+from app.services import ad_auth, ciam, local_auth
 
 router = APIRouter(tags=["Authentication"])
 Db = Annotated[Session, Depends(get_session)]
@@ -17,6 +18,11 @@ Admin = Annotated[str, Depends(require_system_admin)]
 
 
 class CiamSettings(BaseModel):
+    ciam_ad_gateway_url: str = Field(
+        default="http://192.168.12.11:3100/api/v2/login", max_length=500
+    )
+    ciam_ad_app_id: str = Field(default="MTPULSE", min_length=1, max_length=200)
+    ciam_ad_secret: str | None = Field(default=None, max_length=2000, repr=False)
     ciam_base_url: str = Field(max_length=300)
     ciam_client_id: str = Field(max_length=200)
     ciam_client_secret: str | None = Field(default=None, max_length=2000, repr=False)
@@ -24,6 +30,11 @@ class CiamSettings(BaseModel):
     ciam_sso_enabled: bool
     ciam_auto_provision_group: Literal["viewer"] = "viewer"
     ciam_session_ttl_minutes: int = Field(default=480, ge=5, le=1440)
+
+    @field_validator("ciam_ad_gateway_url")
+    @classmethod
+    def gateway_url(cls, value):
+        return ad_auth.validate_gateway_url(value)
 
     @field_validator("ciam_base_url", "ciam_redirect_uri")
     @classmethod
@@ -56,6 +67,7 @@ def public_config(session: Db, response: Response):
         "mode": "ciam",
         "sso_enabled": cfg["ciam_sso_enabled"],
         "break_glass_active": cfg["ciam_break_glass_active"],
+        "ad_login_enabled": bool(cfg["ciam_break_glass_active"] and cfg["ad_secret_configured"]),
         "portal_url": cfg["ciam_base_url"] + "/portal",
     }
 
@@ -234,3 +246,47 @@ def change_password(
     return ciam.issue_session(
         session, response, user, "local", ciam.config(session)["ciam_session_ttl_minutes"]
     )
+
+
+class AdBinding(BaseModel):
+    username: str | None = Field(default=None, max_length=200)
+
+    @field_validator("username")
+    @classmethod
+    def username_value(cls, value):
+        return ad_auth.normalize_username(value) if value and value.strip() else None
+
+
+@router.put("/api/settings/ciam-sso/users/{user_id}/ad-binding")
+def bind_ad(user_id: str, payload: AdBinding, session: Db, actor: Admin):
+    user = session.scalar(select(AuthUser).where(AuthUser.id == user_id).with_for_update())
+    if not user:
+        raise HTTPException(404, "ไม่พบผู้ใช้")
+    if user.issuer == ciam.LOCAL_ISSUER:
+        raise HTTPException(422, "บัญชี Local Admin ต้องแยกจาก AD")
+    before = user.ad_username
+    if before == payload.username:
+        return ciam.user_info(user)
+    user.ad_username = payload.username
+    try:
+        session.flush()
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(409, "AD username นี้ผูกกับบัญชีอื่นแล้ว") from exc
+    session.execute(
+        delete(AuthSession).where(AuthSession.user_id == user.id, AuthSession.provider == "ad")
+    )
+    ciam.audit(
+        session,
+        "ad_binding_changed",
+        actor,
+        {"user_id": user.id, "before": before, "after": payload.username},
+    )
+    session.commit()
+    return ciam.user_info(user)
+
+
+@router.post("/api/auth/ad/login")
+def ad_login(payload: LocalLogin, request: Request, response: Response, session: Db):
+    response.headers["Cache-Control"] = "no-store"
+    return ad_auth.login(session, request, response, payload.username, payload.password)

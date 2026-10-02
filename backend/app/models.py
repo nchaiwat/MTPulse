@@ -604,6 +604,7 @@ class AuthUser(Base):
     email: Mapped[str | None] = mapped_column(String(300))
     role: Mapped[str] = mapped_column(String(20), default="viewer")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    ad_username: Mapped[str | None] = mapped_column(String(200), unique=True, index=True)
     password_hash: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

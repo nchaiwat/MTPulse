@@ -6,7 +6,8 @@ type Config = {
   ciam_base_url: string; ciam_client_id: string; ciam_redirect_uri: string;
   ciam_sso_enabled: boolean; ciam_break_glass_active: boolean;
   ciam_session_ttl_minutes: number; ciam_auto_provision_group: 'viewer';
-  client_secret_configured: boolean;
+  client_secret_configured: boolean; ad_secret_configured: boolean;
+  ciam_ad_gateway_url: string; ciam_ad_app_id: string;
 }
 export function CiamSettingsPanel({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void }) {
   const [currentPassword, setCurrentPassword] = useState('')
@@ -15,6 +16,7 @@ export function CiamSettingsPanel({ onDirtyChange }: { onDirtyChange?: (dirty: b
   const [cfg, setCfg] = useState<Config | null>(null)
   const [users, setUsers] = useState<AuthUser[]>([])
   const [secret, setSecret] = useState('')
+  const [adSecret, setAdSecret] = useState('')
   const [reason, setReason] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -41,10 +43,10 @@ export function CiamSettingsPanel({ onDirtyChange }: { onDirtyChange?: (dirty: b
       {!cfg && !busy && <button onClick={() => void run(load)}>ลองโหลดใหม่</button>}
       {cfg && <>
         <form onChange={() => onDirtyChange?.(true)} onSubmit={e => { e.preventDefault(); void run(async () => {
-          const { client_secret_configured: _configured, ciam_break_glass_active: _breakGlass, ...values } = cfg
-          void _configured; void _breakGlass
-          setCfg(await authRequest<Config>('/api/settings/ciam-sso', 'PUT', { ...values, ciam_client_secret: secret || null }))
-          setSecret(''); onDirtyChange?.(false); setMessage('บันทึกแล้ว มีผลกับคำขอใหม่ทันที')
+          const { client_secret_configured: _configured, ad_secret_configured: _adConfigured, ciam_break_glass_active: _breakGlass, ...values } = cfg
+          void _configured; void _adConfigured; void _breakGlass
+          setCfg(await authRequest<Config>('/api/settings/ciam-sso', 'PUT', { ...values, ciam_client_secret: secret || null, ciam_ad_secret: adSecret || null }))
+          setSecret(''); setAdSecret(''); onDirtyChange?.(false); setMessage('บันทึกแล้ว มีผลกับคำขอใหม่ทันที')
         }) }}>
           <fieldset disabled={busy}><legend>การเชื่อมต่อ CIAM</legend><div className="ciam-form">
             <label>CIAM Base URL<input type="url" required value={cfg.ciam_base_url} onChange={e => setCfg({ ...cfg, ciam_base_url: e.target.value })} /></label>
@@ -53,6 +55,9 @@ export function CiamSettingsPanel({ onDirtyChange }: { onDirtyChange?: (dirty: b
             <label>Callback URL<input type="url" required value={cfg.ciam_redirect_uri} onChange={e => setCfg({ ...cfg, ciam_redirect_uri: e.target.value })} /></label>
             <label>อายุ Session (นาที)<input type="number" min={5} max={1440} required value={cfg.ciam_session_ttl_minutes} onChange={e => setCfg({ ...cfg, ciam_session_ttl_minutes: Number(e.target.value) })} /></label>
             <label>SSO<select value={String(cfg.ciam_sso_enabled)} onChange={e => setCfg({ ...cfg, ciam_sso_enabled: e.target.value === 'true' })}><option value="false">ปิด</option><option value="true">เปิด</option></select></label>
+            <label>AD Gateway URL<input type="url" required value={cfg.ciam_ad_gateway_url ?? ''} onChange={e => setCfg({ ...cfg, ciam_ad_gateway_url: e.target.value })} /></label>
+            <label>AD App ID<input required value={cfg.ciam_ad_app_id ?? ''} onChange={e => setCfg({ ...cfg, ciam_ad_app_id: e.target.value })} /></label>
+            <label>AD Secret<input type="password" autoComplete="new-password" value={adSecret} onChange={e => setAdSecret(e.target.value)} /><small>{cfg.ad_secret_configured ? 'บันทึก AD Secret แล้ว — เว้นว่างเพื่อคงค่าเดิม' : 'ยังไม่ได้กำหนด AD Secret'}</small></label>
           </div><div className="ciam-actions"><button type="submit">บันทึก CIAM</button>
           <button type="button" onClick={() => void run(async () => {
             const result = await authRequest<{ message: string }>('/api/settings/ciam-sso/test-connection', 'POST')
@@ -77,23 +82,29 @@ export function CiamSettingsPanel({ onDirtyChange }: { onDirtyChange?: (dirty: b
             <button disabled={busy}>เปลี่ยนรหัสผ่าน</button>
           </form>
         </details>
+        <p>AD ใช้ได้เฉพาะโหมดฉุกเฉินและบัญชีที่ผูกไว้ การปิดโหมดฉุกเฉินหรือเปลี่ยนค่า Gateway จะยกเลิก AD Session</p>
         <h3>ผู้ใช้และสิทธิ์</h3><p>การเปลี่ยนสิทธิ์หรือสถานะจะยกเลิก Session ของผู้ใช้นั้น</p>
-        <div className="ciam-users"><table><thead><tr><th>ผู้ใช้</th><th>สิทธิ์</th><th>สถานะ</th><th>บันทึก</th></tr></thead><tbody>
-          {users.map(user => <UserRow key={user.id} user={user} busy={busy} save={value => void run(async () => {
+        <div className="ciam-users"><table><thead><tr><th>ผู้ใช้</th><th>สิทธิ์</th><th>สถานะ</th><th>AD username</th><th>บันทึก</th></tr></thead><tbody>
+          {users.map(user => <UserRow key={user.id} user={user} busy={busy} bind={username => void run(async () => {
+            await authRequest(`/api/settings/ciam-sso/users/${user.id}/ad-binding`, 'PUT', { username })
+            await load(); setMessage('บันทึกบัญชี AD แล้ว')
+          })} save={value => void run(async () => {
             await authRequest(`/api/settings/ciam-sso/users/${user.id}`, 'PATCH', value)
             await load(); setMessage('บันทึกผู้ใช้แล้ว')
           })} />)}
-          {users.length === 0 && <tr><td colSpan={4}>ยังไม่มีผู้ใช้เข้าสู่ระบบ</td></tr>}
+          {users.length === 0 && <tr><td colSpan={5}>ยังไม่มีผู้ใช้เข้าสู่ระบบ</td></tr>}
         </tbody></table></div>
       </>}
     </>}
   </section>
 }
-function UserRow({ user, busy, save }: { user: AuthUser; busy: boolean; save: (value: { role: string; active: boolean }) => void }) {
+function UserRow({ user, busy, save, bind }: { user: AuthUser; busy: boolean; bind: (username: string) => void; save: (value: { role: string; active: boolean }) => void }) {
   const [role, setRole] = useState(user.role)
   const [active, setActive] = useState(user.active)
+  const [adUsername, setAdUsername] = useState(user.ad_username ?? '')
   return <tr><td>{user.full_name}<br /><small>{user.username}{user.local ? ' · Local Admin' : ''}</small></td>
     <td><select aria-label={`สิทธิ์ ${user.username}`} value={role} disabled={busy || user.local} onChange={e => setRole(e.target.value as AuthUser['role'])}><option value="viewer">Viewer</option><option value="operator">Data Operator</option><option value="admin">System Admin</option></select></td>
     <td><select aria-label={`สถานะ ${user.username}`} value={String(active)} disabled={busy || user.local} onChange={e => setActive(e.target.value === 'true')}><option value="true">ใช้งาน</option><option value="false">ระงับ</option></select></td>
+    <td>{user.local ? '—' : <div className="ciam-ad-binding"><input aria-label={`AD username ${user.username}`} value={adUsername} maxLength={200} disabled={busy} onChange={e => setAdUsername(e.target.value)} /><button disabled={busy || adUsername.trim().toLowerCase() === (user.ad_username ?? '')} onClick={() => bind(adUsername)}>บันทึก AD {user.username}</button><small>เว้นว่างเพื่อลบการผูกบัญชี</small></div>}</td>
     <td><button disabled={busy || user.local || (role === user.role && active === user.active)} onClick={() => save({ role, active })}>บันทึก {user.username}</button></td></tr>
 }

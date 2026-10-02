@@ -2255,3 +2255,12 @@ rather than stale process-local caches. Store only session hashes and encrypted 
 Do not store provider access/refresh tokens or AD passwords. Settings save invalidates
 pending logins; changing roles/status revokes user sessions. Tests use fake signed OIDC
 responses; live CIAM login must be reported separately from simulated integration.
+
+## AD emergency login implementation — 2026-10-02
+
+Owner confirmed workflow, LAN HTTP, unrestricted gateway group, and explicit Admin binding. Extend the existing CIAM feature worktree/branch.
+1. Regression tests for break-glass guard, explicit binding, strict v2 response, same role/status, secret redaction and session revocation.
+2. Add nullable unique AD username to auth_users with additive migration; admin binding endpoint and audit.
+3. Add encrypted gateway configuration and backend v2 authentication with bounded timeout, no redirects/proxy headers, throttling and no password persistence.
+4. Extend existing Login and Global Settings controls; preserve Local Admin access.
+5. Run focused and full tests/lint/build, inspect migration/diff and document real-gateway/TLS acceptance limits. Do not deploy until prerequisites are ready.

@@ -1655,3 +1655,11 @@ Owner approved implementation after main synchronization (a242b52).
 - Success: unauthenticated data access denied, role boundaries enforced server-side,
   rejected forged/replayed/expired OIDC flows, seven-MT regressions unchanged, secret
   redaction/audit, settings updates effective across processes without restart.
+
+## AD emergency login — approved 2026-10-02
+
+- Owner approved direct HTTP on LAN: http://192.168.12.11:3100/api/v2/login, app_id MTPULSE. No v3. Blank required_group means unrestricted at Gateway; MTPulse still requires an explicit account binding.
+- AD login is available only while an Admin explicitly enables break-glass; never automatic failover. Preserve emergency Local Admin.
+- Admin binds a unique, normalized AD sAMAccountName to an existing CIAM user. No automatic username/email linking or new AD account provisioning. Inherit that user's role/status and fixed session lifetime.
+- Keep gateway URL/app ID/encrypted secret in Global Settings. Never persist/log AD passwords or send example ABCDE as a real secret.
+- Disabling emergency mode, changing gateway settings or removing/changing a binding revokes AD sessions. HTTPS for browser-to-MTPulse remains required.

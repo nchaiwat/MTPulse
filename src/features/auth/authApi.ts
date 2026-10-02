@@ -1,6 +1,6 @@
-export type AuthUser = { id: string; username: string; full_name: string; role: 'viewer' | 'operator' | 'admin'; active: boolean; local?: boolean }
-export type LoginSession = { user: AuthUser; provider: 'sso' | 'local' | 'development'; csrf_token: string; expires_at: string | null; portal_url?: string }
-export type LoginConfig = { mode: string; sso_enabled: boolean; break_glass_active: boolean; portal_url?: string }
+export type AuthUser = { id: string; username: string; full_name: string; role: 'viewer' | 'operator' | 'admin'; active: boolean; local?: boolean; ad_username?: string | null }
+export type LoginSession = { user: AuthUser; provider: 'sso' | 'ad' | 'local' | 'development'; csrf_token: string; expires_at: string | null; portal_url?: string }
+export type LoginConfig = { mode: string; sso_enabled: boolean; break_glass_active: boolean; ad_login_enabled?: boolean; portal_url?: string }
 const base = import.meta.env.VITE_API_BASE_URL ?? ''
 let csrfToken = ''
 export function setSessionToken(token: string) { csrfToken = token }
@@ -24,7 +24,7 @@ export async function authRequest<T>(path: string, method = 'GET', data?: unknow
     ...(data === undefined ? {} : { body: JSON.stringify(data) }),
   })
   if (!response.ok) {
-    if (!['/api/auth/me', '/api/auth/local/login', '/api/auth/sso/callback'].includes(path)) notifyUnauthorized(response.status)
+    if (!['/api/auth/me', '/api/auth/local/login', '/api/auth/ad/login', '/api/auth/sso/callback'].includes(path)) notifyUnauthorized(response.status)
     const body = await response.json().catch(() => ({}))
     throw new Error(typeof body.detail === 'string' ? body.detail : `คำขอไม่สำเร็จ (${response.status})`)
   }

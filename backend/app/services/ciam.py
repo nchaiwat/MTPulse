@@ -25,6 +25,8 @@ LOCAL_ISSUER = "urn:mtpulse:local"
 DEFAULTS = {
     "ciam_base_url": "https://ciam.windowasia.com",
     "ciam_client_id": "",
+    "ciam_ad_gateway_url": "http://192.168.12.11:3100/api/v2/login",
+    "ciam_ad_app_id": "MTPULSE",
     "ciam_redirect_uri": "https://wa-mtpulse.wa.net/auth/callback",
     "ciam_sso_enabled": False,
     "ciam_break_glass_active": False,
@@ -43,12 +45,14 @@ def crypto() -> Fernet:
         raise HTTPException(503, "Encryption Key บน Server ไม่ถูกต้อง") from exc
 
 
-def config(session: Session, *, secret=False) -> dict:
+def config(session: Session, *, secret=False, ad_secret=False) -> dict:
     # DB per request: settings changes are immediate across API processes.
     rows = {
         r.key: r.value
         for r in session.scalars(
-            select(SystemSetting).where(SystemSetting.key.in_([*DEFAULTS, "ciam_client_secret"]))
+            select(SystemSetting).where(
+                SystemSetting.key.in_([*DEFAULTS, "ciam_client_secret", "ciam_ad_secret"])
+            )
         )
     }
     result = {
@@ -56,6 +60,18 @@ def config(session: Session, *, secret=False) -> dict:
         for k, v in DEFAULTS.items()
     }
     result["client_secret_configured"] = bool(rows.get("ciam_client_secret"))
+    result["ad_secret_configured"] = bool(rows.get("ciam_ad_secret"))
+    if ad_secret:
+        try:
+            result["ciam_ad_secret"] = (
+                crypto().decrypt(rows["ciam_ad_secret"].encode()).decode()
+                if rows.get("ciam_ad_secret")
+                else ""
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(503, "ไม่สามารถอ่าน AD Gateway Secret ได้") from exc
     if secret:
         try:
             result["ciam_client_secret"] = (
@@ -278,6 +294,7 @@ def user_info(user: AuthUser) -> dict:
         "role": user.role,
         "active": user.active,
         "local": user.issuer == LOCAL_ISSUER,
+        "ad_username": user.ad_username,
     }
 
 
@@ -401,10 +418,19 @@ def callback(session: Session, request: Request, response: Response, code: str, 
         raise HTTPException(401, "ยืนยันตัวตนกับ CIAM ไม่สำเร็จ กรุณาเริ่มใหม่") from exc
 
 
+def lock_ad_settings(session: Session):
+    # Serialize configuration changes with AD session issuance across API processes.
+    if session.bind.dialect.name == "postgresql":
+        from sqlalchemy import text
+
+        session.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": 782614032})
+
+
 def save_config(session: Session, values: dict, actor: str):
+    lock_ad_settings(session)
     before = config(session)
     for key, value in values.items():
-        if key == "ciam_client_secret":
+        if key in ("ciam_client_secret", "ciam_ad_secret"):
             if value:
                 set_setting(
                     session,
@@ -418,6 +444,12 @@ def save_config(session: Session, values: dict, actor: str):
     session.flush()
     session.execute(delete(SsoAttempt))
     after = config(session)
+    if (
+        any(before[key] != after[key] for key in ("ciam_ad_gateway_url", "ciam_ad_app_id"))
+        or bool(values.get("ciam_ad_secret"))
+        or values.get("ciam_break_glass_active") is False
+    ):
+        session.execute(delete(AuthSession).where(AuthSession.provider == "ad"))
     audit(
         session,
         "settings_changed",
@@ -426,6 +458,7 @@ def save_config(session: Session, values: dict, actor: str):
             "before": before,
             "after": after,
             "secret_changed": bool(values.get("ciam_client_secret")),
+            "ad_secret_changed": bool(values.get("ciam_ad_secret")),
         },
     )
     session.commit()

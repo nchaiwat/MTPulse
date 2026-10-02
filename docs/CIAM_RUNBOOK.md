@@ -35,7 +35,7 @@ client secret, local password, encryption key or certificate private key into Gi
 3. Configure infrastructure `MTPULSE_SETTINGS_ENCRYPTION_KEY` securely. Reuse the
    existing key on an upgraded deployment so existing FileShare/Telegram secrets work.
 4. Run Alembic on staging: `python -m alembic upgrade head`. Expected head is
-   `8c9304b5c6d7`; the four auth tables are additive and no business rows are changed.
+   `9da415c6d7e8`; the four auth tables and nullable unique AD binding are additive and no business rows are changed.
 5. Create the first emergency admin from an interactive server console:
    `python -m app.bootstrap_admin <username>`. Password is entered twice via getpass,
    never a command argument. `--reset-password` explicitly resets a local admin and
@@ -107,3 +107,50 @@ this development task. Browser automation currently fails with the existing Wind
 
 OIDC reference: https://openid.net/specs/openid-connect-core-1_0.html
 JWT verification reference: https://pyjwt.readthedocs.io/en/stable/usage.html
+
+
+## AD Gateway emergency extension — 2026-10-02
+
+This supersedes the earlier Local-Admin-only scope. Owner approved LAN HTTP to
+`http://192.168.12.11:3100/api/v2/login` (there is no v3), app ID `MTPULSE`.
+The example secret ABCDE is NOT a credential and must never be configured as one.
+Owner confirms blank required_group means unrestricted at the gateway. MTPulse
+still admits only active CIAM accounts explicitly bound by an Admin beforehand.
+
+Setup after the base CIAM/TLS/local-admin prerequisites:
+1. Apply additive migration 9da415c6d7e8 after 8c9304b5c6d7. It adds nullable
+   auth_users.ad_username and a unique index; existing identities/data remain intact.
+2. Global Settings → CIAM: enter AD Gateway URL, AD App ID and the real AD Secret.
+   Blank secret preserves the encrypted value. Reads expose configured-state only.
+3. Under users, explicitly bind each CIAM account's AD sAMAccountName. Bindings are
+   normalized to lowercase, unique, auditable and cannot target emergency Local Admin.
+   Never infer a binding from matching usernames/email. Unbound AD users are rejected.
+4. Admin enables break-glass with a reason. AD form is then available, SSO is paused,
+   and the separate Local Admin form remains accessible. No automatic outage failover.
+5. Test using an approved AD account: same CIAM user ID/role/status, fixed 480-minute
+   default expiry. AD passwords are sent only to the configured gateway and are not
+   stored or logged by MTPulse. HTTP within the LAN is the owner's explicit choice;
+   that transport is not encrypted. Browser → MTPulse HTTPS/Secure cookies stay required.
+6. Turn break-glass off: AD sessions are deleted and subsequent requests also check
+   the current mode. Binding changes revoke affected AD sessions; gateway changes
+   revoke all AD sessions. Role/status changes retain existing all-session revocation.
+
+Gateway contract: JSON app_id, secret_key, username, password, UTC ISO timestamp;
+accept only HTTP 200 + status="success" + data.username matching the requested binding.
+Reject unexpected responses, redirects, wrong identity and service errors. A 10-second
+HTTP timeout, no environment proxy, account/IP throttles and same-origin login guard
+apply. Do not fabricate X-Forwarded-For from the IRM guide's VPS example: the inspected
+v2 service checks the TCP peer IP. Configure the actual source IP in gateway registry.
+
+Validation limits: TCP connectivity from wa-mtpulse API container to 192.168.12.11:3100
+passed; this does NOT verify the real secret, allowed_ips acceptance or AD credentials.
+The local ADSyncAgent/index.js copy returns status/data.username but its empty-group
+check uses memberOf.some(...), which may reject a user with no listed memberships.
+Confirm deployed gateway behavior with an approved test account; no changes were made
+to ADSyncAgent, AD or its registry. Browser tool still fails to initialize; responsive
+375/768/1024/1440 visual acceptance and PostgreSQL concurrency acceptance remain pending.
+
+Rollback extension only: revert the AD feature application commit to 0c7039e while
+keeping the additive nullable column. Disable emergency mode before rollback; old
+application code does not enforce AD-provider mode checks. Do not drop auth tables or
+restore old business-data backups as part of application rollback.
