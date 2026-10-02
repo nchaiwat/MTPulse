@@ -10,6 +10,7 @@ export function AuthRoot() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(true)
   const [local, setLocal] = useState(false)
+  const [adSelected, setAdSelected] = useState(false)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const started = useRef(false)
@@ -61,27 +62,27 @@ export function AuthRoot() {
     finally { setPassword(''); setBusy(false) }
   }
   const sso = config?.sso_enabled && !config.break_glass_active
-  const ad = config?.break_glass_active && config.ad_login_enabled && !local
+  const ad = config?.ad_login_enabled && !local && (adSelected || !sso)
   return <main className="auth-page"><section className="auth-panel" aria-labelledby="login-heading">
     <Activity size={28} aria-hidden="true" /><h1 id="login-heading">MT Pulse</h1><p>เข้าสู่ระบบวิเคราะห์ Modern Trade</p>
     {config?.break_glass_active && <p className="auth-warning" role="status">โหมดฉุกเฉิน — ติดต่อผู้ดูแลระบบเพื่อเข้าใช้งาน</p>}
     {error && <p className="auth-error" role="alert">{error}</p>}
     {busy && <p role="status">กำลังตรวจสอบ…</p>}
     {!config && !busy && <button onClick={() => window.location.reload()}>ลองใหม่</button>}
-    {sso && !local && <><button className="auth-primary" disabled={busy} onClick={() => void submit(async () => {
+    {sso && !local && !adSelected && <><button className="auth-primary" disabled={busy} onClick={() => void submit(async () => {
       const result = await authRequest<{ authorize_url: string }>('/api/auth/sso/authorize-url', 'POST')
       window.location.assign(result.authorize_url)
-    })}>เข้าสู่ระบบด้วย CIAM</button><button className="auth-link" disabled={busy} onClick={() => setLocal(true)}>บัญชี Local สำหรับผู้ดูแลระบบฉุกเฉิน</button></>}
-    {config && (!sso || local) && <form onSubmit={(event) => {
+    })}>เข้าสู่ระบบด้วย CIAM</button>{config?.ad_login_enabled && <button className="auth-primary" disabled={busy} onClick={() => setAdSelected(true)}>ใช้บัญชี AD</button>}<button className="auth-link" disabled={busy} onClick={() => setLocal(true)}>บัญชี Local สำหรับผู้ดูแลระบบฉุกเฉิน</button></>}
+    {config && (!sso || local || adSelected) && <form onSubmit={(event) => {
       event.preventDefault()
       void submit(async () => accept(await authRequest<LoginSession>(ad ? '/api/auth/ad/login' : '/api/auth/local/login', 'POST', { username, password })))
     }}>
-      <p>{ad ? 'เข้าสู่ระบบด้วย AD — เฉพาะบัญชีที่ Admin ผูกไว้' : 'บัญชี Local สำหรับผู้ดูแลระบบฉุกเฉิน'}</p>
+      <p>{ad ? 'เข้าสู่ระบบด้วย AD — เฉพาะบัญชีที่ Admin อนุญาต' : 'บัญชี Local สำหรับผู้ดูแลระบบฉุกเฉิน'}</p>
       <label>ชื่อผู้ใช้<input autoComplete="username" value={username} maxLength={200} required onChange={e => setUsername(e.target.value)} /></label>
       <label>รหัสผ่าน<input type="password" autoComplete="current-password" value={password} maxLength={256} required onChange={e => setPassword(e.target.value)} /></label>
       <button className="auth-primary" disabled={busy}>{ad ? 'เข้าสู่ระบบด้วย AD' : 'เข้าสู่ระบบ'}</button>
-      {config.ad_login_enabled && config.break_glass_active && <button type="button" className="auth-link" disabled={busy} onClick={() => { setLocal(!local); setPassword(''); setUsername('') }}>{local ? 'กลับไปเข้าสู่ระบบด้วย AD' : 'บัญชี Local สำหรับผู้ดูแลระบบฉุกเฉิน'}</button>}
-      {sso && <button type="button" className="auth-link" disabled={busy} onClick={() => setLocal(false)}>กลับไปเข้าสู่ระบบด้วย CIAM</button>}
+      {config.ad_login_enabled && <button type="button" className="auth-link" disabled={busy} onClick={() => { setLocal(!local); setAdSelected(true); setPassword(''); setUsername('') }}>{local ? 'กลับไปเข้าสู่ระบบด้วย AD' : 'บัญชี Local สำหรับผู้ดูแลระบบฉุกเฉิน'}</button>}
+      {sso && <button type="button" className="auth-link" disabled={busy} onClick={() => { setLocal(false); setAdSelected(false); setPassword('') }}>กลับไปเข้าสู่ระบบด้วย CIAM</button>}
     </form>}
     <small>สำหรับใช้งานภายในองค์กร</small>
   </section></main>

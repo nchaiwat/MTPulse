@@ -1667,3 +1667,7 @@ Owner approved implementation after main synchronization (a242b52).
 ## CIAM secret display — 2026-10-02
 
 Owner requested saved Client Secret and AD Secret to show ******** rather than empty inputs, and an eye control to view the actual saved value. Restrict on-demand reveal to authenticated Admin with CSRF and audit without logging the value. Normal settings GET remains redacted; reveal uses a separate no-store POST. Separate edit action preserves the saved secret when untouched; never submit mask text.
+
+## User Management and always-available AD — owner approved
+
+Admin creates MTPulse accounts before first CIAM login, assigns role/status and allows AD using matching sAMAccountName. AD is available alongside CIAM, independent of break-glass. CIAM auto-links matching usernames case-insensitively to an unlinked managed account, retaining role/status; never links Local Admin or reassigns an already bound issuer/subject. Unknown CIAM identities continue auto-provisioning as Viewer. Reuse nullable unique ad_username as the per-user AD permission; no schema migration. Test managed creation, duplicate prevention, disabled/AD-denied access, trusted CIAM linking and identity-conflict rejection before deployment.

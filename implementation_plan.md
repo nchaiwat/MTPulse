@@ -2264,3 +2264,7 @@ Owner confirmed workflow, LAN HTTP, unrestricted gateway group, and explicit Adm
 3. Add encrypted gateway configuration and backend v2 authentication with bounded timeout, no redirects/proxy headers, throttling and no password persistence.
 4. Extend existing Login and Global Settings controls; preserve Local Admin access.
 5. Run focused and full tests/lint/build, inspect migration/diff and document real-gateway/TLS acceptance limits. Do not deploy until prerequisites are ready.
+
+## User Management and always-available AD — owner approved
+
+Admin creates MTPulse accounts before first CIAM login, assigns role/status and allows AD using matching sAMAccountName. AD is available alongside CIAM, independent of break-glass. CIAM auto-links matching usernames case-insensitively to an unlinked managed account, retaining role/status; never links Local Admin or reassigns an already bound issuer/subject. Unknown CIAM identities continue auto-provisioning as Viewer. Reuse nullable unique ad_username as the per-user AD permission; no schema migration. Test managed creation, duplicate prevention, disabled/AD-denied access, trusted CIAM linking and identity-conflict rejection before deployment.

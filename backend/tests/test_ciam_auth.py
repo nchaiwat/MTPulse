@@ -529,7 +529,7 @@ def test_ad_emergency_requires_mode_and_binding(auth_client, monkeypatch):
     )
 
 
-def test_ad_binding_reuses_role_and_revokes_on_exit(auth_client, monkeypatch):
+def test_ad_binding_reuses_role_outside_emergency_and_survives_mode_exit(auth_client, monkeypatch):
     client, session = auth_client
     admin = account(session)
     user = account(session, "operator")
@@ -540,7 +540,7 @@ def test_ad_binding_reuses_role_and_revokes_on_exit(auth_client, monkeypatch):
     assert result.status_code == 200
     assert result.json()["ad_username"] == "ad.tester"
     ciam.save_config(
-        session, {"ciam_break_glass_active": True, "ciam_ad_secret": "test-secret"}, "test"
+        session, {"ciam_break_glass_active": False, "ciam_ad_secret": "test-secret"}, "test"
     )
 
     def gateway(_self, url, **kwargs):
@@ -568,7 +568,7 @@ def test_ad_binding_reuses_role_and_revokes_on_exit(auth_client, monkeypatch):
     assert response.json()["provider"] == "ad"
     assert client.get("/api/auth/me").status_code == 200
     ciam.save_config(session, {"ciam_break_glass_active": False}, "test")
-    assert client.get("/api/auth/me").status_code == 401
+    assert client.get("/api/auth/me").status_code == 200
     logs = " ".join(x.after_json or "" for x in session.scalars(select(AuditEvent)))
     assert "ad-password" not in logs and "test-secret" not in logs
 
@@ -736,3 +736,99 @@ def test_secret_reveal_requires_admin_csrf_and_redacts_audit(auth_client, kind, 
     assert len(events) == 1
     assert "fixture-private-value" not in events[0].after_json
     assert key in events[0].after_json
+
+
+def test_admin_creates_managed_account_and_controls_ad(auth_client):
+    client, session = auth_client
+    admin = account(session)
+    sign_in(client, session, admin)
+    payload = {
+        "username": "Chaiwat.N",
+        "full_name": "Chaiwat",
+        "role": "operator",
+        "active": True,
+        "ad_enabled": True,
+    }
+    result = client.post("/api/settings/ciam-sso/users", json=payload)
+    assert result.status_code == 201
+    user = result.json()
+    assert user["ad_username"] == "chaiwat.n" and user["role"] == "operator"
+    assert (
+        client.post(
+            "/api/settings/ciam-sso/users", json={**payload, "username": "CHAIWAT.N"}
+        ).status_code
+        == 409
+    )
+    result = client.patch(
+        "/api/settings/ciam-sso/users/" + user["id"],
+        json={"role": "operator", "active": True, "ad_enabled": False},
+    )
+    assert result.status_code == 200 and result.json()["ad_username"] is None
+
+
+def test_sso_links_managed_username_preserving_role(provider):
+    client, session, query, overrides, _ = provider
+    user = account(session, "operator", issuer="urn:mtpulse:managed")
+    user.username = "Chaiwat.N"
+    user.ad_username = "chaiwat.n"
+    session.commit()
+    overrides["preferred_username"] = "CHAIWAT.N"
+    result = client.post(
+        "/api/auth/sso/callback", json={"code": "code", "state": query["state"][0]}
+    )
+    assert result.status_code == 200
+    assert result.json()["user"]["id"] == user.id
+    assert result.json()["user"]["role"] == "operator"
+    assert result.json()["user"]["ad_username"] == "chaiwat.n"
+
+
+@pytest.mark.parametrize(
+    "issuer,active",
+    [
+        ("urn:mtpulse:local", True),
+        ("https://ciam.windowasia.com", True),
+        ("urn:mtpulse:managed", False),
+    ],
+)
+def test_sso_never_links_local_bound_or_disabled_account(provider, issuer, active):
+    client, session, query, overrides, _ = provider
+    user = account(session, "admin", issuer=issuer)
+    user.username = "Chaiwat.N"
+    user.active = active
+    original_subject = user.subject
+    session.commit()
+    overrides["preferred_username"] = "chaiwat.n"
+    result = client.post(
+        "/api/auth/sso/callback", json={"code": "code", "state": query["state"][0]}
+    )
+    assert result.status_code == 403
+    session.refresh(user)
+    assert user.subject == original_subject and user.issuer == issuer
+    assert user.active == active
+
+
+def test_non_admin_cannot_create_users(auth_client):
+    client, session = auth_client
+    for role in ["viewer", "operator"]:
+        sign_in(client, session, account(session, role))
+        assert (
+            client.post("/api/settings/ciam-sso/users", json={"username": "new-user"}).status_code
+            == 403
+        )
+
+
+def test_ad_permission_disabled_revokes_existing_ad_session(auth_client):
+    client, session = auth_client
+    admin = account(session)
+    user = account(session, "operator")
+    user.ad_username = "tester"
+    session.commit()
+    token = sign_in(client, session, user, "ad")
+    sign_in(client, session, admin)
+    result = client.patch(
+        "/api/settings/ciam-sso/users/" + user.id,
+        json={"role": "operator", "active": True, "ad_enabled": False},
+    )
+    assert result.status_code == 200
+    assert session.get(AuthSession, digest(token)) is None
+    assert not session.get(AuthUser, user.id).ad_username

@@ -77,13 +77,8 @@ def authorize_request(request: Request, session: Annotated[Session, Depends(get_
     login = session.get(AuthSession, digest(token))
     if login is None or utc(login.expires_at) <= datetime.now(UTC):
         raise HTTPException(401, "Session หมดอายุ กรุณาเข้าสู่ระบบใหม่")
-    if login.provider == "ad":
-        from app.services.ciam import config
-
-        if not config(session)["ciam_break_glass_active"]:
-            raise HTTPException(401, "โหมดฉุกเฉินปิดแล้ว กรุณาเข้าสู่ระบบผ่าน CIAM")
     user = session.get(AuthUser, login.user_id)
-    if not user or not user.active:
+    if not user or not user.active or (login.provider == "ad" and not user.ad_username):
         raise HTTPException(401, "บัญชีถูกระงับ กรุณาติดต่อผู้ดูแลระบบ")
     rank = {"viewer": 0, "operator": 1, "admin": 2}
     if rank.get(user.role, -1) < rank[role_for_path(request.url.path, request.method)]:

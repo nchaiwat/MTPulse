@@ -1,4 +1,4 @@
-export type AuthUser = { id: string; username: string; full_name: string; role: 'viewer' | 'operator' | 'admin'; active: boolean; local?: boolean; ad_username?: string | null }
+export type AuthUser = { id: string; username: string; full_name: string; role: 'viewer' | 'operator' | 'admin'; active: boolean; local?: boolean; ad_enabled?: boolean; ciam_linked?: boolean; ad_username?: string | null }
 export type LoginSession = { user: AuthUser; provider: 'sso' | 'ad' | 'local' | 'development'; csrf_token: string; expires_at: string | null; portal_url?: string }
 export type LoginConfig = { mode: string; sso_enabled: boolean; break_glass_active: boolean; ad_login_enabled?: boolean; portal_url?: string }
 const base = import.meta.env.VITE_API_BASE_URL ?? ''

@@ -1,4 +1,4 @@
-"""Explicitly bound CIAM identities authenticated by the LAN AD Gateway in emergencies."""
+"""Admin-enabled MTPulse accounts authenticated by the LAN AD Gateway."""
 
 import re
 from datetime import UTC, datetime
@@ -53,8 +53,6 @@ def validate_gateway_url(value: str) -> str:
 def login(session: Session, request: Request, response: Response, username: str, password: str):
     cfg = ciam.config(session, ad_secret=True)
     ciam.same_origin(request, cfg)
-    if not cfg["ciam_break_glass_active"]:
-        raise HTTPException(503, "AD Login ใช้ได้เฉพาะเมื่อ Admin เปิดโหมดฉุกเฉิน")
     if not cfg["ciam_ad_secret"] or not cfg["ciam_ad_app_id"].strip():
         raise HTTPException(503, "ยังตั้งค่า AD Gateway ไม่ครบ")
     ciam.throttle(session, "ad-ip:" + (request.client.host if request.client else "unknown"), 40)

@@ -198,3 +198,30 @@ do not downgrade/drop the additive auth schema or restore older business data.
 ## Saved secret display
 
 Saved CIAM/AD secrets display ******** with an eye control. Owner explicitly authorized Admin on-demand reveal through POST /api/settings/ciam-sso/secrets/{client|ad}/reveal with CSRF, no-store and key-only audit. This supersedes the earlier statement that no endpoint reveals plaintext; ordinary settings GET still never reveals it. Visibility resets on hide, collapse/save/unmount or after 30 seconds. Use the separate Change action to replace a secret; leaving it untouched preserves the stored ciphertext. Other secret endpoints/policies are unchanged.
+
+
+## User Management / AD always available — latest owner policy
+
+This supersedes the emergency-only AD and explicit-manual-CIAM-link sections above.
+Settings > Global > Central IAM SSO > User Management can create an account such as
+Chaiwat.N, with display name, role, active status and AD permission. No local password
+is created for these accounts. AD permission uses the existing unique normalized
+ad_username binding (no schema change). Existing bound AD accounts remain allowed.
+AD is available alongside CIAM whenever gateway settings are configured; break-glass
+still suspends SSO, but does not disable/revoke AD. Disabling a user's AD permission,
+changing role/status or gateway settings retains session revocation protections.
+
+First verified CIAM login with matching preferred_username (trimmed/case-insensitive)
+automatically links to an unlinked managed account, preserving user ID, role, status
+and AD permission. It never links Local Admin, an already bound issuer/subject, an
+ambiguous name or a disabled account; identity conflicts require Admin investigation.
+A new CIAM identity with no matching account still provisions Viewer without AD
+permission. Subsequent CIAM logins resolve the stable issuer/subject. Manual creation
+and CIAM provision/link operations use a shared PostgreSQL transaction advisory lock.
+
+Test on isolated staging: create a managed Operator with AD enabled, authenticate via
+simulated Gateway outside emergency mode, disable AD and verify sessions revoked.
+Then use a signed provider fixture with differently cased preferred_username; confirm
+same user ID and role, deny disabled/local/already-linked identity collisions and
+retain new-user Viewer provisioning. Real external provider/AD credential acceptance
+must still be checked with an approved user; never create fake production test users.

@@ -22,6 +22,7 @@ from app.services.telegram import set_setting
 
 BINDING_COOKIE = "__Host-mtpulse_sso"
 LOCAL_ISSUER = "urn:mtpulse:local"
+MANAGED_ISSUER = "urn:mtpulse:managed"
 DEFAULTS = {
     "ciam_base_url": "https://ciam.windowasia.com",
     "ciam_client_id": "",
@@ -295,6 +296,8 @@ def user_info(user: AuthUser) -> dict:
         "active": user.active,
         "local": user.issuer == LOCAL_ISSUER,
         "ad_username": user.ad_username,
+        "ad_enabled": bool(user.ad_username),
+        "ciam_linked": user.issuer not in (LOCAL_ISSUER, MANAGED_ISSUER),
     }
 
 
@@ -374,11 +377,32 @@ def callback(session: Session, request: Request, response: Response, code: str, 
 
             lock = int(digest(cfg["ciam_base_url"] + subject)[:15], 16)
             session.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock})
+        lock_user_registry(session)
         user = session.scalar(
             select(AuthUser).where(
                 AuthUser.issuer == cfg["ciam_base_url"], AuthUser.subject == subject
             )
         )
+        if user is None:
+            preferred = claims.get("preferred_username")
+            if isinstance(preferred, str) and preferred.strip():
+                matches = list(
+                    session.scalars(
+                        select(AuthUser)
+                        .where(
+                            func.lower(func.trim(AuthUser.username)) == preferred.strip().lower()
+                        )
+                        .with_for_update()
+                    )
+                )
+                if matches:
+                    if len(matches) != 1 or matches[0].issuer != MANAGED_ISSUER:
+                        raise HTTPException(403, "ชื่อบัญชีนี้เชื่อมตัวตนอื่นแล้ว กรุณาติดต่อ Admin")
+                    user = matches[0]
+                    if not user.active:
+                        raise HTTPException(403, "บัญชีถูกระงับ กรุณาติดต่อผู้ดูแลระบบ")
+                    user.issuer, user.subject = cfg["ciam_base_url"], subject
+                    audit(session, "ciam_account_linked", "user:" + user.id)
         if user is None:
             user = AuthUser(
                 id=str(uuid4()),
@@ -444,10 +468,8 @@ def save_config(session: Session, values: dict, actor: str):
     session.flush()
     session.execute(delete(SsoAttempt))
     after = config(session)
-    if (
-        any(before[key] != after[key] for key in ("ciam_ad_gateway_url", "ciam_ad_app_id"))
-        or bool(values.get("ciam_ad_secret"))
-        or values.get("ciam_break_glass_active") is False
+    if any(before[key] != after[key] for key in ("ciam_ad_gateway_url", "ciam_ad_app_id")) or bool(
+        values.get("ciam_ad_secret")
     ):
         session.execute(delete(AuthSession).where(AuthSession.provider == "ad"))
     audit(
@@ -463,3 +485,11 @@ def save_config(session: Session, values: dict, actor: str):
     )
     session.commit()
     return after
+
+
+def lock_user_registry(session: Session):
+    # Shared by manual creation and CIAM linking/provisioning, across API workers.
+    if session.bind.dialect.name == "postgresql":
+        from sqlalchemy import text
+
+        session.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": 782614033})

@@ -1,8 +1,10 @@
+from datetime import UTC, datetime
 from typing import Annotated, Literal
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -53,6 +55,7 @@ class BreakGlass(BaseModel):
 
 
 class UserUpdate(BaseModel):
+    ad_enabled: bool | None = None
     role: Literal["viewer", "operator", "admin"]
     active: bool
 
@@ -67,7 +70,7 @@ def public_config(session: Db, response: Response):
         "mode": "ciam",
         "sso_enabled": cfg["ciam_sso_enabled"],
         "break_glass_active": cfg["ciam_break_glass_active"],
-        "ad_login_enabled": bool(cfg["ciam_break_glass_active"] and cfg["ad_secret_configured"]),
+        "ad_login_enabled": bool(cfg["ad_secret_configured"] and cfg["ciam_ad_app_id"].strip()),
         "portal_url": cfg["ciam_base_url"] + "/portal",
     }
 
@@ -202,9 +205,25 @@ def update_user(user_id: str, payload: UserUpdate, session: Db, actor: Admin):
     if user.role == "admin" and (not payload.active or payload.role != "admin"):
         if not any(u.id != user.id and u.active and u.role == "admin" for u in all_users):
             raise HTTPException(422, "ต้องเหลือ System Admin ที่ใช้งานได้อย่างน้อยหนึ่งบัญชี")
-    if user.role == payload.role and user.active == payload.active:
+    ad_enabled = bool(user.ad_username) if payload.ad_enabled is None else payload.ad_enabled
+    if (
+        user.role == payload.role
+        and user.active == payload.active
+        and ad_enabled == bool(user.ad_username)
+    ):
         return ciam.user_info(user)
     before = ciam.user_info(user)
+    if ad_enabled and not user.ad_username:
+        try:
+            user.ad_username = ad_auth.normalize_username(user.username)
+            session.flush()
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except IntegrityError as exc:
+            session.rollback()
+            raise HTTPException(409, "AD username นี้ถูกใช้งานแล้ว") from exc
+    elif not ad_enabled:
+        user.ad_username = None
     user.role, user.active = payload.role, payload.active
     session.execute(delete(AuthSession).where(AuthSession.user_id == user.id))
     ciam.audit(session, "user_updated", actor, {"before": before, "after": ciam.user_info(user)})
@@ -301,3 +320,51 @@ def reveal_secret(kind: Literal["client", "ad"], response: Response, session: Db
     ciam.audit(session, "secret_revealed", actor, {"key": key})
     session.commit()
     return {"value": cfg[key]}
+
+
+class UserCreate(BaseModel):
+    username: str = Field(min_length=1, max_length=200)
+    full_name: str = Field(default="", max_length=300)
+    role: Literal["viewer", "operator", "admin"] = "viewer"
+    active: bool = True
+    ad_enabled: bool = False
+
+    @field_validator("username")
+    @classmethod
+    def valid_username(cls, value):
+        ad_auth.normalize_username(value)
+        return value.strip()
+
+
+@router.post("/api/settings/ciam-sso/users", status_code=201)
+def create_user(payload: UserCreate, session: Db, actor: Admin):
+    ciam.lock_user_registry(session)
+    normalized = payload.username.lower()
+    duplicate = session.scalar(
+        select(AuthUser).where(
+            (func.lower(func.trim(AuthUser.username)) == normalized)
+            | (AuthUser.ad_username == normalized)
+        )
+    )
+    if duplicate:
+        raise HTTPException(409, "ชื่อบัญชีนี้มีอยู่แล้ว")
+    user = AuthUser(
+        id=str(uuid4()),
+        issuer=ciam.MANAGED_ISSUER,
+        subject=str(uuid4()),
+        username=payload.username,
+        full_name=payload.full_name.strip() or payload.username,
+        role=payload.role,
+        active=payload.active,
+        ad_username=normalized if payload.ad_enabled else None,
+        created_at=datetime.now(UTC),
+    )
+    session.add(user)
+    try:
+        session.flush()
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(409, "ชื่อบัญชีนี้ถูกใช้งานแล้ว") from exc
+    ciam.audit(session, "user_created", actor, ciam.user_info(user))
+    session.commit()
+    return ciam.user_info(user)

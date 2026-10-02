@@ -60,3 +60,13 @@ it('uses AD only in emergency mode and retains a separate Local Admin action', a
   expect(fetchMock.mock.calls[2][0]).toBe('/api/auth/ad/login')
   expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({ username: 'ad.tester', password: 'password' })
 })
+
+
+it('offers AD alongside CIAM outside emergency mode', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(response({ ...cfg, ad_login_enabled: true })).mockResolvedValueOnce(response({}, 401)))
+  render(<AuthRoot />)
+  expect(await screen.findByRole('button', { name: 'ใช้บัญชี AD' })).toBeEnabled()
+  expect(screen.getByRole('button', { name: 'เข้าสู่ระบบด้วย CIAM' })).toBeEnabled()
+  fireEvent.click(screen.getByRole('button', { name: 'ใช้บัญชี AD' }))
+  expect(screen.getByRole('button', { name: 'เข้าสู่ระบบด้วย AD' })).toBeEnabled()
+})

@@ -11,6 +11,7 @@ type Config = {
   ciam_ad_gateway_url: string; ciam_ad_app_id: string;
 }
 export function CiamSettingsPanel({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void }) {
+  const [newUser, setNewUser] = useState({ username: '', full_name: '', role: 'viewer', ad_enabled: false })
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [open, setOpen] = useState(false)
@@ -84,13 +85,21 @@ export function CiamSettingsPanel({ onDirtyChange }: { onDirtyChange?: (dirty: b
             <button disabled={busy}>เปลี่ยนรหัสผ่าน</button>
           </form>
         </details>
-        <p>AD ใช้ได้เฉพาะโหมดฉุกเฉินและบัญชีที่ผูกไว้ การปิดโหมดฉุกเฉินหรือเปลี่ยนค่า Gateway จะยกเลิก AD Session</p>
-        <h3>ผู้ใช้และสิทธิ์</h3><p>การเปลี่ยนสิทธิ์หรือสถานะจะยกเลิก Session ของผู้ใช้นั้น</p>
-        <div className="ciam-users"><table><thead><tr><th>ผู้ใช้</th><th>สิทธิ์</th><th>สถานะ</th><th>AD username</th><th>บันทึก</th></tr></thead><tbody>
-          {users.map(user => <UserRow key={user.id} user={user} busy={busy} bind={username => void run(async () => {
-            await authRequest(`/api/settings/ciam-sso/users/${user.id}/ad-binding`, 'PUT', { username })
-            await load(); setMessage('บันทึกบัญชี AD แล้ว')
-          })} save={value => void run(async () => {
+        <p>AD ใช้ได้ตลอดเวลาสำหรับผู้ใช้ที่ Admin อนุญาต การปิดสิทธิ์ AD หรือระงับบัญชีจะยกเลิก Session</p>
+        <h3>User Management</h3>
+        <form onSubmit={e => { e.preventDefault(); void run(async () => {
+          await authRequest('/api/settings/ciam-sso/users', 'POST', newUser)
+          setNewUser({ username: '', full_name: '', role: 'viewer', ad_enabled: false })
+          await load(); setMessage('สร้างผู้ใช้แล้ว')
+        }) }}><fieldset disabled={busy}><legend>สร้างผู้ใช้ MTPulse</legend><div className="ciam-form">
+          <label>Account<input required maxLength={200} autoComplete="off" value={newUser.username} onChange={e => setNewUser({ ...newUser, username: e.target.value })} /><small>ใช้ชื่อเดียวกับ AD เช่น Chaiwat.N</small></label>
+          <label>ชื่อที่แสดง<input maxLength={300} value={newUser.full_name} onChange={e => setNewUser({ ...newUser, full_name: e.target.value })} /></label>
+          <label>สิทธิ์ผู้ใช้ใหม่<select value={newUser.role} onChange={e => setNewUser({ ...newUser, role: e.target.value })}><option value="viewer">Viewer</option><option value="operator">Data Operator</option><option value="admin">System Admin</option></select></label>
+          <label>AD Login<select value={String(newUser.ad_enabled)} onChange={e => setNewUser({ ...newUser, ad_enabled: e.target.value === 'true' })}><option value="false">ไม่อนุญาต</option><option value="true">อนุญาต</option></select></label>
+        </div><div className="ciam-actions"><button>สร้างผู้ใช้</button></div></fieldset></form>
+        <p>CIAM เชื่อมบัญชีชื่อเดียวกันอัตโนมัติและคงสิทธิ์เดิม ผู้ใช้ CIAM ใหม่ยังเริ่มเป็น Viewer</p><p>การเปลี่ยนสิทธิ์หรือสถานะจะยกเลิก Session ของผู้ใช้นั้น</p>
+        <div className="ciam-users"><table><thead><tr><th>ผู้ใช้</th><th>สิทธิ์</th><th>สถานะ</th><th>AD Login</th><th>บันทึก</th></tr></thead><tbody>
+          {users.map(user => <UserRow key={`${user.id}:${user.role}:${user.active}:${user.ad_username}`} user={user} busy={busy} save={value => void run(async () => {
             await authRequest(`/api/settings/ciam-sso/users/${user.id}`, 'PATCH', value)
             await load(); setMessage('บันทึกผู้ใช้แล้ว')
           })} />)}
@@ -100,13 +109,13 @@ export function CiamSettingsPanel({ onDirtyChange }: { onDirtyChange?: (dirty: b
     </>}
   </section>
 }
-function UserRow({ user, busy, save, bind }: { user: AuthUser; busy: boolean; bind: (username: string) => void; save: (value: { role: string; active: boolean }) => void }) {
+function UserRow({ user, busy, save }: { user: AuthUser; busy: boolean; save: (value: { role: string; active: boolean; ad_enabled: boolean }) => void }) {
   const [role, setRole] = useState(user.role)
   const [active, setActive] = useState(user.active)
-  const [adUsername, setAdUsername] = useState(user.ad_username ?? '')
-  return <tr><td>{user.full_name}<br /><small>{user.username}{user.local ? ' · Local Admin' : ''}</small></td>
+  const [adEnabled, setAdEnabled] = useState(Boolean(user.ad_username))
+  return <tr><td>{user.full_name}<br /><small>{user.username}{user.local ? ' · Local Admin' : user.ciam_linked ? ' · CIAM เชื่อมแล้ว' : ' · รอ CIAM เชื่อม'}</small></td>
     <td><select aria-label={`สิทธิ์ ${user.username}`} value={role} disabled={busy || user.local} onChange={e => setRole(e.target.value as AuthUser['role'])}><option value="viewer">Viewer</option><option value="operator">Data Operator</option><option value="admin">System Admin</option></select></td>
     <td><select aria-label={`สถานะ ${user.username}`} value={String(active)} disabled={busy || user.local} onChange={e => setActive(e.target.value === 'true')}><option value="true">ใช้งาน</option><option value="false">ระงับ</option></select></td>
-    <td>{user.local ? '—' : <div className="ciam-ad-binding"><input aria-label={`AD username ${user.username}`} value={adUsername} maxLength={200} disabled={busy} onChange={e => setAdUsername(e.target.value)} /><button disabled={busy || adUsername.trim().toLowerCase() === (user.ad_username ?? '')} onClick={() => bind(adUsername)}>บันทึก AD {user.username}</button><small>เว้นว่างเพื่อลบการผูกบัญชี</small></div>}</td>
-    <td><button disabled={busy || user.local || (role === user.role && active === user.active)} onClick={() => save({ role, active })}>บันทึก {user.username}</button></td></tr>
+    <td>{user.local ? '—' : <><select aria-label={`AD Login ${user.username}`} value={String(adEnabled)} disabled={busy} onChange={e => setAdEnabled(e.target.value === 'true')}><option value="false">ไม่อนุญาต</option><option value="true">อนุญาต</option></select><small>{user.ad_username || user.username}</small></>}</td>
+    <td><button disabled={busy || user.local || (role === user.role && active === user.active && adEnabled === Boolean(user.ad_username))} onClick={() => save({ role, active, ad_enabled: adEnabled })}>บันทึก {user.username}</button></td></tr>
 }
