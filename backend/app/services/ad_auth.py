@@ -111,7 +111,16 @@ def login(session: Session, request: Request, response: Response, username: str,
         )
     except (HTTPException, httpx.HTTPError, ValueError, TypeError) as exc:
         session.rollback()
-        ciam.audit(session, "login_failed", "anonymous", {"provider": "ad"})
+        ciam.audit(
+            session,
+            "login_failed",
+            "anonymous",
+            {
+                "provider": "ad",
+                "error": type(exc).__name__,
+                "http_status": exc.status_code if isinstance(exc, HTTPException) else 502,
+            },
+        )
         session.commit()
         if isinstance(exc, HTTPException):
             raise

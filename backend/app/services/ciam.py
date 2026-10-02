@@ -99,6 +99,9 @@ def audit(session: Session, action: str, actor: str, details: dict | None = None
     if session.bind.dialect.name == "sqlite":
         event.id = (session.scalar(select(func.max(AuditEvent.id))) or 0) + 1
     session.add(event)
+    from app.services.transaction_logs import record
+
+    record(session, action, actor, details or {})
     session.flush()
 
 
@@ -267,7 +270,17 @@ def issue_session(
         )
     )
     user.last_login_at = now
-    audit(session, "login_success", "user:" + user.id, {"provider": provider})
+    cfg = config(session)
+    audit(
+        session,
+        "login_success",
+        "user:" + user.id,
+        {
+            "provider": provider,
+            "break_glass_active": cfg["ciam_break_glass_active"],
+            **({"gateway": cfg["ciam_ad_gateway_url"]} if provider == "ad" else {}),
+        },
+    )
     session.commit()
     response.set_cookie(
         SESSION_COOKIE,
@@ -304,6 +317,7 @@ def user_info(user: AuthUser) -> dict:
 def callback(session: Session, request: Request, response: Response, code: str, state: str):
     cfg = config(session, secret=True)
     same_origin(request, cfg)
+    stage = "state_validation"
     try:
         sso_active(cfg)
         now = datetime.now(UTC)
@@ -321,6 +335,7 @@ def callback(session: Session, request: Request, response: Response, code: str, 
         session.commit()
         if not attempt:
             raise HTTPException(401, "SSO session ไม่ถูกต้องหรือหมดอายุ กรุณาเริ่มใหม่")
+        stage = "token_exchange"
         doc = discovery(cfg)
         verifier = crypto().decrypt(attempt.verifier.encode()).decode()
         with httpx.Client(timeout=10, follow_redirects=False) as client:
@@ -337,6 +352,7 @@ def callback(session: Session, request: Request, response: Response, code: str, 
             )
             result.raise_for_status()
             token = result.json()["id_token"]
+        stage = "token_validation"
         header = jwt.get_unverified_header(token)
         if header.get("alg") != "RS256" or not header.get("kid"):
             raise ValueError("Invalid signing algorithm")
@@ -371,6 +387,7 @@ def callback(session: Session, request: Request, response: Response, code: str, 
         subject = claims["sub"]
         if not isinstance(subject, str) or not subject or len(subject) > 255:
             raise ValueError("Invalid subject")
+        stage = "account_resolution"
         # Lock by issuer/subject during provisioning on PostgreSQL.
         if session.bind.dialect.name == "postgresql":
             from sqlalchemy import text
@@ -400,6 +417,7 @@ def callback(session: Session, request: Request, response: Response, code: str, 
                         raise HTTPException(403, "ชื่อบัญชีนี้เชื่อมตัวตนอื่นแล้ว กรุณาติดต่อ Admin")
                     user = matches[0]
                     if not user.active:
+                        session.info["inactive_username"] = user.username
                         raise HTTPException(403, "บัญชีถูกระงับ กรุณาติดต่อผู้ดูแลระบบ")
                     user.issuer, user.subject = cfg["ciam_base_url"], subject
                     audit(session, "ciam_account_linked", "user:" + user.id)
@@ -419,6 +437,7 @@ def callback(session: Session, request: Request, response: Response, code: str, 
             session.flush()
             audit(session, "auto_provision", "user:" + user.id, {"role": "viewer"})
         if not user.active:
+            session.info["inactive_username"] = user.username
             raise HTTPException(403, "บัญชีถูกระงับ กรุณาติดต่อผู้ดูแลระบบ")
         # Settings may have changed while waiting for the provider.
         session.expire_all()
@@ -435,7 +454,25 @@ def callback(session: Session, request: Request, response: Response, code: str, 
         )
     except (HTTPException, httpx.HTTPError, ValueError, KeyError, TypeError, jwt.PyJWTError) as exc:
         session.rollback()
-        audit(session, "login_failed", "anonymous", {"provider": "sso"})
+        inactive = session.info.pop("inactive_username", None)
+        if inactive:
+            audit(
+                session,
+                "account_deactivated",
+                "user:" + user.id,
+                {"username": inactive, "provider": "sso"},
+            )
+        audit(
+            session,
+            "login_failed",
+            "anonymous",
+            {
+                "provider": "sso",
+                "error": type(exc).__name__,
+                "stage": stage,
+                "http_status": exc.status_code if isinstance(exc, HTTPException) else 401,
+            },
+        )
         session.commit()
         if isinstance(exc, HTTPException):
             raise

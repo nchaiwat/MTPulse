@@ -225,3 +225,34 @@ Then use a signed provider fixture with differently cased preferred_username; co
 same user ID and role, deny disabled/local/already-linked identity collisions and
 retain new-user Viewer provisioning. Real external provider/AD credential acceptance
 must still be checked with an approved user; never create fake production test users.
+
+
+## System Setting and Transaction Logs (2026-10-02)
+
+Navigation separates ModernTrade Setting (Global and seven existing MT tabs) from
+System Setting (Admin only). Central IAM / AD contains connection and emergency
+settings; User Management contains accounts, AD permission and Local Admin password
+change. Transaction Logs offers server-side date/category/status/actor filters,
+pagination and read-only details. Unsaved System Setting edits prompt before leaving.
+
+Apply additive migration ab1526d7e8f9 after 9da415c6d7e8 before starting the new API.
+The new transaction_logs table follows specification fields plus event_code.
+triggered_by permits 220 characters to preserve existing 200-character account names.
+Existing audit_events remains intact; Legacy view shows established metadata only,
+without fabricating status/IP or exposing unstructured old detail payloads.
+No automatic retention deletion or remote log shipping is enabled.
+
+Covered specification codes: SSO-01/02/03/04, BG-01/02 and CFG-01. Normal AD login
+uses AD-01/02 (not BG-02); local login and user/security changes have separate codes.
+Details are explicitly allowlisted; no passwords, secrets, token/code/PKCE/session
+values are accepted. Failure reasons use sanitized exception type/stage/status.
+IP is the server-observed ASGI client address; arbitrary forwarded headers are never
+trusted by application logging. With the current Docker reverse proxy this can be the
+proxy peer, rather than the employee PC. Original end-user IP attribution requires a
+separately verified trusted-proxy configuration. Server-console events have no client IP.
+
+Verify in isolated PostgreSQL: migrate, bootstrap fixture admin, log in, perform a
+failed login, query logs as Admin, confirm Viewer denial and redaction. Compare both
+metadata and persisted entries after the failed response. Production migration requires
+fresh verified pg_dump. Code rollback target is protected release 6971a73; retain the
+additive table/history on rollback, never run destructive downgrade on production.

@@ -31,3 +31,23 @@
 .ciam-secret-input input { flex: 1; }
 .ciam-secret-input button { display: grid; place-items: center; flex: 0 0 40px; border: 1px solid var(--line, #d7e0e3); border-radius: 6px; background: white; color: var(--ink-900, #102a43); }
 .ciam-secret > button { justify-self: start; }
+
+.transaction-details { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 480px; min-width: 180px; }
+.ciam-users th, .ciam-users td { vertical-align: top; }
+
+.ciam-reason { display: grid; gap: 6px; }
+.ciam-reason input { width: 100%; min-width: 0; min-height: 40px; }
+.ciam-panel { font-size: 12px; overflow-wrap: anywhere; }
+.ciam-panel button { max-width: 100%; }
+@media (max-width: 600px) {
+  .ciam-panel { padding: 10px; }
+  .ciam-panel fieldset { margin-inline: 0; padding: 8px; }
+  .ciam-secret-input { gap: 3px; }
+}
+
+.ciam-form label { align-content: start; }
+.ciam-users table { min-width: 700px; }
+.ciam-users th:first-child, .ciam-users td:first-child { min-width: 150px; }
+.ciam-panel button { padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink-900); }
+.ciam-panel button:disabled { opacity: .55; cursor: default; }
+.ciam-panel button:hover:not(:disabled) { background: var(--primary-50); }

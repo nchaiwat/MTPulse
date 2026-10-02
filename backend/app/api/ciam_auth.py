@@ -1,8 +1,10 @@
+import json
 from datetime import UTC, datetime
+from time import perf_counter
 from typing import Annotated, Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
@@ -11,12 +13,48 @@ from sqlalchemy.orm import Session
 from app.auth import SESSION_COOKIE, digest, require_system_admin, utc
 from app.config import get_settings
 from app.database import get_session
-from app.models import AuthSession, AuthUser
+from app.models import AuditEvent, AuthSession, AuthUser, TransactionLog
 from app.services import ad_auth, ciam, local_auth
 
-router = APIRouter(tags=["Authentication"])
 Db = Annotated[Session, Depends(get_session)]
 Admin = Annotated[str, Depends(require_system_admin)]
+
+
+def audit_context(request: Request, session: Db):
+    provider = {
+        "/api/auth/sso/callback": "sso",
+        "/api/auth/local/login": "local",
+        "/api/auth/ad/login": "ad",
+    }.get(request.url.path)
+    session.info["audit_context"] = {
+        "ip": request.client.host if request.client else None,
+        "started": perf_counter(),
+        "provider": provider,
+    }
+    session.info["login_failure_logged"] = False
+    session.info.pop("inactive_username", None)
+    try:
+        yield
+    except HTTPException as exc:
+        if provider and not session.info.get("login_failure_logged"):
+            session.rollback()
+            ciam.audit(
+                session,
+                "login_failed",
+                "anonymous",
+                {
+                    "provider": provider,
+                    "error": "RequestRejected",
+                    "http_status": exc.status_code,
+                },
+            )
+            session.commit()
+        raise
+    finally:
+        session.info.pop("audit_context", None)
+
+
+router = APIRouter(tags=["Authentication"], dependencies=[Depends(audit_context)])
 
 
 class CiamSettings(BaseModel):
@@ -176,9 +214,13 @@ def test_connection(session: Db, actor: Admin):
 
 @router.post("/api/auth/sso/break-glass-toggle")
 def break_glass(payload: BreakGlass, session: Db, actor: Admin):
+    previous = ciam.config(session)["ciam_break_glass_active"]
     result = ciam.save_config(session, {"ciam_break_glass_active": payload.active}, actor)
     ciam.audit(
-        session, "break_glass_toggle", actor, {"active": payload.active, "reason": payload.reason}
+        session,
+        "break_glass_toggle",
+        actor,
+        {"active": payload.active, "reason": payload.reason, "prev_state": previous},
     )
     session.commit()
     return result
@@ -368,3 +410,88 @@ def create_user(payload: UserCreate, session: Db, actor: Admin):
     ciam.audit(session, "user_created", actor, ciam.user_info(user))
     session.commit()
     return ciam.user_info(user)
+
+
+@router.get("/api/settings/transaction-logs")
+def transaction_logs(
+    session: Db,
+    actor: Admin,
+    response: Response,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    category: str | None = Query(default=None, max_length=50),
+    status: Literal["success", "failed", "warning", "info"] | None = None,
+    triggered_by: str | None = Query(default=None, max_length=220),
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    legacy: bool = False,
+):
+    response.headers["Cache-Control"] = "no-store"
+    if date_from and date_to and utc(date_from) > utc(date_to):
+        raise HTTPException(422, "ช่วงวันที่ไม่ถูกต้อง")
+    model = AuditEvent if legacy else TransactionLog
+    query = select(model)
+    timestamp = model.occurred_at if legacy else model.created_at
+    if legacy:
+        query = query.where(AuditEvent.entity_type == "ciam_security")
+        if category or status:
+            raise HTTPException(422, "ประวัติเดิมไม่มี Category/Status ที่ยืนยันได้")
+    else:
+        if category:
+            query = query.where(TransactionLog.category == category)
+        if status:
+            query = query.where(TransactionLog.status == status)
+    if triggered_by:
+        column = model.actor if legacy else model.triggered_by
+        query = query.where(column.icontains(triggered_by, autoescape=True))
+    if date_from:
+        query = query.where(timestamp >= utc(date_from))
+    if date_to:
+        query = query.where(timestamp <= utc(date_to))
+    total = session.scalar(select(func.count()).select_from(query.subquery()))
+    rows = session.scalars(
+        query.order_by(timestamp.desc(), model.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    if legacy:
+        # Legacy details were not schema-allowlisted; expose only established metadata.
+        items = [
+            {
+                "id": r.id,
+                "event_code": "LEGACY",
+                "category": None,
+                "action": r.action,
+                "status": None,
+                "message": "ประวัติเดิม: " + r.action,
+                "details": {},
+                "triggered_by": r.actor,
+                "created_at": r.occurred_at,
+                "records_count": None,
+                "duration_ms": None,
+            }
+            for r in rows
+        ]
+    else:
+        items = [
+            {
+                **{
+                    key: getattr(r, key)
+                    for key in (
+                        "id",
+                        "event_code",
+                        "category",
+                        "action",
+                        "status",
+                        "message",
+                        "triggered_by",
+                        "created_at",
+                        "records_count",
+                        "duration_ms",
+                    )
+                },
+                "details": json.loads(r.details or "{}"),
+            }
+            for r in rows
+        ]
+    return {"items": items, "total": total, "page": page, "page_size": page_size}

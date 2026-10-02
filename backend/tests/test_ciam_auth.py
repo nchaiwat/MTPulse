@@ -832,3 +832,125 @@ def test_ad_permission_disabled_revokes_existing_ad_session(auth_client):
     assert result.status_code == 200
     assert session.get(AuthSession, digest(token)) is None
     assert not session.get(AuthUser, user.id).ad_username
+
+
+def test_transaction_log_records_failed_login_and_is_admin_only(auth_client):
+    client, session = auth_client
+    client.headers["Origin"] = ORIGIN
+    result = client.post(
+        "/api/auth/local/login", json={"username": "unknown", "password": "never-log-this"}
+    )
+    assert result.status_code == 401
+    admin = account(session)
+    sign_in(client, session, admin)
+    result = client.get("/api/settings/transaction-logs", params={"status": "failed"})
+    assert result.status_code == 200
+    assert result.json()["total"] == 1
+    row = result.json()["items"][0]
+    assert row["status"] == "failed" and row["details"]["ip"]
+    assert "never-log-this" not in result.text
+    sign_in(client, session, account(session, "viewer"))
+    assert client.get("/api/settings/transaction-logs").status_code == 403
+
+
+def test_transaction_logs_sso_provision_and_success(provider):
+    client, session, query, _, _ = provider
+    state = query["state"][0]
+    response = client.post("/api/auth/sso/callback", json={"code": "secret-code", "state": state})
+    assert response.status_code == 200
+    from app.models import TransactionLog
+
+    logs = list(session.scalars(select(TransactionLog)))
+    assert {"SSO-01", "SSO-03"} <= {x.event_code for x in logs}
+    success = next(x for x in logs if x.event_code == "SSO-01")
+    assert success.triggered_by.startswith("user:")
+    assert "secret-code" not in success.details
+
+
+def test_transaction_matrix_failed_signature_and_inactive(provider):
+    from app.models import TransactionLog
+
+    client, session, query, overrides, _ = provider
+    overrides["nonce"] = "invalid"
+    response = client.post(
+        "/api/auth/sso/callback", json={"code": "do-not-log", "state": query["state"][0]}
+    )
+    assert response.status_code == 401
+    log = session.scalar(select(TransactionLog).where(TransactionLog.event_code == "SSO-02"))
+    assert log.status == "failed" and "token_validation" in log.details
+    assert "do-not-log" not in log.details
+
+
+def test_transaction_matrix_inactive_account(provider):
+    from app.models import TransactionLog
+
+    client, session, query, _, _ = provider
+    user = account(session)
+    user.subject = "employee-123"
+    user.active = False
+    session.commit()
+    response = client.post(
+        "/api/auth/sso/callback", json={"code": "code", "state": query["state"][0]}
+    )
+    assert response.status_code == 403
+    log = session.scalar(select(TransactionLog).where(TransactionLog.event_code == "SSO-04"))
+    assert log.status == "warning"
+    assert log.triggered_by == "user:tester"
+
+
+def test_transaction_matrix_config_breakglass_and_ad(auth_client, monkeypatch):
+    import json
+
+    from app.models import TransactionLog
+
+    client, session = auth_client
+    admin = account(session)
+    sign_in(client, session, admin)
+    ciam.save_config(session, {"ciam_ad_secret": "keep-secret-private"}, "user:" + admin.id)
+    response = client.post(
+        "/api/auth/sso/break-glass-toggle", json={"active": True, "reason": "Gateway maintenance"}
+    )
+    assert response.status_code == 200
+    bg = session.scalar(select(TransactionLog).where(TransactionLog.event_code == "BG-01"))
+    assert bg.status == "warning"
+    assert json.loads(bg.details)["prev_state"] is False
+    assert json.loads(bg.details)["ip"] == "testclient"
+    user = account(session, "operator")
+    user.ad_username = "ad.tester"
+    session.commit()
+    monkeypatch.setattr(
+        httpx.Client,
+        "post",
+        lambda *a, **kw: httpx.Response(
+            200, json={"status": "success", "data": {"username": "ad.tester"}}
+        ),
+    )
+    response = client.request(
+        "POST", "/api/auth/ad/login", json={"username": "ad.tester", "password": "private-password"}
+    )
+    assert response.status_code == 200
+    log = session.scalar(select(TransactionLog).where(TransactionLog.event_code == "BG-02"))
+    assert log.category == "security_break_glass"
+    client.cookies.clear()
+    sign_in(client, session, admin)
+    response = client.get(
+        "/api/settings/transaction-logs",
+        params={"category": "system_setting", "page_size": 1, "triggered_by": "tester"},
+    )
+    assert response.status_code == 200 and response.json()["total"] >= 1
+    assert len(response.json()["items"]) == 1
+    assert response.headers["cache-control"] == "no-store"
+    assert "keep-secret-private" not in response.text and "private-password" not in response.text
+    cfg = session.scalar(select(TransactionLog).where(TransactionLog.event_code == "CFG-01"))
+    assert "ciam_ad_secret" in json.loads(cfg.details)["changed_fields"]
+    assert client.get("/api/settings/transaction-logs", params={"page": 0}).status_code == 422
+    assert (
+        client.get(
+            "/api/settings/transaction-logs",
+            params={"date_from": "2026-01-02T00:00:00Z", "date_to": "2026-01-01T00:00:00Z"},
+        ).status_code
+        == 422
+    )
+    legacy = client.get("/api/settings/transaction-logs", params={"legacy": True}).json()
+    assert legacy["total"] > 0 and legacy["items"][0]["status"] is None
+    assert legacy["items"][0]["details"] == {}

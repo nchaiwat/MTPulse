@@ -81,7 +81,12 @@ def login(session: Session, request: Request, response: Response, username: str,
     )
     valid = verify_password(password, user.password_hash if user else None)
     if not valid or not user or not user.active or user.role != "admin":
-        ciam.audit(session, "login_failed", "anonymous", {"provider": "local"})
+        ciam.audit(
+            session,
+            "login_failed",
+            "anonymous",
+            {"provider": "local", "error": "CredentialsRejected", "http_status": 401},
+        )
         session.commit()
         raise HTTPException(401, "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
     return ciam.issue_session(

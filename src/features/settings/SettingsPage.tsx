@@ -1,5 +1,4 @@
 import { useIsAdmin } from '../auth/permissions'
-import { CiamSettingsPanel } from './CiamSettingsPanel'
 import { useEffect, useState } from 'react'
 import { Building2, CalendarClock, Globe2 } from 'lucide-react'
 import { FileShareSettingsCard } from './FileShareSettingsCard'
@@ -72,7 +71,7 @@ export function SettingsPage({ focusCoverageKey = 0 }: { focusCoverageKey?: numb
       <div className="settings-control-intro">
         <div>
           <span className="eyebrow">Administration</span>
-          <h1>การตั้งค่าระบบ</h1>
+          <h1>ModernTrade Setting</h1>
           <p>ค่ากลางของระบบและค่าที่มีผลเฉพาะแต่ละ Modern Trade</p>
         </div>
         <div className="settings-scope-context" aria-label="ขอบเขตการตั้งค่าปัจจุบัน">
@@ -129,7 +128,6 @@ export function SettingsPage({ focusCoverageKey = 0 }: { focusCoverageKey?: numb
       </nav>
 
       <div id={`settings-panel-${activeScope}`} role="tabpanel" aria-labelledby={`settings-tab-${activeScope}`} className="settings-scope-panel">
-        {activeScope === 'global' && <CiamSettingsPanel onDirtyChange={(dirty) => setDirtyScope(dirty ? 'global' : null)} />}
         {activeScope === 'global' && <SystemSettingsPage embedded fileShareView="connection" onDirtyChange={(dirty) => setDirtyScope(dirty ? 'global' : null)} />}
 
         {activeScope === 'TWD' && (

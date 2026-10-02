@@ -634,3 +634,20 @@ class AuthRateLimit(Base):
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     attempts: Mapped[int] = mapped_column(Integer)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class TransactionLog(Base):
+    __tablename__ = "transaction_logs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    event_code: Mapped[str] = mapped_column(String(50))
+    category: Mapped[str] = mapped_column(String(50), index=True)
+    action: Mapped[str] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(20))
+    message: Mapped[str] = mapped_column(String(500))
+    details: Mapped[str | None] = mapped_column(Text)
+    records_count: Mapped[int] = mapped_column(Integer, default=0)
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    triggered_by: Mapped[str] = mapped_column(String(220))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
