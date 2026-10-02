@@ -18,6 +18,7 @@ from app.api.imports import (
     _read_file,
     _read_hp_mh_files,
 )
+from app.auth import actor_from_session
 from app.database import get_session
 from app.importers.dh import DhFormatError, DhPairExtract
 from app.importers.gh import GhExtract, GhFormatError
@@ -179,13 +180,13 @@ def acknowledge_import_warning(
     batch.warning_resolution = "acknowledged"
     batch.warning_resolution_note = note
     batch.warning_resolved_at = resolved_at
-    batch.warning_resolved_by = "manual-user"
+    batch.warning_resolved_by = actor_from_session(session, "manual-user")
     session.add(
         AuditEvent(
             entity_type="import_corrective",
             entity_id=str(batch.id),
             action="warning_acknowledged",
-            actor="manual-user",
+            actor=actor_from_session(session, "manual-user"),
             before_json=json.dumps({"warnings": batch.reconciliation_errors}, ensure_ascii=False),
             after_json=json.dumps({"resolution": "acknowledged", "note": note}, ensure_ascii=False),
         )
@@ -279,9 +280,11 @@ async def confirm_batch_replacement(
             raise ValueError(blocked_reason)
         before = _batch_detail(batch)
         if isinstance(extract, GhExtract):
-            import_gh_file(session, extract, actor="manual-user:corrective")
+            import_gh_file(session, extract,
+                actor=actor_from_session(session, "manual-user:corrective"))
         elif isinstance(extract, TaExtract):
-            import_ta_file(session, extract, actor="manual-user:corrective")
+            import_ta_file(session, extract,
+                actor=actor_from_session(session, "manual-user:corrective"))
         else:
             replace_twd_batch(session, batch, extract)
         after = _batch_detail(batch)
@@ -290,7 +293,7 @@ async def confirm_batch_replacement(
                 entity_type="import_corrective",
                 entity_id=str(batch.id),
                 action="batch_replaced",
-                actor="manual-user",
+                actor=actor_from_session(session, "manual-user"),
                 before_json=json.dumps(before, ensure_ascii=False),
                 after_json=json.dumps(after, ensure_ascii=False),
             )
@@ -473,7 +476,7 @@ async def confirm_dh_batch_replacement(
         updated = import_dh_pair(
             session,
             pair,
-            actor="manual-user:corrective",
+            actor=actor_from_session(session, "manual-user:corrective"),
             expected_fingerprint=expected_fingerprint,
         )
         after = _batch_detail(updated)
@@ -482,7 +485,7 @@ async def confirm_dh_batch_replacement(
                 entity_type="import_corrective",
                 entity_id=str(batch.id),
                 action="batch_replaced",
-                actor="manual-user",
+                actor=actor_from_session(session, "manual-user"),
                 before_json=json.dumps(before, ensure_ascii=False),
                 after_json=json.dumps(after, ensure_ascii=False),
             )

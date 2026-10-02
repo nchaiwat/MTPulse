@@ -1,3 +1,4 @@
+import { apiFetch } from '../auth/authApi'
 import type { DashboardMetric, DashboardPeriod, TwdDashboardResponse } from './types'
 import type { ActiveModernTradeCode } from '../../config/modernTrades'
 
@@ -11,7 +12,7 @@ export async function fetchDashboard(
 ) {
   const params = new URLSearchParams({ period })
   if (year) params.set('year', String(year))
-  const response = await fetch(
+  const response = await apiFetch(
     `${apiBaseUrl}/api/dashboards/${mtCode.toLowerCase()}?${params}`,
     { signal },
   )
@@ -38,7 +39,7 @@ export async function downloadDashboard(
 ): Promise<{ blob: Blob, filename: string }> {
   const params = new URLSearchParams({ period, metric })
   if (year) params.set('year', String(year))
-  const response = await fetch(
+  const response = await apiFetch(
     `${apiBaseUrl}/api/dashboards/${mtCode.toLowerCase()}/export?${params}`,
   )
   if (!response.ok) {

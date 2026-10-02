@@ -1,3 +1,4 @@
+import { apiFetch } from '../auth/authApi'
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
 
 export type DhPriceStatus = 'current' | 'upcoming' | 'expired'
@@ -46,7 +47,7 @@ async function apiError(response: Response, fallback: string) {
 }
 
 export async function downloadDhPriceTemplate(): Promise<{ blob: Blob, filename: string }> {
-  const response = await fetch(`${apiBaseUrl}/api/dh-prices/template`)
+  const response = await apiFetch(`${apiBaseUrl}/api/dh-prices/template`)
   if (!response.ok) throw new Error(await apiError(response, `Download API ตอบกลับ ${response.status}`))
   const disposition = response.headers.get('Content-Disposition') ?? ''
   const encodedFilename = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
@@ -59,7 +60,7 @@ export async function downloadDhPriceTemplate(): Promise<{ blob: Blob, filename:
 export async function previewDhPriceMaster(file: File): Promise<DhPricePreview> {
   const body = new FormData()
   body.set('file', file)
-  const response = await fetch(`${apiBaseUrl}/api/dh-prices/preview`, { method: 'POST', body })
+  const response = await apiFetch(`${apiBaseUrl}/api/dh-prices/preview`, { method: 'POST', body })
   if (!response.ok) throw new Error(await apiError(response, `Preview API ตอบกลับ ${response.status}`))
   return response.json() as Promise<DhPricePreview>
 }
@@ -68,7 +69,7 @@ export async function confirmDhPriceMaster(file: File, previewFingerprint: strin
   const body = new FormData()
   body.set('file', file)
   body.set('preview_fingerprint', previewFingerprint)
-  const response = await fetch(`${apiBaseUrl}/api/dh-prices/confirm`, { method: 'POST', body })
+  const response = await apiFetch(`${apiBaseUrl}/api/dh-prices/confirm`, { method: 'POST', body })
   if (!response.ok) throw new Error(await apiError(response, `Confirm API ตอบกลับ ${response.status}`))
   return response.json() as Promise<DhPriceConfirmation>
 }
@@ -83,7 +84,7 @@ export async function fetchDhPrices(
   })
   if (options.query?.trim()) query.set('q', options.query.trim())
   if (options.status) query.set('status', options.status)
-  const response = await fetch(`${apiBaseUrl}/api/dh-prices?${query}`, { signal })
+  const response = await apiFetch(`${apiBaseUrl}/api/dh-prices?${query}`, { signal })
   if (!response.ok) throw new Error(await apiError(response, `Price API ตอบกลับ ${response.status}`))
   return response.json() as Promise<DhPriceListPage>
 }

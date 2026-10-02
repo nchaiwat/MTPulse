@@ -1,3 +1,4 @@
+import { useCanEdit } from '../auth/permissions'
 import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, LoaderCircle } from 'lucide-react'
 import { aggregateByDimension, formatMetric, heatLevel, monthKeys, pointsForView, sumMetric } from './performanceMath'
@@ -55,6 +56,7 @@ const skuFlagState = (item: PerformanceItem) => item.isSho && item.isPro
       : undefined
 
 const MatrixTable = memo(function MatrixTable({ items, branches, dates, branchIds, mode, metric, dimension, heatmap, showDescriptions, columnTotals, grandTotal, turnoverSummary, selected, onSelect, pendingFlagKeys, onFlagChange, sourceCode = 'TWD' }: MatrixTableProps) {
+  const canEdit = useCanEdit()
   const topScrollRef = useRef<HTMLDivElement>(null)
   const matrixScrollRef = useRef<HTMLDivElement>(null)
   const tableRef = useRef<HTMLTableElement>(null)
@@ -107,14 +109,14 @@ const MatrixTable = memo(function MatrixTable({ items, branches, dates, branchId
           {showFlags && (
             <td className="sticky-column sku-flag-cell col-sho">
               <label className="sku-flag-check sku-flag-sho" data-pending={pendingFlagKeys.has(`${item.sku}:sho`) || undefined} title="สินค้าตัวโชว์">
-                <input type="checkbox" aria-label={`Sho ${sourceCode} SKU ${item.sku}`} checked={Boolean(item.isSho)} disabled={pendingFlagKeys.has(`${item.sku}:sho`)} onChange={(event) => onFlagChange(item, 'sho', event.target.checked)} />
+                <input type="checkbox" aria-label={`Sho ${sourceCode} SKU ${item.sku}`} checked={Boolean(item.isSho)} disabled={!canEdit || pendingFlagKeys.has(`${item.sku}:sho`)} onChange={(event) => onFlagChange(item, 'sho', event.target.checked)} />
               </label>
             </td>
           )}
           {showFlags && (
             <td className="sticky-column sku-flag-cell col-pro">
               <label className="sku-flag-check sku-flag-pro" data-pending={pendingFlagKeys.has(`${item.sku}:pro`) || undefined} title="สินค้าทำ Promotion">
-                <input type="checkbox" aria-label={`Pro ${sourceCode} SKU ${item.sku}`} checked={Boolean(item.isPro)} disabled={pendingFlagKeys.has(`${item.sku}:pro`)} onChange={(event) => onFlagChange(item, 'pro', event.target.checked)} />
+                <input type="checkbox" aria-label={`Pro ${sourceCode} SKU ${item.sku}`} checked={Boolean(item.isPro)} disabled={!canEdit || pendingFlagKeys.has(`${item.sku}:pro`)} onChange={(event) => onFlagChange(item, 'pro', event.target.checked)} />
               </label>
             </td>
           )}
@@ -139,7 +141,7 @@ const MatrixTable = memo(function MatrixTable({ items, branches, dates, branchId
         </tr>
       ))}
     </tbody>
-  ), [dimensionKeys, heatmap, maxValue, metric, onFlagChange, onSelect, pendingFlagKeys, rows, selected, showFlags, showTurnover, sourceCode])
+  ), [canEdit, dimensionKeys, heatmap, maxValue, metric, onFlagChange, onSelect, pendingFlagKeys, rows, selected, showFlags, showTurnover, sourceCode])
 
   return (
     <>

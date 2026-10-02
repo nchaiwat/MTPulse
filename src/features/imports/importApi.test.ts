@@ -1,3 +1,4 @@
+import { setSessionToken } from '../auth/authApi'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MANUAL_UPLOAD_LIMITS, previewDhImport, previewHpMhImport, previewImport } from './importApi'
 
@@ -21,6 +22,9 @@ class FakeXMLHttpRequest extends FakeEventTarget {
   upload = new FakeEventTarget()
   status = 0
   responseText = ''
+  withCredentials = false
+  headers = new Map<string, string>()
+  setRequestHeader(name: string, value: string) { this.headers.set(name, value) }
   method = ''
   url = ''
   body: Document | XMLHttpRequestBodyInit | null = null
@@ -46,7 +50,7 @@ describe('manual import upload transport', () => {
     vi.stubGlobal('XMLHttpRequest', FakeXMLHttpRequest)
   })
 
-  afterEach(() => vi.unstubAllGlobals())
+  afterEach(() => { setSessionToken(''); vi.unstubAllGlobals() })
 
   it('reports byte upload progress then processing before resolving', async () => {
     const progress = vi.fn()
@@ -151,4 +155,26 @@ describe('manual folder upload phase 1 contract', () => {
       stagingRetentionDays: 7,
     })
   })
+})
+
+
+it('sends the session CSRF with a real upload transport and reports expiry', async () => {
+  vi.stubGlobal('XMLHttpRequest', FakeXMLHttpRequest)
+  FakeXMLHttpRequest.instances = []
+  setSessionToken('authenticated-csrf')
+  const expired = vi.fn()
+  window.addEventListener('mtpulse:unauthorized', expired)
+  try {
+    const pending = previewImport(new File(['data'], 'report.xls'))
+    const xhr = FakeXMLHttpRequest.instances[0]
+    expect(xhr.headers.get('X-CSRF-Token')).toBe('authenticated-csrf')
+    expect(xhr.withCredentials).toBe(true)
+    xhr.status = 401; xhr.responseText = '{"detail":"expired"}'
+    const rejection = expect(pending).rejects.toThrow('expired')
+    xhr.emit('load', new Event('load'))
+    await rejection
+    expect(expired).toHaveBeenCalledOnce()
+  } finally {
+    setSessionToken(''); vi.unstubAllGlobals(); window.removeEventListener('mtpulse:unauthorized', expired)
+  }
 })

@@ -1,3 +1,4 @@
+import { apiFetch } from '../auth/authApi'
 import type { BranchPeriod, DateRange, Dimension, Metric, Mode, ModernTradeCode, PerformanceItem, PerformanceResponse, SalesBasis, SkuAnalysisFlagName, SkuAnalysisFlagResponse, SkuFlagFilter, SkuOption } from './types'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
@@ -85,7 +86,7 @@ function performanceQuery(
 }
 
 export async function fetchSkuOptions(mtCode: ModernTradeCode = 'TWD', signal?: AbortSignal): Promise<SkuOption[]> {
-  const response = await fetch(`${apiBaseUrl}/api/performance/sku-options?mt_code=${mtCode}`, { signal, cache: 'no-store' })
+  const response = await apiFetch(`${apiBaseUrl}/api/performance/sku-options?mt_code=${mtCode}`, { signal, cache: 'no-store' })
   if (!response.ok) throw new Error(`SKU API ตอบกลับ ${response.status}`)
   const body = await response.json() as { items: SkuOption[] }
   return body.items
@@ -97,7 +98,7 @@ export async function updateSkuAnalysisFlag(
   flag: SkuAnalysisFlagName,
   enabled: boolean,
 ): Promise<SkuAnalysisFlagResponse> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${apiBaseUrl}/api/performance/sku-flags/${encodeURIComponent(mtCode)}/${encodeURIComponent(sku)}`,
     {
       method: 'PATCH',
@@ -114,7 +115,7 @@ export async function updateSkuAnalysisFlag(
 export async function fetchPerformance(queryInput: PerformanceQuery): Promise<PerformanceResponse> {
   const { query } = performanceQuery(queryInput)
   query.set('page', String(queryInput.page))
-  const response = await fetch(`${apiBaseUrl}/api/performance?${query}`, { signal: queryInput.signal })
+  const response = await apiFetch(`${apiBaseUrl}/api/performance?${query}`, { signal: queryInput.signal })
   if (!response.ok) throw new Error(`Performance API ตอบกลับ ${response.status}`)
   return response.json() as Promise<PerformanceResponse>
 }
@@ -127,7 +128,7 @@ export async function fetchPerformanceItemDetail(
   const { query } = performanceQuery({ ...queryInput, skuIds: [sku] }, false)
   query.set('grain', 'day')
   query.set('page', '1')
-  const response = await fetch(`${apiBaseUrl}/api/performance?${query}`, { signal })
+  const response = await apiFetch(`${apiBaseUrl}/api/performance?${query}`, { signal })
   if (!response.ok) throw new Error(`Performance API ตอบกลับ ${response.status}`)
   const body = await response.json() as PerformanceResponse
   return body.items[0] ?? null
@@ -142,7 +143,7 @@ export async function downloadPerformanceReport(
   query.set('mode', queryInput.mode)
   query.set('metric', metric)
   query.set('show_descriptions', String(showDescriptions))
-  const response = await fetch(`${apiBaseUrl}/api/performance/export?${query}`)
+  const response = await apiFetch(`${apiBaseUrl}/api/performance/export?${query}`)
   if (!response.ok) throw new Error(await apiError(response, `Download API ตอบกลับ ${response.status}`))
   const disposition = response.headers.get('Content-Disposition') ?? ''
   const encodedFilename = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]

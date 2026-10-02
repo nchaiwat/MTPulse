@@ -1,0 +1,236 @@
+from typing import Annotated, Literal
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import delete, select
+from sqlalchemy.orm import Session
+
+from app.auth import SESSION_COOKIE, digest, require_system_admin, utc
+from app.config import get_settings
+from app.database import get_session
+from app.models import AuthSession, AuthUser
+from app.services import ciam, local_auth
+
+router = APIRouter(tags=["Authentication"])
+Db = Annotated[Session, Depends(get_session)]
+Admin = Annotated[str, Depends(require_system_admin)]
+
+
+class CiamSettings(BaseModel):
+    ciam_base_url: str = Field(max_length=300)
+    ciam_client_id: str = Field(max_length=200)
+    ciam_client_secret: str | None = Field(default=None, max_length=2000, repr=False)
+    ciam_redirect_uri: str = Field(max_length=500)
+    ciam_sso_enabled: bool
+    ciam_auto_provision_group: Literal["viewer"] = "viewer"
+    ciam_session_ttl_minutes: int = Field(default=480, ge=5, le=1440)
+
+    @field_validator("ciam_base_url", "ciam_redirect_uri")
+    @classmethod
+    def https_only(cls, value):
+        return ciam.validate_url(value)
+
+
+class Callback(BaseModel):
+    code: str = Field(min_length=1, max_length=4000)
+    state: str = Field(min_length=16, max_length=200)
+
+
+class BreakGlass(BaseModel):
+    active: bool
+    reason: str = Field(min_length=5, max_length=300)
+
+
+class UserUpdate(BaseModel):
+    role: Literal["viewer", "operator", "admin"]
+    active: bool
+
+
+@router.get("/api/auth/sso/config")
+def public_config(session: Db, response: Response):
+    response.headers["Cache-Control"] = "no-store"
+    if get_settings().auth_mode == "development":
+        return {"mode": "development", "sso_enabled": False, "break_glass_active": False}
+    cfg = ciam.config(session)
+    return {
+        "mode": "ciam",
+        "sso_enabled": cfg["ciam_sso_enabled"],
+        "break_glass_active": cfg["ciam_break_glass_active"],
+        "portal_url": cfg["ciam_base_url"] + "/portal",
+    }
+
+
+@router.post("/api/auth/sso/authorize-url")
+def authorize(request: Request, response: Response, session: Db):
+    response.headers["Cache-Control"] = "no-store"
+    return ciam.authorize(session, request, response)
+
+
+@router.post("/api/auth/sso/callback")
+def callback(payload: Callback, request: Request, response: Response, session: Db):
+    response.headers["Cache-Control"] = "no-store"
+    return ciam.callback(session, request, response, payload.code, payload.state)
+
+
+@router.get("/api/auth/me")
+def me(request: Request, response: Response, session: Db):
+    response.headers["Cache-Control"] = "no-store"
+    if get_settings().auth_mode == "development":
+        return {
+            "user": {
+                "id": "development",
+                "username": "development-admin",
+                "full_name": "Development Admin",
+                "role": "admin",
+                "active": True,
+            },
+            "provider": "development",
+            "csrf_token": "",
+            "expires_at": None,
+        }
+    user = request.state.auth_user
+    return {
+        "user": ciam.user_info(user),
+        "provider": request.state.auth_session.provider,
+        "csrf_token": digest("csrf:" + request.cookies[SESSION_COOKIE]),
+        "expires_at": utc(request.state.auth_session.expires_at).isoformat(),
+        "portal_url": ciam.config(session)["ciam_base_url"] + "/portal",
+    }
+
+
+@router.post("/api/auth/logout")
+def logout(request: Request, response: Response, session: Db):
+    token = request.cookies.get(SESSION_COOKIE, "")
+    login = session.get(AuthSession, digest(token)) if token else None
+    target = "/login"
+    if login:
+        if login.provider == "sso":
+            target = ciam.config(session)["ciam_base_url"] + "/portal"
+        ciam.audit(session, "logout", "user:" + login.user_id)
+        session.delete(login)
+        session.commit()
+    response.delete_cookie(SESSION_COOKIE, secure=True, httponly=True, samesite="lax")
+    return {"redirect_url": target}
+
+
+@router.get("/api/settings/ciam-sso")
+def get_config(session: Db, actor: Admin):
+    return ciam.config(session)
+
+
+@router.put("/api/settings/ciam-sso")
+def put_config(payload: CiamSettings, session: Db, actor: Admin):
+    if payload.ciam_sso_enabled:
+        local_admin = session.scalar(
+            select(AuthUser).where(
+                AuthUser.issuer == ciam.LOCAL_ISSUER,
+                AuthUser.active.is_(True),
+                AuthUser.role == "admin",
+                AuthUser.password_hash.is_not(None),
+            )
+        )
+        if not local_admin:
+            raise HTTPException(422, "ต้องสร้าง Local Admin ฉุกเฉินบน Server ก่อนเปิด SSO")
+        old = ciam.config(session)
+        if not payload.ciam_client_id.strip() or not (
+            payload.ciam_client_secret or old["client_secret_configured"]
+        ):
+            raise HTTPException(422, "ต้องกำหนด Client ID และ Secret ก่อนเปิด SSO")
+    return ciam.save_config(session, payload.model_dump(), actor)
+
+
+@router.post("/api/settings/ciam-sso/test-connection")
+def test_connection(session: Db, actor: Admin):
+    cfg = ciam.config(session)
+    try:
+        doc = ciam.discovery(cfg)
+        keys = ciam.jwks(doc)
+        ciam.audit(session, "connection_test", actor, {"status": "success"})
+        session.commit()
+        return {
+            "ok": True,
+            "issuer": doc["issuer"],
+            "signing_keys": len(keys["keys"]),
+            "message": "Discovery/JWKS สำเร็จ ยังไม่ได้ทดสอบ Client Secret หรือ Login จริง",
+        }
+    except HTTPException:
+        ciam.audit(session, "connection_test", actor, {"status": "failed"})
+        session.commit()
+        raise
+
+
+@router.post("/api/auth/sso/break-glass-toggle")
+def break_glass(payload: BreakGlass, session: Db, actor: Admin):
+    result = ciam.save_config(session, {"ciam_break_glass_active": payload.active}, actor)
+    ciam.audit(
+        session, "break_glass_toggle", actor, {"active": payload.active, "reason": payload.reason}
+    )
+    session.commit()
+    return result
+
+
+@router.get("/api/settings/ciam-sso/users")
+def users(session: Db, actor: Admin):
+    return [
+        ciam.user_info(u) for u in session.scalars(select(AuthUser).order_by(AuthUser.username))
+    ]
+
+
+@router.patch("/api/settings/ciam-sso/users/{user_id}")
+def update_user(user_id: str, payload: UserUpdate, session: Db, actor: Admin):
+    # Serialize administrator changes to preserve the last active admin.
+    all_users = list(session.scalars(select(AuthUser).order_by(AuthUser.id).with_for_update()))
+    user = next((u for u in all_users if u.id == user_id), None)
+    if not user:
+        raise HTTPException(404, "ไม่พบผู้ใช้")
+    if user.issuer == ciam.LOCAL_ISSUER:
+        raise HTTPException(422, "บัญชีฉุกเฉินต้องคงสิทธิ์ Admin; จัดการผ่านเครื่องมือบน Server")
+    if actor == "user:" + user.id and (not payload.active or payload.role != "admin"):
+        raise HTTPException(422, "ไม่สามารถลดสิทธิ์หรือปิดบัญชีตนเอง")
+    if user.role == "admin" and (not payload.active or payload.role != "admin"):
+        if not any(u.id != user.id and u.active and u.role == "admin" for u in all_users):
+            raise HTTPException(422, "ต้องเหลือ System Admin ที่ใช้งานได้อย่างน้อยหนึ่งบัญชี")
+    if user.role == payload.role and user.active == payload.active:
+        return ciam.user_info(user)
+    before = ciam.user_info(user)
+    user.role, user.active = payload.role, payload.active
+    session.execute(delete(AuthSession).where(AuthSession.user_id == user.id))
+    ciam.audit(session, "user_updated", actor, {"before": before, "after": ciam.user_info(user)})
+    session.commit()
+    return ciam.user_info(user)
+
+
+class LocalLogin(BaseModel):
+    username: str = Field(min_length=1, max_length=200)
+    password: str = Field(min_length=1, max_length=256, repr=False)
+
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(min_length=1, max_length=256, repr=False)
+    new_password: str = Field(min_length=12, max_length=256, repr=False)
+
+
+@router.post("/api/auth/local/login")
+def local_login(payload: LocalLogin, request: Request, response: Response, session: Db):
+    response.headers["Cache-Control"] = "no-store"
+    return local_auth.login(session, request, response, payload.username, payload.password)
+
+
+@router.post("/api/settings/ciam-sso/local-password")
+def change_password(
+    payload: PasswordChange, request: Request, response: Response, session: Db, actor: Admin
+):
+    user = getattr(request.state, "auth_user", None)
+    if not user or user.issuer != ciam.LOCAL_ISSUER:
+        raise HTTPException(403, "ใช้ได้เฉพาะบัญชี Local ของตนเอง")
+    ciam.throttle(session, "local-password:" + user.id, 10)
+    if not local_auth.verify_password(payload.current_password, user.password_hash):
+        ciam.audit(session, "password_change_failed", actor)
+        session.commit()
+        raise HTTPException(403, "รหัสผ่านปัจจุบันไม่ถูกต้อง")
+    user.password_hash = local_auth.hash_password(payload.new_password)
+    session.execute(delete(AuthSession).where(AuthSession.user_id == user.id))
+    ciam.audit(session, "password_changed", actor)
+    return ciam.issue_session(
+        session, response, user, "local", ciam.config(session)["ciam_session_ttl_minutes"]
+    )

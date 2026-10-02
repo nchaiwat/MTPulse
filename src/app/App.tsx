@@ -1,3 +1,5 @@
+import type { LoginSession } from '../features/auth/authApi'
+import { RoleContext } from '../features/auth/permissions'
 import { useState } from 'react'
 import { Activity, BarChart3, ChevronDown, Database, HeartPulse, LayoutDashboard, PanelLeftClose, PanelLeftOpen, Settings, TrendingUp } from 'lucide-react'
 import { ImportPage } from '../features/imports/ImportPage'
@@ -73,7 +75,11 @@ const pageMeta: Record<AppPage, { eyebrow: string; title: string }> = {
   settings: { eyebrow: 'การตั้งค่า', title: 'การตั้งค่า' },
 }
 
-export function App() {
+const developmentSession: LoginSession = { user: { id: 'development', username: 'development-admin', full_name: 'Development Admin', role: 'admin', active: true }, provider: 'development', csrf_token: '', expires_at: null }
+
+export function App({ auth = developmentSession, onLogout }: { auth?: LoginSession; onLogout?: () => void }) {
+  const isAdmin = auth.user.role === 'admin'
+  const canEdit = auth.user.role !== 'viewer'
   const [page, setPage] = useState<AppPage>('dashboard')
   const [openMenu, setOpenMenu] = useState({
     dashboard: false,
@@ -86,7 +92,7 @@ export function App() {
   const meta = pageMeta[page]
 
   return (
-    <div className="app-shell" data-navigation={navigationCollapsed ? 'collapsed' : 'expanded'}>
+    <RoleContext.Provider value={auth.user.role}><div className="app-shell" data-navigation={navigationCollapsed ? 'collapsed' : 'expanded'}>
       <a className="skip-link" href="#main-content">
         ข้ามไปยังเนื้อหาหลัก
       </a>
@@ -110,6 +116,7 @@ export function App() {
               className="nav-group-label"
               type="button"
               title={navigationCollapsed ? 'แดชบอร์ด' : undefined}
+              disabled={!canEdit}
               data-active={(navigationCollapsed && page === 'dashboard') || undefined}
               aria-current={navigationCollapsed && page === 'dashboard' ? 'page' : undefined}
               aria-expanded={navigationCollapsed ? false : openMenu.dashboard}
@@ -166,6 +173,7 @@ export function App() {
               className="nav-group-label"
               type="button"
               title={navigationCollapsed ? 'รายงาน' : undefined}
+              disabled={!canEdit}
               data-active={(navigationCollapsed && page.startsWith('performance')) || undefined}
               aria-current={navigationCollapsed && page.startsWith('performance') ? 'page' : undefined}
               aria-expanded={navigationCollapsed ? false : openMenu.reports}
@@ -217,6 +225,7 @@ export function App() {
               className="nav-group-label"
               type="button"
               title={navigationCollapsed ? 'สถานะข้อมูล' : undefined}
+              disabled={!canEdit}
               data-active={(navigationCollapsed && page === 'imports') || undefined}
               aria-current={navigationCollapsed && page === 'imports' ? 'page' : undefined}
               aria-expanded={navigationCollapsed ? false : openMenu.data}
@@ -253,12 +262,12 @@ export function App() {
             )}
           </section>
 
-          <button className="nav-item nav-main-item" aria-label="Monitoring" title={navigationCollapsed ? 'Monitoring' : undefined} data-active={page === 'monitoring' || undefined} aria-current={page === 'monitoring' ? 'page' : undefined} type="button" onClick={() => setPage('monitoring')}>
+          <button disabled={!isAdmin} className="nav-item nav-main-item" aria-label="Monitoring" title={navigationCollapsed ? 'Monitoring' : undefined} data-active={page === 'monitoring' || undefined} aria-current={page === 'monitoring' ? 'page' : undefined} type="button" onClick={() => setPage('monitoring')}>
             <HeartPulse size={17} aria-hidden="true" />
             <span>Monitoring</span>
           </button>
 
-          <button className="nav-item nav-main-item" aria-label="การตั้งค่า" title={navigationCollapsed ? 'การตั้งค่า' : undefined} data-active={page === 'settings' || undefined} aria-current={page === 'settings' ? 'page' : undefined} type="button" onClick={() => setPage('settings')}>
+          <button disabled={!canEdit} className="nav-item nav-main-item" aria-label="การตั้งค่า" title={navigationCollapsed ? 'การตั้งค่า' : undefined} data-active={page === 'settings' || undefined} aria-current={page === 'settings' ? 'page' : undefined} type="button" onClick={() => setPage('settings')}>
             <Settings size={17} aria-hidden="true" />
             <span>การตั้งค่า</span>
           </button>
@@ -266,11 +275,12 @@ export function App() {
 
         <div className="rail-footer rail-user" aria-label="ผู้ใช้งานปัจจุบัน">
           <span className="rail-user-avatar" aria-hidden="true">
-            CN
+            {auth.user.full_name.slice(0, 2)}
           </span>
           <span>
-            <strong>Chaiwat N.</strong>
-            <small>Workspace owner</small>
+            <strong>{auth.user.full_name}</strong>
+            <small>{auth.user.role}</small>
+            {onLogout && <button type="button" onClick={onLogout}>ออกจากระบบ</button>}
           </span>
         </div>
       </aside>
@@ -299,8 +309,8 @@ export function App() {
         {page === 'performance-dh' && <PerformancePage mtCode="DH" />}
         {page === 'performance-ta' && <PerformancePage mtCode="TA" />}
         {page === 'sale-out' && <SaleOutPage />}
-        {page === 'imports' && <ImportPage correctiveBatchId={correctiveBatchId} />}
-        {page === 'monitoring' && (
+        {canEdit && page === 'imports' && <ImportPage correctiveBatchId={correctiveBatchId} />}
+        {isAdmin && page === 'monitoring' && (
           <MonitoringPage
             onOpenImports={(batchId) => {
               setCorrectiveBatchId(batchId)
@@ -312,8 +322,8 @@ export function App() {
             }}
           />
         )}
-        {page === 'settings' && <SettingsPage focusCoverageKey={settingsFocusKey} />}
+        {canEdit && page === 'settings' && <SettingsPage focusCoverageKey={settingsFocusKey} />}
       </main>
-    </div>
+    </div></RoleContext.Provider>
   )
 }

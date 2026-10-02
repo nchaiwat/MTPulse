@@ -1,9 +1,10 @@
+import { apiFetch } from '../auth/authApi'
 import type { MonitoringResponse } from './types'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
 
 async function requestMonitoring(method: 'GET' | 'POST', signal?: AbortSignal) {
-  const response = await fetch(`${apiBaseUrl}/api/monitoring${method === 'POST' ? '/refresh' : ''}`, {
+  const response = await apiFetch(`${apiBaseUrl}/api/monitoring${method === 'POST' ? '/refresh' : ''}`, {
     method,
     signal,
   })
@@ -24,7 +25,7 @@ export async function decideSkuInterest(
   sku: string,
   decision: 'accept' | 'ignore',
 ) {
-  const response = await fetch(
+  const response = await apiFetch(
     apiBaseUrl + '/api/admin/modern-trades/' + encodeURIComponent(mtCode)
       + '/sku-interests/' + encodeURIComponent(sku),
     {

@@ -414,11 +414,18 @@ def test_fileshare_ready_lists_only_twd_ready_without_unc_path() -> None:
     assert "\\nas" not in str(result)
 
 
-def test_fileshare_preview_is_read_only_and_includes_timings(monkeypatch) -> None:
+@pytest.mark.parametrize("authenticated_actor", [None, "user:authenticated-admin"])
+def test_fileshare_preview_is_read_only_and_includes_timings(
+    monkeypatch, authenticated_actor
+) -> None:
+    clock = iter([100.0, 100.0123])
+    monkeypatch.setattr(imports, "perf_counter", lambda: next(clock))
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
     checksum = "e" * 64
     with Session(engine) as session:
+        if authenticated_actor:
+            session.info["auth_actor"] = authenticated_actor
         session.add(ModernTrade(id=1, code="TWD", name="Thai Watsadu"))
         session.add(
             source_file(
@@ -452,11 +459,11 @@ def test_fileshare_preview_is_read_only_and_includes_timings(monkeypatch) -> Non
     assert batch_count == 0
     assert result["sourceMode"] == "fileshare"
     assert result["sourceFileId"] == 1
-    assert recorded["actor"] == "fileshare-import"
+    assert recorded["actor"] == (authenticated_actor or "fileshare-import")
     assert result["timings"] == {
         "downloadMs": 1200,
         "parseMs": 400,
-        "duplicateCheckMs": pytest.approx(0, abs=50),
+        "duplicateCheckMs": 12.3,
     }
 
 

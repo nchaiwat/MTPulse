@@ -128,6 +128,7 @@ class _ScalarRows:
 
 class _ImportSession:
     def __init__(self) -> None:
+        self.info: dict[str, str] = {}
         self.scalar_calls = 0
         self.scalars_calls = 0
         self.added: list[object] = []
@@ -459,3 +460,15 @@ def test_import_updates_existing_item_report_metadata_without_changing_mapping()
         isinstance(value, AuditEvent) and value.action == "update_item_report_metadata"
         for value in session.added
     )
+
+
+
+def test_mapping_import_uses_authenticated_actor():
+    content = build_item_mapping_workbook(
+        [ExportItem("060358971", "N/A", "WA-NEW", "", "confirmed")]
+    )
+    session = _ImportSession()
+    session.info["auth_actor"] = "user:authenticated-id"
+    import_item_mapping_workbook(session, content, date(2026, 8, 16), "mapping.xlsx")
+    actors = [row.actor for row in session.added if isinstance(row, AuditEvent)]
+    assert actors and set(actors) == {"user:authenticated-id"}

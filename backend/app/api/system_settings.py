@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
+from app.auth import actor_from_session
 from app.config import get_settings
 from app.database import get_session
 from app.models import AuditEvent
@@ -94,7 +95,7 @@ def update_telegram_settings(
     update: TelegramSettingsUpdate,
     session: Annotated[Session, Depends(get_session)],
 ) -> dict:
-    actor = "system-settings"
+    actor = actor_from_session(session, "system-settings")
     try:
         if update.bot_token and update.bot_token.strip():
             set_bot_token(session, update.bot_token.strip(), actor)
@@ -151,7 +152,7 @@ def test_telegram_settings(
             entity_type="system_setting",
             entity_id="telegram",
             action="test_notification",
-            actor="system-settings",
+            actor=actor_from_session(session, "system-settings"),
             before_json=None,
             after_json=json.dumps(
                 {"status": delivery.status, "message": delivery.message},
@@ -179,7 +180,8 @@ def get_technical_notification_settings(
 def check_technical_health(
     session: Annotated[Session, Depends(get_session)],
 ) -> dict:
-    result = send_manual_technical_health(session, actor="system-settings")
+    result = send_manual_technical_health(session,
+        actor=actor_from_session(session, "system-settings"))
     if result["status"] != "sent":
         raise HTTPException(status_code=502, detail=result["message"])
     return result
@@ -190,7 +192,7 @@ def update_technical_notification_settings(
     update: TechnicalNotificationSettingsUpdate,
     session: Annotated[Session, Depends(get_session)],
 ) -> dict:
-    actor = "system-settings"
+    actor = actor_from_session(session, "system-settings")
     before = technical_notification_config(session).as_dict()
     config = TechnicalNotificationConfig(
         daily_enabled=update.daily_enabled,

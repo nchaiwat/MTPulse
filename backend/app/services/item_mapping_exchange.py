@@ -486,7 +486,7 @@ def import_item_mapping_workbook(
         .order_by(BranchMapping.effective_from)
     ).all()
     existing_branches = {mapping.source_branch_code: mapping for mapping in active_branch_mappings}
-    actor = f"excel-import:{filename[:160]}"
+    actor = session.info.get("auth_actor", f"excel-import:{filename[:160]}")
     inserted = unchanged = new_source_skus = existing_conflicts = 0
     errors = list(parsed.errors)
 

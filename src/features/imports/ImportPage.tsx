@@ -1,3 +1,4 @@
+import { useIsAdmin } from '../auth/permissions'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Building2, CheckCircle2, Database, FileSpreadsheet, History, LayoutList, LoaderCircle, RefreshCw, ShieldCheck } from 'lucide-react'
 import { confirmFileShareImport, confirmHpMhImport, confirmImport, fetchFileShareReady, fetchImportActivity, previewFileShareImport, previewHpMhImport, previewImport, type FileShareReadyFile, type HpMhImportPreview, type ImportActivity, type ImportPreview, type UploadProgress } from './importApi'
@@ -91,6 +92,7 @@ function statusLabel(status: string) {
 }
 
 export function ImportPage({ correctiveBatchId = null }: { correctiveBatchId?: number | null }) {
+  const isAdmin = useIsAdmin()
   const [activeTab, setActiveTab] = useState<ImportWorkspaceTab>('TWD')
   const [manualMode, setManualMode] = useState<ManualMode>('single')
   const [sourceMode, setSourceMode] = useState<SourceMode>('upload')
@@ -324,7 +326,7 @@ export function ImportPage({ correctiveBatchId = null }: { correctiveBatchId?: n
             <button type="button" aria-pressed={manualMode === 'single'} disabled={busy !== null} onClick={() => setManualMode('single')}>
               ไฟล์เดียว
             </button>
-            <button type="button" aria-pressed={manualMode === 'folder'} disabled={busy !== null} onClick={() => setManualMode('folder')}>
+            <button type="button" aria-pressed={manualMode === 'folder'} disabled={!isAdmin || busy !== null} onClick={() => setManualMode('folder')}>
               ทั้ง Folder <small>Admin</small>
             </button>
           </div>
@@ -339,7 +341,7 @@ export function ImportPage({ correctiveBatchId = null }: { correctiveBatchId?: n
                     <FileSpreadsheet size={16} aria-hidden="true" />
                     จากเครื่อง
                   </button>
-                  <button type="button" aria-pressed={sourceMode === 'fileshare'} disabled={busy !== null} onClick={() => changeSourceMode('fileshare')}>
+                  <button type="button" aria-pressed={sourceMode === 'fileshare'} disabled={!isAdmin || busy !== null} onClick={() => changeSourceMode('fileshare')}>
                     <Database size={16} aria-hidden="true" />
                     จาก FileShare
                   </button>
@@ -578,7 +580,7 @@ export function ImportPage({ correctiveBatchId = null }: { correctiveBatchId?: n
             <button type="button" aria-pressed={manualMode === 'single'} disabled={busy !== null} onClick={() => setManualMode('single')}>
               คู่ไฟล์
             </button>
-            <button type="button" aria-pressed={manualMode === 'folder'} disabled={busy !== null} onClick={() => setManualMode('folder')}>
+            <button type="button" aria-pressed={manualMode === 'folder'} disabled={!isAdmin || busy !== null} onClick={() => setManualMode('folder')}>
               ทั้ง Folder <small>Admin</small>
             </button>
           </div>

@@ -1,3 +1,4 @@
+import { apiFetch } from '../auth/authApi'
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
 
 export interface FileShareProfile {
@@ -148,7 +149,7 @@ function requestBody(input: FileShareSettingsInput) {
 }
 
 export async function runModernTradeNow(code: string): Promise<ImportRun> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${apiBaseUrl}/api/admin/modern-trades/${encodeURIComponent(code)}/runs`,
     {
       method: 'POST',
@@ -161,13 +162,13 @@ export async function runModernTradeNow(code: string): Promise<ImportRun> {
 }
 
 export async function fetchFileShareSettings(signal?: AbortSignal): Promise<FileShareSettings> {
-  const response = await fetch(`${apiBaseUrl}/api/admin/fileshare-settings`, { signal })
+  const response = await apiFetch(`${apiBaseUrl}/api/admin/fileshare-settings`, { signal })
   if (!response.ok) throw new Error(await detail(response))
   return response.json() as Promise<FileShareSettings>
 }
 
 export async function saveFileShareSettings(input: FileShareSettingsInput): Promise<FileShareSettings> {
-  const response = await fetch(`${apiBaseUrl}/api/admin/fileshare-settings`, {
+  const response = await apiFetch(`${apiBaseUrl}/api/admin/fileshare-settings`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: requestBody(input),
@@ -177,7 +178,7 @@ export async function saveFileShareSettings(input: FileShareSettingsInput): Prom
 }
 
 export async function fetchFileSharePassword(): Promise<string> {
-  const response = await fetch(`${apiBaseUrl}/api/admin/fileshare-settings/password`)
+  const response = await apiFetch(`${apiBaseUrl}/api/admin/fileshare-settings/password`)
   if (!response.ok) throw new Error(await detail(response))
   const payload = await response.json() as { password: string }
   return payload.password
@@ -188,7 +189,7 @@ export async function testFileShare(input: FileShareSettingsInput): Promise<{
   message: string
   results: FileShareTestResult[]
 }> {
-  const response = await fetch(`${apiBaseUrl}/api/admin/fileshare-settings/test`, {
+  const response = await apiFetch(`${apiBaseUrl}/api/admin/fileshare-settings/test`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: requestBody(input),

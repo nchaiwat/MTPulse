@@ -184,7 +184,7 @@ describe('App navigation', () => {
 
     expect(screen.getByRole('heading', { level: 1, name: 'การตั้งค่าระบบ' })).toBeInTheDocument()
     expect(screen.getByLabelText('ขอบเขตการตั้งค่าปัจจุบัน')).toHaveTextContent('Global Settings')
-    expect(screen.getByLabelText('ผู้ใช้งานปัจจุบัน')).toHaveTextContent('Chaiwat N.')
+    expect(screen.getByLabelText('ผู้ใช้งานปัจจุบัน')).toHaveTextContent('Development Admin')
     expect(screen.getByRole('tab', { name: /^GlobalShared by all MT$/ })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('tab', { name: /TWD/ })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: /HP/ })).toBeInTheDocument()
