@@ -125,6 +125,14 @@ export interface HhImportPreview {
   timings?: ImportTimings
 }
 
+export interface DhImportPreview extends Omit<HhImportPreview, 'detectedSourceGroup' | 'detectedMtCode' | 'summary'> {
+  detectedSourceGroup: 'DH'
+  detectedMtCode: 'DH'
+  salesDate: string
+  stockDate: string
+  summary: Omit<HpMhImportSummary, 'stockValue'> & { sourceAmount: number }
+}
+
 export interface GhImportPreview {
   detectedSourceGroup: 'GH'
   detectedMtCode: 'GH'
@@ -195,6 +203,7 @@ export interface ImportBatchSummary {
 
 export interface ImportBatchDetail {
   batchId: number
+  mtCode?: string
   dataDate: string
   filename: string
   status: string
@@ -215,6 +224,21 @@ export interface ReplacementPreview {
   dataDate: string
   current: ImportBatchSummary
   replacement: ImportBatchSummary
+  warnings: string[]
+  canReplace: boolean
+  blockedReason: string | null
+}
+
+export interface DhReplacementPreview {
+  batchId: number
+  businessFingerprint: string
+  stockFilename: string
+  salesFilename: string
+  dataDate: string
+  current: ImportBatchSummary
+  replacement: Omit<ImportBatchSummary, 'reportedStockOnHand' | 'stockOnOrder'> & {
+    sourceAmount: number
+  }
   warnings: string[]
   canReplace: boolean
   blockedReason: string | null
@@ -331,6 +355,27 @@ export async function confirmHhImport(stockFile: File, salesFile: File, fingerpr
   }>('/api/imports/hh/confirm', form, onProgress)
 }
 
+export async function previewDhImport(stockFile: File, salesFile: File, onProgress?: (progress: UploadProgress) => void): Promise<DhImportPreview> {
+  const form = new FormData()
+  form.append('stock_file', stockFile)
+  form.append('sales_file', salesFile)
+  return uploadForm<DhImportPreview>('/api/imports/dh/preview', form, onProgress)
+}
+
+export async function confirmDhImport(stockFile: File, salesFile: File, fingerprint: string, onProgress?: (progress: UploadProgress) => void) {
+  const form = new FormData()
+  form.append('stock_file', stockFile)
+  form.append('sales_file', salesFile)
+  form.append('expected_fingerprint', fingerprint)
+  return uploadForm<{
+    batchId: number
+    status: string
+    message: string
+    dataDate: string
+    timings?: ImportTimings
+  }>('/api/imports/dh/confirm', form, onProgress)
+}
+
 export async function previewGhImport(file: File, onProgress?: (progress: UploadProgress) => void): Promise<GhImportPreview> {
   const form = new FormData()
   form.append('file', file)
@@ -391,7 +436,7 @@ export function uploadFolderImportFile(batchId: number, file: File, idempotencyK
   return uploadForm<ManualUploadFileResult>(`/api/admin/imports/manual-batches/${batchId}/files`, form, onProgress)
 }
 
-export function finalizeFolderImportBatch(batchId: number, expectedSourceGroup: 'TWD' | 'HP_MH' | 'HH' | 'GH' | 'TA') {
+export function finalizeFolderImportBatch(batchId: number, expectedSourceGroup: 'TWD' | 'HP_MH' | 'HH' | 'GH' | 'DH' | 'TA') {
   return jsonRequest<ManualUploadBatchContract>(`/api/admin/imports/manual-batches/${batchId}/finalize`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -475,6 +520,25 @@ export async function replaceImportBatch(batchId: number, file: File, checksum: 
   form.append('file', file)
   form.append('expected_checksum', checksum)
   const response = await fetch(`${apiBaseUrl}/api/imports/batches/${batchId}/replace`, { method: 'POST', body: form })
+  if (!response.ok) throw new Error(await errorMessage(response))
+  return response.json() as Promise<ImportBatchDetail>
+}
+
+export async function previewDhBatchReplacement(batchId: number, stockFile: File, salesFile: File): Promise<DhReplacementPreview> {
+  const form = new FormData()
+  form.append('stock_file', stockFile)
+  form.append('sales_file', salesFile)
+  const response = await fetch(apiBaseUrl + '/api/imports/batches/' + batchId + '/dh-replacement-preview', { method: 'POST', body: form })
+  if (!response.ok) throw new Error(await errorMessage(response))
+  return response.json() as Promise<DhReplacementPreview>
+}
+
+export async function replaceDhImportBatch(batchId: number, stockFile: File, salesFile: File, fingerprint: string): Promise<ImportBatchDetail> {
+  const form = new FormData()
+  form.append('stock_file', stockFile)
+  form.append('sales_file', salesFile)
+  form.append('expected_fingerprint', fingerprint)
+  const response = await fetch(apiBaseUrl + '/api/imports/batches/' + batchId + '/dh-replace', { method: 'POST', body: form })
   if (!response.ok) throw new Error(await errorMessage(response))
   return response.json() as Promise<ImportBatchDetail>
 }

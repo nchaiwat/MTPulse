@@ -39,8 +39,6 @@ def ensure_hh_trade(session: Session) -> ModernTrade:
         session.flush()
     else:
         modern_trade.vat_mode = "exclude"
-        modern_trade.show_unmatched_items = True
-        modern_trade.show_unmatched_branches = True
         modern_trade.source_group_code = "HH"
     return modern_trade
 

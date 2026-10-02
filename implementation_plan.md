@@ -2036,3 +2036,197 @@ Final migration naming และ reuse กับ `ImportRun`/`SourceFile` ให
 - Confirmed: ชื่อ `Thai-Aust (TA)`, subfolder `TA`, filename date ลบหนึ่งวัน และ TA-only Branch Mapping ที่ไม่เกี่ยวข้องกับ GH
 - Phase 1 ไม่เปิด route/schedule/import จริง และไม่เปลี่ยน UI/logic ของ MT เดิม
 - Definition of Done คือ capability/surface ครบพร้อม regression evidence ไม่ใช่เพียงมี TA ในเมนู
+
+# DoHome (DH) Price Master — Draft Implementation Plan (15 September 2026)
+
+## Project Summary
+
+- เพิ่ม Price Master แบบ effective-dated ให้ DH เพื่อคำนวณ Amount Ex VAT จาก
+  Sale Qty ระดับ SKU/Branch
+- ใช้ incremental Upload → Preview → Confirm พร้อม Audit และตาราง read-only
+- เชื่อม pricing contract เดียวกับ Manual Import, Automatic Import และ Backfill
+  โดยไม่ repricing Batch เดิมอัตโนมัติ
+
+## Goals And Non-Goals
+
+- Goal: เลือกราคาได้ exactly one record ต่อ sold SKU ณ Sale Date และสร้าง DH facts
+  แบบ deterministic/idempotent
+- Goal: Data Operator และ System Admin จัดการไฟล์ราคาได้โดยเห็นผลต่างก่อน Confirm
+- Goal: Footer mismatch เป็น traceable warning ขณะที่ missing/invalid/overlap
+  เป็น blocking error
+- Non-goal: Inline Edit, delete workflow, automatic historical repricing,
+  promotion engine หรือ price fallback ข้าม MT
+
+## Technical Architecture
+
+- Domain: ใช้ `backend/app/services/dh_pricing.py` เป็น pure pricing/reconciliation
+  service และไม่ให้รู้จัก HTTP/DB
+- Workbook adapter: เพิ่ม parser/builder สำหรับ template และ preview diff
+- Persistence: เพิ่ม additive effective-price model/repository ที่ scope ด้วย
+  `modern_trade_id=DH`
+- API: dedicated DH price endpoints แต่ reuse auth, upload limits, error contract
+  และ Audit infrastructure เดิม
+- UI: เพิ่ม DH Price Master section ใน shared settings/import surface ด้วย shared
+  table/upload/dialog components
+- Import: Manual/Automatic/Corrective/Backfill โหลดราคาใน transaction แล้วเรียก
+  domain service เดียวกันก่อนเขียน Fact
+
+## File And Module Plan
+
+- Modify `backend/app/models.py`: เพิ่ม DH effective price model เท่านั้น
+- New additive Alembic revision: table, unique key, lookup index และ constraints
+- New `backend/app/services/dh_price_master.py`: workbook parse, preview,
+  simulated upsert validation, confirm, audit และ query
+- Modify `backend/app/services/dh_pricing.py`: เฉพาะ contract ที่จำเป็นต่อ repository
+- New `backend/app/api/dh_prices.py` และ register router ใน app entrypoint
+- New backend tests สำหรับ parser, service, API, migration และ concurrent safety
+- Frontend: เพิ่ม API contracts/hooks และ DH Price Master section โดย reuse
+  components เดิม; เพิ่ม focused tests
+- DH import coordinators/routes เพิ่มเมื่อ Phase 1–3 ผ่าน โดยไม่แก้ importer MT อื่น
+
+## Data Model Draft
+
+### `dh_effective_prices`
+
+- `id`
+- `modern_trade_id` foreign key; runtime บังคับให้เป็น DH
+- `source_sku` opaque text
+- `unit_price_ex_vat` ใช้ monetary precision เดิมและต้องมากกว่า 0
+- `effective_from`, `effective_to` โดย end date เป็น inclusive
+- `source_filename`, `source_checksum_sha256`
+- `changed_by`, `changed_at`
+- unique `modern_trade_id + source_sku + effective_from`
+- lookup index `modern_trade_id + source_sku + effective_from + effective_to`
+
+Audit ใช้ `audit_events` เดิม เก็บ action, actor, before/after และ file provenance;
+ไม่สร้าง delete behavior ใน MVP
+
+## Workbook Contract
+
+- รองรับ `.xlsx` เท่านั้นและใช้ sheet `DH Price Master`
+- Headers แบบ exact contract:
+  `SKU`, `Price Ex VAT`, `Effective From`, `Effective To`
+- Template กำหนด SKU เป็น text, Price เป็น numeric และ dates เป็น Excel date
+- Importer ยอมรับ Excel date หรือ ISO `YYYY-MM-DD`; blank Effective To คือ open-ended
+- Blank required field, nonpositive price, invalid date, duplicate key หรือ overlap
+  ทำให้ทั้ง Preview/Confirm ไม่ผ่าน
+- ห้าม normalize SKU ด้วย padding/fuzzy rule
+
+## API And Authorization Plan
+
+- `GET /api/dh-prices/template`: Download template
+- `POST /api/dh-prices/preview`: validate และคืน insert/update/unchanged/errors
+- `POST /api/dh-prices/confirm`: revalidate และ atomic incremental upsert
+- `GET /api/dh-prices`: search/filter/status/pagination สำหรับ read-only table
+- Mutation endpoints อนุญาต System Admin และ Data Operator ตาม role contract เดิม
+- Confirm ต้องส่ง preview checksum/fingerprint; mismatch ทำให้ต้อง Preview ใหม่
+- ทุก mutation สร้าง AuditEvent และไม่ log workbook content หรือ sensitive paths
+
+## Phased Implementation
+
+### Phase 1 — Contract, Schema And Domain Repository
+
+1. เขียน failing tests สำหรับ template/parser, opaque SKU, positive price,
+   inclusive dates, duplicate key, overlap และ incremental semantics
+2. เพิ่ม additive model/migration พร้อม offline SQL review
+3. Implement workbook parser/template builder และ pure preview diff
+4. Implement repository lookup ที่คืน `DhPrice` สำหรับ Sale Date
+5. ตรวจ disposable SQLite/PostgreSQL migration และ focused Ruff
+
+Phase 1 ยังไม่เปิด UI, ไม่เชื่อม production import route และไม่ mutate ข้อมูลจริง
+
+### Phase 2 — Preview, Confirm And Current Price API
+
+1. เพิ่ม template, preview, confirm และ list endpoints
+2. Revalidate checksum/database state ที่ Confirm และใช้ transaction เดียว
+3. เพิ่ม role tests สำหรับ System Admin/Data Operator/unauthorized user
+4. เพิ่ม Audit before/after/provenance และ rollback tests
+5. เพิ่ม concurrency guard ระหว่าง DH price confirm กับ DH write workflows
+
+### Phase 3 — DH Import Integration
+
+1. ต่อ DH Manual preview/confirm ให้โหลดราคาและเรียก `price_dh_pair`
+2. เขียน DH facts/summaries/source footer/reconciliation warnings แบบ atomic
+3. ต่อ Automatic Import ด้วย code path เดียวกัน
+4. ต่อ explicit Corrective/Backfill โดยไม่ repricing batch เดิมอัตโนมัติ
+5. ตรวจ duplicate/business fingerprint เมื่อ selected price เปลี่ยน
+
+### Phase 4 — Frontend Operations
+
+1. เพิ่ม Download Template, Upload/Preview/Confirm และ blocking error states
+2. เพิ่ม current/upcoming/expired price table พร้อม search/filter/pagination
+3. แสดง inserted/updated/unchanged และ actor/time หลัง Confirm
+4. ไม่มี Inline Edit/Delete controls
+5. ตรวจ keyboard, accessible names, focus, responsive 375/768/1024/1440
+
+### Phase 5 — Full Package Regression And Release Gate
+
+1. DH-focused parser/pricing/price-master/manual/automatic/backfill tests
+2. Full backend pytest และ Ruff
+3. Frontend focused/full tests, ESLint และ production build
+4. Alembic upgrade on disposable PostgreSQL และ inspect offline SQL
+5. Freeze/compare TWD/HP/MH/HH/GH/TA import/report baselines
+6. Browser QA ทุก role/state โดยใช้ fixture เท่านั้น
+7. Staging smoke หลัง Product Owner อนุญาต; ไม่มี Production import/deploy
+
+## Test And Verification Matrix
+
+- Workbook: correct/missing/reordered/duplicate headers, blank rows, formula cells,
+  bad numeric/date, oversize/wrong extension
+- Identity: leading zero, numeric-looking, alphanumeric, whitespace และ same SKU
+  ใน MT อื่น
+- Effective range: boundary dates, open-ended, gap, overlap in file/DB,
+  exact-key update และ unchanged row
+- Transaction: one invalid row rolls back all, stale preview, duplicate confirm,
+  concurrent price/import attempt และ audit rollback
+- Pricing: missing/zero/negative/overlap blocks; negative sale qty calculates;
+  stock-only SKU does not require price; footer mismatch warns
+- Integration: Manual/Automatic parity, duplicate/corrective/backfill,
+  selected-price fingerprint และ no automatic repricing
+- UI: permissions, preview diff, errors, pagination/search/filter, loading/empty
+  และ responsive/accessibility
+- Regression: MT registry, all importers, Performance/Dashboard/Excel/Monitoring
+  ของ MT เดิมไม่เปลี่ยน
+
+## Dependencies
+
+- ใช้ FastAPI, SQLAlchemy, Alembic, openpyxl และ frontend dependencies ที่ pin อยู่
+- ไม่เพิ่ม package หรือ external service ใหม่
+- ใช้ PostgreSQL transaction/constraint เป็น production contract และ SQLite tests
+  เท่าที่ semantics ตรงกัน
+
+## Security And Failure Safety
+
+- จำกัด mutation ให้ System Admin/Data Operator และ validate MT เป็น DH ทุกครั้ง
+- Size limit, strict workbook signature, checksum และ formula/error-cell validation
+- Atomic confirm; ห้าม partial row success
+- ไม่ลบราคาเดิมและไม่มี cascade ไป Fact/Batch
+- ไม่เปิด Schedule, Import source จริง, migration Production หรือ Backfill
+  โดยไม่มีคำสั่งแยก
+
+## Deployment And Release Checklist
+
+- Review migration additive constraints, table/index names และ downgrade safety
+- Backup PostgreSQL และยืนยัน path/size/checksum ก่อน Production migration
+- Deploy จาก reviewed commit/tag เท่านั้น
+- Smoke template/preview/confirm/list ด้วย test data และตรวจ Audit
+- Smoke DH Manual/Automatic missing-price และ footer-warning paths
+- เปรียบเทียบ baseline MT อื่นก่อน/หลัง
+- Rollback application commit ได้; additive price table คงไว้เพื่อ diagnosis
+  และห้ามลบข้อมูล Production โดยอัตโนมัติ
+
+## Open Decisions
+
+- ไม่มี business/architecture decision ค้างสำหรับ Phase 1
+- Inline Edit/Delete และ automatic repricing เป็น future scope
+- Runtime rollout, initial production workbook และ Backfill dates ต้องขออนุญาตแยก
+
+## Confirmation Gate
+
+- สิ่งที่จะสร้าง: effective price persistence, template/preview/confirm/list,
+  read-only UI และ DH Manual/Automatic/Backfill integration
+- สิ่งที่จงใจไม่ทำ: Inline Edit/Delete, auto-reprice, promotion inference,
+  cross-MT fallback และ Production mutation
+- First implementation phase: tests + additive schema + workbook/domain repository
+  โดยยังไม่เปิด UI/import route จริง
+- ต้องได้รับ Product Owner ยืนยันแผนนี้ก่อนเริ่ม Phase 1 coding

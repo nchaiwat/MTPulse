@@ -1,8 +1,8 @@
 export const MODERN_TRADE_CAPABILITIES = ['dashboard', 'performance', 'manualImport', 'folderImport', 'automaticImport', 'correctiveImport', 'mapping', 'skuBackfill', 'shoPro', 'monitoring', 'settings', 'excel'] as const
 
 export type ModernTradeCapability = (typeof MODERN_TRADE_CAPABILITIES)[number]
-export type ModernTradeCode = 'TWD' | 'HP' | 'MH' | 'HH' | 'GH' | 'SCG' | 'TA'
-export type ActiveModernTradeCode = 'TWD' | 'HP' | 'MH' | 'HH' | 'GH' | 'TA'
+export type ModernTradeCode = 'TWD' | 'HP' | 'MH' | 'HH' | 'GH' | 'DH' | 'SCG' | 'TA'
+export type ActiveModernTradeCode = 'TWD' | 'HP' | 'MH' | 'HH' | 'GH' | 'DH' | 'TA'
 
 export type ModernTradeDefinition = {
   code: ModernTradeCode
@@ -76,6 +76,17 @@ export const MODERN_TRADES: Readonly<Record<ModernTradeCode, ModernTradeDefiniti
     activeCapabilities: complete,
     plannedCapabilities: [],
   },
+  DH: {
+    code: 'DH',
+    name: 'DoHome',
+    displayName: 'DoHome (DH)',
+    navigationLabel: 'DoHome',
+    sourceGroupCode: 'DH',
+    sourceOwnerCode: 'DH',
+    inventoryMetrics: ['stockOh'],
+    activeCapabilities: complete,
+    plannedCapabilities: [],
+  },
   SCG: {
     code: 'SCG',
     name: 'Modern Trade SCG',
@@ -100,7 +111,7 @@ export const MODERN_TRADES: Readonly<Record<ModernTradeCode, ModernTradeDefiniti
   },
 }
 
-export const ACTIVE_MODERN_TRADES = (['TWD', 'HP', 'MH', 'HH', 'GH', 'TA'] as const).map((code) => MODERN_TRADES[code])
+export const ACTIVE_MODERN_TRADES = (['TWD', 'HP', 'MH', 'HH', 'GH', 'DH', 'TA'] as const).map((code) => MODERN_TRADES[code])
 
 export function activeModernTradeCodes(capability: ModernTradeCapability): ActiveModernTradeCode[] {
   return ACTIVE_MODERN_TRADES.filter((definition) => definition.activeCapabilities.includes(capability)).map((definition) => definition.code as ActiveModernTradeCode)

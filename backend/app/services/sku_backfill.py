@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.importers.dh import DhFormatError
 from app.importers.gh import GhFormatError
 from app.importers.hh import HhFormatError
 from app.importers.ta import TaFormatError
@@ -34,6 +35,7 @@ from app.services.automatic_import import (
     _credentials,
     download_twd_extract,
 )
+from app.services.dh_import import append_dh_sku_facts
 from app.services.hh_import import append_hh_sku_facts
 from app.services.hp_mh_import import append_hp_mh_sku_facts
 from app.services.telegram import send_telegram
@@ -146,7 +148,7 @@ def _plan(
     range_start: date,
     range_end: date,
 ) -> tuple[ItemMapping, list[dict[str, object]], bool]:
-    if mt.source_group_code in {"HP_MH", "HH"}:
+    if mt.source_group_code in {"HP_MH", "HH", "DH"}:
         return _plan_paired_sources(session, mt, source_sku, range_start, range_end)
     mapping = _mapping(session, mt.id, source_sku, range_end)
     source_rows = session.scalars(
@@ -640,7 +642,7 @@ def process_sku_backfill_run(session: Session, run_id: int) -> None:
                     batch = session.get(ImportBatch, int(item["batchId"]))
                     if source is None or batch is None:
                         raise ValueError("File Registry หรือ Batch เปลี่ยนระหว่าง Run")
-                    if mt.source_group_code in {"HP_MH", "HH"}:
+                    if mt.source_group_code in {"HP_MH", "HH", "DH"}:
                         inventory = session.get(SourceFile, int(item["inventorySourceFileId"]))
                         sales = session.get(SourceFile, int(item["salesSourceFileId"]))
                         if inventory is None or sales is None:
@@ -658,7 +660,32 @@ def process_sku_backfill_run(session: Session, run_id: int) -> None:
                             sales.size_bytes,
                             sales.modified_at,
                         )
-                        if mt.source_group_code == "HH":
+                        if mt.source_group_code == "DH":
+                            from app.services.dh_automatic_import import (
+                                DhPairCandidate,
+                            )
+                            from app.services.dh_automatic_import import (
+                                _download_pair as download_dh_pair,
+                            )
+
+                            pair_extract = download_dh_pair(
+                                DhPairCandidate(
+                                    key=key,
+                                    batch_date=batch.data_date,
+                                    inventory=inventory_candidate,
+                                    sales=sales_candidate,
+                                    superseded=(),
+                                ),
+                                username=username,
+                                password=password,
+                            )
+                            count = append_dh_sku_facts(
+                                session,
+                                batch,
+                                pair_extract,
+                                run.target_sku,
+                            )
+                        elif mt.source_group_code == "HH":
                             from app.services.hh_automatic_import import (
                                 HhPairCandidate,
                             )
@@ -737,6 +764,7 @@ def process_sku_backfill_run(session: Session, run_id: int) -> None:
                     _save_progress(session, run, results, total, str(outcome["message"]))
                     session.commit()
                 except (
+                    DhFormatError,
                     GhFormatError,
                     TaFormatError,
                     HhFormatError,

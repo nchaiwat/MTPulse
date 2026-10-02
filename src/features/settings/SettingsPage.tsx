@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Bell, Building2, CalendarClock, FileCog, FileSearch, Globe2, LockKeyhole, SlidersHorizontal } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
+import { Building2, CalendarClock, Globe2 } from 'lucide-react'
 import { FileShareSettingsCard } from './FileShareSettingsCard'
+import { DhPriceMasterPanel } from './DhPriceMasterPanel'
 import { SystemSettingsPage } from './SystemSettingsPage'
 import { TwdSettingsPage } from './TwdSettingsPage'
 import { MODERN_TRADES, type ModernTradeCode } from '../../config/modernTrades'
@@ -19,7 +19,7 @@ type ScopeDefinition = {
 
 const scopes: ScopeDefinition[] = [
   { code: 'global', label: 'Global', name: 'Global Settings', status: 'ready' },
-  ...Object.values(MODERN_TRADES).map((definition): ScopeDefinition => ({
+  ...Object.values(MODERN_TRADES).filter((definition) => definition.activeCapabilities.includes('settings')).map((definition): ScopeDefinition => ({
     code: definition.code,
     label: definition.code,
     name: definition.name,
@@ -32,37 +32,6 @@ const statusLabel = {
   ready: 'พร้อมใช้งาน',
   partial: 'พร้อมใช้งานบางส่วน',
   planned: 'ยังไม่ตั้งค่า',
-}
-
-function UnavailableSection({ icon: Icon, eyebrow, title, description }: { icon: LucideIcon; eyebrow: string; title: string; description: string }) {
-  return (
-    <section className="settings-standard-section" data-availability="unavailable" aria-disabled="true">
-      <header>
-        <span className="setting-icon">
-          <Icon size={18} aria-hidden="true" />
-        </span>
-        <div>
-          <span className="eyebrow">{eyebrow}</span>
-          <h3>{title}</h3>
-          <p>{description}</p>
-        </div>
-        <span className="settings-availability">
-          <LockKeyhole size={13} aria-hidden="true" />
-          Not available for this MT
-        </span>
-      </header>
-    </section>
-  )
-}
-
-function CapabilityTemplate() {
-  return (
-    <>
-      <UnavailableSection icon={FileCog} eyebrow="Data mapping & governance" title="Item and Branch Mapping" description="Mapping workflow สำหรับ Modern Trade นี้ยังไม่เปิดใช้งาน" />
-      <UnavailableSection icon={FileSearch} eyebrow="Historical data & coverage" title="Historical Processing" description="File Registry, Historical Backfill และ Data Coverage ยังไม่เปิดใช้งาน" />
-      <UnavailableSection icon={SlidersHorizontal} eyebrow="Report configuration" title="Report Preferences" description="การตั้งค่ารายงานเฉพาะ Modern Trade นี้ยังไม่เปิดใช้งาน" />
-    </>
-  )
 }
 
 export function SettingsPage({ focusCoverageKey = 0 }: { focusCoverageKey?: number }) {
@@ -186,6 +155,14 @@ export function SettingsPage({ focusCoverageKey = 0 }: { focusCoverageKey?: numb
           </>
         )}
 
+        {activeScope === 'DH' && (
+          <>
+            <FileShareSettingsCard view="profile" profileCode="DH" showSaveAction onDirtyChange={(dirty) => setDirtyScope(dirty ? 'DH' : null)} />
+            <DhPriceMasterPanel />
+            <TwdSettingsPage embedded mtCode="DH" mtName="DoHome" />
+          </>
+        )}
+
         {activeScope === 'TA' && (
           <>
             <FileShareSettingsCard view="profile" profileCode="TA" showSaveAction onDirtyChange={(dirty) => setDirtyScope(dirty ? 'TA' : null)} />
@@ -193,12 +170,6 @@ export function SettingsPage({ focusCoverageKey = 0 }: { focusCoverageKey?: numb
           </>
         )}
 
-        {activeScope === 'SCG' && (
-          <>
-            <UnavailableSection icon={Bell} eyebrow="Data source & automation" title="Source Connection and Schedule" description="Source profile สำหรับ Modern Trade นี้ยังไม่ถูกกำหนด" />
-            <CapabilityTemplate />
-          </>
-        )}
       </div>
     </div>
   )

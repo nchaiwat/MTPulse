@@ -502,6 +502,29 @@ def performance(
             func.coalesce(func.sum(report_stock_value), 0),
         ).where(*filters)
     ).one()
+    inventory_snapshot = None
+    if report_mode == "inventory":
+        # KPI stock is a snapshot, never a sum across report dates or pages.
+        snapshot_dates = [
+            value for value in all_dates
+            if (_date_in_ranges(value, selected_ranges) if selected_ranges else
+                (date_from is None or value >= date_from)
+                and (date_to is None or value <= date_to))
+        ]
+        snapshot_date = snapshot_dates[-1] if snapshot_dates else None
+        snapshot_totals = session.execute(
+            select(
+                func.coalesce(func.sum(report_stock_oh), 0),
+                func.coalesce(func.sum(report_stock_on_order), 0),
+                func.coalesce(func.sum(report_stock_value), 0),
+            ).where(*filters, report_date == snapshot_date)
+        ).one()
+        inventory_snapshot = {
+            "date": snapshot_date.isoformat() if snapshot_date else None,
+            "stockOh": _number(snapshot_totals[0]),
+            "stockOnOrder": _number(snapshot_totals[1]),
+            "stockValue": _number(snapshot_totals[2]),
+        }
     active_branch_count = 0
     if use_daily_summary:
         active_branch_filters = [
@@ -1060,6 +1083,7 @@ def performance(
             "qty": _number(total_qty),
             "mappingAttention": mapping_attention,
         },
+        "inventorySnapshot": inventory_snapshot,
         "inventorySummary": {
             "stockOh": _number(total_stock_oh),
             "stockOnOrder": _number(total_stock_on_order),

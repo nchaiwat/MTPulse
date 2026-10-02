@@ -6,6 +6,7 @@ import { FolderImportPanel } from './FolderImportPanel'
 import { GhImportPanel } from './GhImportPanel'
 import { TaImportPanel } from './TaImportPanel'
 import { HhImportPanel } from './HhImportPanel'
+import { DhImportPanel } from './DhImportPanel'
 import { formatDisplayDate, formatDisplayDateTime } from '../../shared/dateFormat'
 import { ACTIVE_MODERN_TRADES, type ActiveModernTradeCode } from '../../config/modernTrades'
 
@@ -20,7 +21,7 @@ const workspaceTabs: Array<{
   name: string
 }> = [
   { code: 'overview', label: 'ภาพรวม', name: 'ทุก Modern Trade' },
-  ...ACTIVE_MODERN_TRADES.map((definition) => ({
+  ...ACTIVE_MODERN_TRADES.filter((definition) => definition.activeCapabilities.includes('manualImport')).map((definition) => ({
     code: definition.code as ActiveModernTradeCode,
     label: definition.code,
     name: definition.name,
@@ -720,6 +721,13 @@ export function ImportPage({ correctiveBatchId = null }: { correctiveBatchId?: n
         <>
           <HhImportPanel onCompleted={() => void loadActivity()} />
           <FolderImportPanel expectedSourceGroup="HH" onCompleted={() => void loadActivity()} />
+        </>
+      )}
+
+      {activeTab === 'DH' && (
+        <>
+          <DhImportPanel onCompleted={() => void loadActivity()} />
+          <FolderImportPanel expectedSourceGroup="DH" onCompleted={() => void loadActivity()} />
         </>
       )}
 

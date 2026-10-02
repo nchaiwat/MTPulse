@@ -38,12 +38,71 @@ const emptyTwdDashboardResponse = {
   topSkus: [],
 }
 
+const emptySaleOutResponse = {
+  meta: {
+    baseYear: 2025,
+    comparisonYear: 2026,
+    cutoff: '2026-08-03',
+    activeCutoff: '2026-08-03',
+    salesBasis: 'gross',
+    metric: 'amount',
+    mtCodes: [],
+    availableYears: [2025, 2026],
+  },
+  kpis: {
+    baseYtd: { state: 'zero', value: 0 },
+    comparisonYtd: { state: 'zero', value: 0 },
+    difference: 0,
+    growthPercent: null,
+    latestMonth: { state: 'zero', value: 0 },
+    momPercent: null,
+    yoyPercent: null,
+    dataCompletenessPercent: 0,
+  },
+  monthly: [],
+  modernTrades: [],
+  periods: [],
+}
+
 describe('App navigation', () => {
   afterEach(() => vi.restoreAllMocks())
 
   it('uses collapsible submenus and one settings workspace', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input)
+      if (url.includes('/api/admin/fileshare-settings')) {
+        return new Response(JSON.stringify({
+          baseUnc: '\\\\server\\share',
+          domain: 'WA',
+          username: 'service-user',
+          passwordConfigured: true,
+          passwordMasked: '********',
+          lastTestAt: null,
+          lastTestStatus: null,
+          lastTestResults: [],
+          profiles: [{
+            code: 'DH',
+            name: 'DoHome',
+            subfolder: 'DoHome',
+            enabled: false,
+            fullPath: '\\\\server\\share\\DoHome',
+            scheduleEnabled: false,
+            scheduleTime: null,
+            initialScanCompleted: false,
+            lastRun: null,
+            nextRunAt: null,
+            sourceGroup: 'DH',
+          }],
+        }), { status: 200 })
+      }
+      if (url.includes('/api/dh-prices?')) {
+        return new Response(JSON.stringify({
+          items: [],
+          total: 0,
+          page: 1,
+          page_size: 25,
+        }), { status: 200 })
+      }
       if (url.includes('/api/dashboards/twd')) {
         return new Response(JSON.stringify(emptyTwdDashboardResponse), { status: 200 })
       }
@@ -105,14 +164,19 @@ describe('App navigation', () => {
     await userEvent.click(screen.getByRole('button', { name: 'ขยายเมนู' }))
     expect(appShell).toHaveAttribute('data-navigation', 'expanded')
 
-    expect(screen.getByRole('button', { name: 'รายงาน' })).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByRole('button', { name: 'แดชบอร์ด' })).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByRole('button', { name: 'สถานะข้อมูล' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: 'รายงาน' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: 'แดชบอร์ด' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: 'สถานะข้อมูล' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('button', { name: 'แดชบอร์ด Thai Watsadu' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'แดชบอร์ด' }))
     expect(screen.getByRole('button', { name: 'แดชบอร์ด Thai Watsadu' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('button', { name: 'Monitoring' })).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'การตั้งค่า' })).toHaveLength(1)
     expect(within(screen.getByRole('navigation', { name: 'Primary navigation' })).queryByText('Mapping')).not.toBeInTheDocument()
 
+    await userEvent.click(screen.getByRole('button', { name: 'รายงาน' }))
+    expect(screen.getByRole('button', { name: 'รายงาน' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: 'รายงาน Thai Watsadu' })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'รายงาน' }))
     expect(screen.queryByRole('button', { name: 'รายงาน Thai Watsadu' })).not.toBeInTheDocument()
 
@@ -128,7 +192,7 @@ describe('App navigation', () => {
     expect(screen.getByRole('button', { name: 'การตั้งค่า' })).toHaveAttribute('aria-current', 'page')
     expect(screen.queryByText('มี Token บันทึกอยู่')).not.toBeInTheDocument()
     expect(screen.getByDisplayValue('https://api.telegram.org')).toBeInTheDocument()
-    expect(screen.getByPlaceholderText('********')).toBeInTheDocument()
+    expect(screen.getByLabelText('Bot Token ID')).toHaveAttribute('placeholder', '********')
     expect(screen.getByRole('heading', { name: 'Technical Health' })).toBeInTheDocument()
     expect(screen.getByLabelText('เวลารายงาน Technical Health')).toHaveValue('07:00')
 
@@ -153,6 +217,16 @@ describe('App navigation', () => {
     expect(screen.getByRole('heading', { name: 'การแสดงผลรายงาน' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'ความครบถ้วนของข้อมูล' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'ข้อมูลที่ยังไม่ Mapping' })).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('tab', { name: /DH/ }))
+    expect(screen.getByRole('heading', { name: 'FileShare · DH' })).toBeInTheDocument()
+    expect(screen.getByText('Schedule รายวัน')).toBeInTheDocument()
+    expect(screen.getByLabelText('เวลา Schedule DH')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'DH Price Master' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Item และ Branch Mapping' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'ดึงข้อมูลย้อนหลังเฉพาะ SKU' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'การแสดงผลรายงาน' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'ความครบถ้วนของข้อมูล' })).toBeInTheDocument()
   }, 10_000)
 
   it('opens the TWD dashboard from its own navigation group', async () => {
@@ -193,6 +267,7 @@ describe('App navigation', () => {
     })
 
     render(<App />)
+    await userEvent.click(screen.getByRole('button', { name: 'แดชบอร์ด' }))
     await userEvent.click(screen.getByRole('button', { name: 'แดชบอร์ด Thai Watsadu' }))
 
     expect(screen.queryByRole('heading', { level: 1, name: 'แดชบอร์ดไทวัสดุ' })).not.toBeInTheDocument()
@@ -241,6 +316,7 @@ describe('App navigation', () => {
     })
 
     render(<App />)
+    await userEvent.click(screen.getByRole('button', { name: 'แดชบอร์ด' }))
     await userEvent.click(screen.getByRole('button', { name: 'แดชบอร์ด HomePro' }))
     expect(
       await screen.findByRole('heading', {
@@ -273,6 +349,7 @@ describe('App navigation', () => {
     })
 
     render(<App />)
+    await userEvent.click(screen.getByRole('button', { name: 'รายงาน' }))
     await userEvent.click(screen.getByRole('button', { name: 'รายงาน HomePro' }))
     expect(
       await screen.findByRole('heading', {
@@ -292,6 +369,40 @@ describe('App navigation', () => {
     expect(requested.some((url) => url.includes('mt_code=MH'))).toBe(true)
   })
 
+  it('opens DH dashboard and report pages with matching API routes', async () => {
+    const requested: string[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input)
+      requested.push(url)
+      if (url.includes('/api/dashboards/dh')) {
+        return new Response(JSON.stringify({
+          ...emptyTwdDashboardResponse,
+          meta: {
+            ...emptyTwdDashboardResponse.meta,
+            mtCode: 'DH',
+            mtName: 'DoHome',
+          },
+        }), { status: 200 })
+      }
+      if (url.includes('/api/dashboards/twd')) {
+        return new Response(JSON.stringify(emptyTwdDashboardResponse), { status: 200 })
+      }
+      return new Response(JSON.stringify(performanceResponse), { status: 200 })
+    })
+
+    render(<App />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'แดชบอร์ด' }))
+    await userEvent.click(screen.getByRole('button', { name: 'แดชบอร์ด DoHome' }))
+    expect(await screen.findByRole('heading', { level: 2, name: 'ภาพรวม Performance ของ DoHome (DH)' })).toBeInTheDocument()
+    expect(requested.some((url) => url.includes('/api/dashboards/dh'))).toBe(true)
+
+    await userEvent.click(screen.getByRole('button', { name: 'รายงาน' }))
+    await userEvent.click(screen.getByRole('button', { name: 'รายงาน DoHome' }))
+    expect(await screen.findByRole('heading', { level: 2, name: 'Matrix Performance ของ DoHome (DH)' })).toBeInTheDocument()
+    expect(requested.some((url) => url.includes('mt_code=DH'))).toBe(true)
+  })
+
   it('uses the compact Import-owned header without rendering the duplicate shell header', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => (
       String(input).includes('/api/dashboards/twd')
@@ -300,9 +411,32 @@ describe('App navigation', () => {
     ))
 
     render(<App />)
+    await userEvent.click(screen.getByRole('button', { name: 'สถานะข้อมูล' }))
     await userEvent.click(screen.getByRole('button', { name: 'สถานะข้อมูล นำเข้าข้อมูล' }))
 
     expect(screen.getByRole('heading', { level: 1, name: 'นำเข้าข้อมูล' })).toBeInTheDocument()
     expect(document.querySelector('.top-bar')).not.toBeInTheDocument()
+  })
+
+  it('opens Sale Out as a direct main menu while dropdown groups remain closed', async () => {
+    const requested: string[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input)
+      requested.push(url)
+      if (url.includes('/api/sale-out?')) return new Response(JSON.stringify(emptySaleOutResponse), { status: 200 })
+      if (url.includes('/api/dashboards/twd')) return new Response(JSON.stringify(emptyTwdDashboardResponse), { status: 200 })
+      return new Response(JSON.stringify(performanceResponse), { status: 200 })
+    })
+
+    render(<App />)
+    expect(screen.getByRole('button', { name: 'แดชบอร์ด' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: 'รายงาน' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: 'สถานะข้อมูล' })).toHaveAttribute('aria-expanded', 'false')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Sale Out' }))
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Sale Out' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sale Out' })).toHaveAttribute('aria-current', 'page')
+    expect(requested.some((url) => url.includes('/api/sale-out?base_year=2025&comparison_year=2026&sales_basis=gross&metric=amount'))).toBe(true)
   })
 })

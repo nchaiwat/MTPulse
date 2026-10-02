@@ -1480,3 +1480,150 @@ Discovery สำหรับ Frontend UX Milestone ได้รับอนุ�
 - API/UI/Excel ตรงกันสำหรับ Amount/Qty/Stock OH/Stock Value, Net/Gross, Branch/Date/Month, YTD/H1/H2/Full Year และ confirmed mapping scope
 - Import/scan/run/duplicate/corrective/backfill/mapping/SHO-PRO/Monitoring/Settings ผ่าน TA integration tests
 - Full regression, lint, build, migration review และ browser QA ผ่าน โดย baseline MT เดิมไม่เปลี่ยน
+
+# Requirement เพิ่มเติม: DoHome (DH) Price Master — 15 กันยายน 2026
+
+## Objective
+
+- ทำให้ DH คำนวณยอดขายระดับ `Data Date × DH Branch × DH SKU` ได้จาก
+  `Sales Qty × Retail Price Ex VAT` เพราะไฟล์ Sale มี Amount เฉพาะ Footer
+- ให้ System Admin และ Data Operator ดูแลราคาผ่าน Download Template และ
+  Upload → Preview → Confirm ที่ตรวจสอบย้อนหลังได้
+- เชื่อมราคาเดียวกันเข้ากับ Manual Import, Automatic Import และ Explicit Backfill
+  โดยไม่เปลี่ยน Logic หรือข้อมูลของ MT อื่น
+
+## Problem
+
+- DH Sale detail มี Qty ราย SKU/Branch แต่ไม่มี Amount ราย detail จึงไม่สามารถสร้าง
+  Sales fact ที่ใช้ Dashboard/Report ได้จาก Footer เพียงอย่างเดียว
+- Workbook KPI ยืนยันแนวคิด `Amount = Qty × Retail Price Ex VAT` แต่ราคาปัจจุบัน
+  ไม่เพียงพอสำหรับคำนวณข้อมูลย้อนหลังอย่างปลอดภัย
+- การใช้ราคาศูนย์เมื่อหาไม่พบจะทำให้ยอดผิดอย่างเงียบ ๆ และห้ามเกิดขึ้น
+
+## Users And Roles
+
+- System Admin และ Data Operator Download Template, Upload, Preview, Confirm
+  และดูตารางราคาปัจจุบันได้
+- ผู้ใช้ที่ไม่มีสิทธิ์แก้ข้อมูลยังคงอ่าน Dashboard/Report ตามสิทธิ์เดิม และไม่มีสิทธิ์
+  Confirm Price Master
+- ทุก Confirm ต้องเก็บ actor, เวลา, filename, checksum และ before/after ใน Audit Log
+
+## Goals And Success Criteria
+
+- ไฟล์ถูกต้องสามารถเพิ่มหรืออัปเดตราคา DH แบบ effective-dated ได้แบบ atomic
+- DH Import เลือกได้หนึ่งราคาเท่านั้นต่อ SKU ณ Sale Date; missing, zero,
+  negative หรือ overlapping price ต้องหยุดก่อนเขียน Fact
+- แถวที่ไม่อยู่ในไฟล์ใหม่ไม่ถูกแก้หรือลบ และราคาเดิมยังใช้คำนวณย้อนหลังได้
+- การแก้ราคาจะไม่เปลี่ยน Batch เดิมอัตโนมัติ แต่มีผลกับ Import/Corrective/Backfill
+  ที่ผู้ใช้สั่งหลังจาก Confirm
+- Amount ที่คำนวณต่างจาก Footer ได้ แต่ Batch ต้องเป็น
+  `imported_with_warnings` พร้อมรายละเอียดรายสาขาและยอดรวม
+
+## Must-Have Scope
+
+- Template `.xlsx` มีหนึ่ง sheet และ columns:
+  `SKU`, `Price Ex VAT`, `Effective From`, `Effective To`
+- Preview แสดงจำนวน inserted, updated, unchanged, invalid, duplicate และ
+  overlapping rows โดยไม่แก้ฐานข้อมูล
+- Confirm อ่านและ validate ไฟล์ซ้ำ แล้ว upsert ทั้งไฟล์ใน transaction เดียว
+- ตารางแบบ read-only แสดง SKU, ราคา, ช่วงวันที่, สถานะ current/upcoming/expired,
+  ผู้แก้ล่าสุด และเวลาแก้ พร้อม search/filter/pagination
+- DH Manual และ Automatic Import เรียก pricing service ชุดเดียวกัน
+- Business fingerprint ของ DH Batch รวมราคาที่ถูกเลือกจริง เพื่อคง idempotency
+  เมื่อมีการแก้ราคา
+
+## Core Workflows
+
+### Price Master Upload
+
+1. ผู้ใช้ Download Template หรือใช้ไฟล์ตาม contract เดียวกัน
+2. Upload เพื่อ Preview; Server ตรวจชนิดไฟล์, headers, required values,
+   duplicate keys, date range, positive price และ overlap กับข้อมูลเดิม
+3. UI แสดงผลต่างก่อนบันทึกและไม่เปิด Confirm เมื่อมี blocking error
+4. Confirm ส่งไฟล์เดิมอีกครั้ง; Server ตรวจ checksum/validation ซ้ำและ upsert
+   ด้วย key `DH + SKU + Effective From`
+5. Commit ราคาและ Audit พร้อมกัน; หากแถวใดล้มเหลวต้อง rollback ทั้งไฟล์
+
+### DH Sale Import
+
+1. Strict DH parser อ่าน Sale/Stock pair และยืนยัน Sale Date ก่อน Stock Date 1 วัน
+2. Import service โหลดราคาที่ครอบคลุม Sale Date สำหรับ SKU ที่มียอดขายไม่เป็นศูนย์
+3. Pricing service คำนวณ Amount Ex VAT ระดับ SKU/Branch และ fingerprint
+4. Missing/invalid/overlapping price ทำให้ Preview/Import ไม่ผ่าน
+5. Footer mismatch เป็น Warning ไม่ใช่ blocking error และต้องเก็บ source footer
+   เพื่อ audit/reconciliation
+
+### Historical Correction
+
+1. Confirm Price Master ไม่แก้ Imported Batch หรือ Report ย้อนหลังทันที
+2. ผู้มีสิทธิ์สั่ง Corrective Import หรือ Backfill แยกต่างหากเมื่อประสงค์คำนวณใหม่
+3. การคำนวณใหม่ใช้ราคาที่ effective ณ Sale Date และเก็บ fingerprint/Audit ใหม่
+
+## Business And Data Rules
+
+- SKU เป็น opaque text; ห้ามตัดเลขศูนย์นำหน้า, zfill, fuzzy match หรือใช้รูปแบบ SKU
+  เชื่อมกับ MT อื่น
+- `Price Ex VAT` ต้องมากกว่า 0 และเก็บด้วย monetary precision เดิมของระบบ
+- `Effective From` ต้องมีค่า; `Effective To` ว่างหมายถึงไม่มีกำหนดสิ้นสุด
+  และเมื่อมีค่าต้องไม่น้อยกว่า `Effective From`
+- ช่วงวันที่เป็น inclusive ทั้งต้นและปลาย และหนึ่ง SKU ห้ามมีมากกว่าหนึ่งราคา
+  ที่ active ในวันเดียวกัน
+- Upload เป็น incremental upsert; exact key ที่ค่าเดิมเหมือนกันเป็น unchanged,
+  ค่าเปลี่ยนเป็น update พร้อม Audit และรายการที่ไม่อยู่ในไฟล์ต้องคงเดิม
+- Preview และ Confirm ต้องใช้ validation เดียวกัน; Confirm ต้อง reject หากไฟล์
+  หรือข้อมูลฐานเปลี่ยนจนผล Preview เดิมไม่ตรง
+- Price Confirm และ DH Import/Backfill ต้องไม่เขียนพร้อมกันในลักษณะที่ทำให้
+  Batch เดียวเลือกคนละชุดราคา
+
+## Data And Integration Requirements
+
+- เพิ่มตารางราคาแบบ additive ที่ scope ด้วย DH modern trade id, source SKU,
+  price, effective range และ provenance/audit fields
+- เพิ่ม unique key สำหรับ `modern_trade_id + source_sku + effective_from`
+  และ index สำหรับ price lookup ตาม SKU/date
+- ใช้ `AuditEvent` และ actor contract เดิม; ห้ามเก็บ workbook จริงใน Git
+- API ต้องมี template download, preview, confirm และ paginated current-price list
+- UI ใช้ shared Settings/Import components และ permission model เดิม
+- Original FileShare/NAS เป็น read-only และไม่อยู่ใน mutation path ของ Price Master
+
+## Architecture Direction
+
+- `DhPrice` และ `price_dh_pair` เป็น domain contract กลางของ Manual,
+  Automatic และ Backfill
+- Parser ของ Price Master แยกจาก DH Sale/Stock parser แต่ใช้ normalization
+  contract เดียวกัน
+- Database repository แปลง effective records เป็น domain price objects;
+  domain service ไม่ผูกกับ SQLAlchemy หรือ FastAPI
+- เพิ่ม capability/route ของ DH ผ่าน registry เดิม ห้าม hardcode fallback ไป TWD
+
+## Non-Scope
+
+- ไม่มี Inline Edit หรือการลบราคาจากหน้าจอในเวอร์ชันแรก
+- ไม่แก้ Imported Batch อัตโนมัติเมื่อราคาเปลี่ยน
+- ไม่อนุมานราคาจาก Footer, โปรโมชั่น, ส่วนลด หรือราคาของ MT อื่น
+- ไม่ Deploy, เปิด Automatic Schedule, Import ไฟล์จริง หรือ Backfill Production
+  ในขั้น development
+
+## Risks And Mitigations
+
+- ราคาปลีกอาจต่างจากยอดธุรกรรมจริงเพราะโปรโมชั่น: เก็บ Footer และแสดง Warning
+  แทนการบังคับให้เท่ากัน
+- Upload ราคาใหม่อาจชนประวัติเดิม: validate ภาพรวมหลังจำลอง upsert และ rollback
+  ทั้งไฟล์เมื่อพบ overlap
+- ราคาเปลี่ยนระหว่าง Import: serialize Price Confirm กับ DH write workflow
+  และรวม selected prices ใน fingerprint
+- SKU ใน Excel อาจสูญเลขศูนย์นำหน้า: Template บังคับ text format และ importer
+  ห้ามเติมเลขศูนย์แทนผู้ใช้
+- Shared UI/API อาจกระทบ MT อื่น: เพิ่ม cross-MT regression และเปิด capability
+  เฉพาะ DH
+
+## Open Questions
+
+- ไม่มี business decision ค้างสำหรับเริ่ม Phase 1
+- การทำ Inline Edit และ automatic historical repricing เป็น future decision
+
+## Status And Priority
+
+- Status: Discovery complete; รอ Product Owner ยืนยัน PRD และ implementation plan
+- Priority: (1) schema/parser/domain repository, (2) preview/confirm/list API,
+  (3) UI, (4) Manual/Automatic/Backfill integration, (5) full regression/release gate

@@ -1,5 +1,81 @@
 # MTPulse — Handoff ก่อน Restart
 
+## HH swapped Stock/Sale validation and data correction — 1 October 2026
+
+- User explicitly authorized the code fix, deployment and correction on wa-mtpulse.
+- Branch: `codex/hh-file-validation`; deployed application commit:
+  `7f4c6013553a8aedab1a971e1c47d464ce070c2b`.
+- Isolated worktree: `D:\Python\MTPulse\.tmp\hh-file-validation`, based on the
+  previously deployed `f888b870171f7069e6242a470212779d70fc5625` to preserve Sale Out.
+- Changed code: `backend/app/importers/hh.py` checks all five branch metric header
+  pairs and the total pair: Stock requires `คงเหลือ/มูลค่า`, Sales requires
+  `จน.ขาย/ยอดขาย`. Wrong/renamed/mixed workbook kinds are rejected before import.
+- Changed tests: `backend/tests/test_hh.py` and
+  `backend/tests/test_manual_folder_import.py`. Existing fixtures now use actual
+  HH metric labels. No UI, other-MT parser, formula or schema changes.
+
+### Evidence and correction
+
+- HH batch 1757 / data date 2025-04-24 was manually replaced at 14:34 Bangkok
+  with SaleReport as Stock and StockReport as Sales. The swapped source pair
+  exactly reproduced its business fingerprint and report total 5,135,567.05 / 1,932.
+- Correct source pair under HomeHub/2025-04-25 has Sales 22,342.05 / 11 and
+  Stock Value 5,320,406.39 / Stock OH 2,107. NAS originals were only read.
+- Corrected batch 1757 atomically using `import_hh_pair`, guarded by the reviewed
+  old/new fingerprints; rebuilt daily/monthly summaries and preserved both HH
+  unmatched-visibility settings as false. Other batch metadata/totals fingerprint
+  was identical before/after. No bulk backfill or other-day correction was run.
+- Audit event 2390, `batch_replaced`, actor
+  `codex:user-authorized-hh-swap-correction-2026-10-01`, records before/after and
+  source checksums. Commit time 15:26:17 Bangkok.
+- New business fingerprint:
+  `c1772383436c789244c8442f4f950c02addff2eaf4e3a290165f3ba4d5296e1d`.
+- Source Stock SHA-256:
+  `eabc9717af9a76cb271c2bd2e6152ab0af724c763cf2fd5989427f8d092ba00a`.
+- Source Sale SHA-256:
+  `3d005bc3d8b24d7f6cf17bca2abece8d3aad6dbe1905f3b5c6da7d4c93dedb00`.
+
+### Verification and deployment
+
+- Red phase: 11 new regressions failed. Fixed focused suite: 25 passed.
+- Full backend: 260 passed, 2 skipped locally and in a disposable container using
+  the deployed image and fixture databases (no production credentials).
+- Full frontend: 128 passed with `--maxWorkers=2`; initial default parallel run
+  had 3 timing-only failures. No timeout relaxation or frontend changes.
+- ESLint, production build, focused Ruff and `git diff --check` passed.
+- Full Ruff still reports the two pre-existing errors in migration
+  `a7d4c2e91f30_add_manual_import_settings.py`; left untouched.
+- Paused idle worker, backed up DB, rebuilt API/worker, recreated API, corrected
+  data, then recreated/resumed worker. Web and DB containers were not rebuilt.
+- No new migration; Alembic remains `7b8293a4b5c6`.
+- Live wrong-pair preview HTTP 400 and confirm HTTP 409. Corrected HH Date and
+  Branch API totals, daily/monthly summaries: 22,342.05 / 11.
+- HH Excel Report column H numeric detail sums to 22,342.05; H4 contains
+  `=SUM(H6:H78)`. Excel SUM cells are formulas without cached results.
+- All seven dashboard endpoints and Sale Out return 200; global cutoff remains
+  2026-08-03. No active import runs after correction. API/Web/DB healthy, worker up.
+- Visual browser check remains unavailable due local Windows sandbox failure.
+  UAT: reload HH Report, Sales / Net Sales / Amount / Date 24/04/2025; verify
+  22,342.05 and Qty 11. Swapped files should show a header/type error on Preview.
+
+### Backup, rollback and workspace
+
+- Backup: `/opt/mtpulse/backups/before-hh-swap-fix-20261001.dump`, 213,328,396 bytes;
+  `pg_restore --list` verified. SHA-256:
+  `d9e6669a88b4e2ab1bc41728bb9ac4f18179ad4f3398946d7d6fc0f7a7dd391a`.
+- Application rollback point: `f888b870171f7069e6242a470212779d70fc5625`.
+  Git rollback does not reverse the corrected data. Do not restore the full dump
+  or undo the correction without separate authorization and checking newer data.
+- Runtime image rebuild resolves dependencies from existing pyproject ranges;
+  full backend regression was also run in the resulting image.
+- Existing dirty PRD/HANDOFF/implementation_plan and pre-existing temp files in
+  the primary checkout were not touched. This worktree has untracked
+  `.pytest-hh-red/`, `.pytest-hh-focused/`, `.pytest-hh-full/` diagnostic outputs.
+- One-off repair helper is outside the tracked worktree at
+  `D:\Python\MTPulse\.tmp\hh-repair-20251024.py` (filename is historical; target
+  is explicitly 2025-04-24). It defaults to dry-run and refuses reapplication once
+  the old fingerprint no longer matches. No source workbooks were committed.
+
 อัปเดตล่าสุด: 30 สิงหาคม 2026 (Asia/Bangkok)
 
 เอกสารนี้เป็นจุดเริ่มต้นสำหรับการทำงานต่อหลัง Restart เครื่อง ให้เปิดอ่านไฟล์นี้ก่อน แล้วจึงอ่าน `PROJECT_CONTEXT.md`, `PRD.md` และ `implementation_plan.md` เมื่อต้องการรายละเอียดเพิ่ม
@@ -609,3 +685,56 @@ Migration:
 - Verification: Backend full 115 tests + Ruff ผ่าน; focused performance/export 21 tests ผ่าน; Frontend 70 tests + ESLint + production build ผ่าน; `git diff --check` ผ่าน
 - Rebuild เฉพาะ Local API แล้วเพื่อ benchmark; ยังไม่ได้ Push หรือ Deploy ไป WA-MTPULSE-TEST
 - Browser visual/profiler smoke ยังทำไม่ได้เพราะ browser-control runtime บน Windows ติด `helper_unknown_error`; API behavior และ automated UI regression ผ่านครบ
+# 2026-10-01 — Unmatched settings persistence and removal of SCG settings
+
+## 2026-10-01 — Sale Out partial-data option (candidate, not deployed)
+
+### Deployment completed after user instruction to deploy
+
+- Supersedes pending/candidate status below: deployed API/Web from application commit `95b56ac` after explicit user approval. Worker remains compatible and was not restarted. Preflight found no active imports; backup size/checksum reverified, Alembic unchanged at `7b8293a4b5c6`.
+- Built Linux API image passed full regression: 334 passed / 2 skipped. Live seven-MT Sale Out strict and available calls passed in 1.00 / 1.01 seconds. GH Mar 2025 strict is incomplete/null; available is 2734747.60 with 25/31 days, Qty 870; Growth null. Omitted option defaults to complete. All seven saved unmatched visibility settings remain false/false.
+- Web HTTP 200 serves `/assets/index-BB02lEO3.js` containing both options and local preference storage. No migration, data correction or import. Browser visual verification remains unverified as documented below. Rollback application is `4eb4e36`, rebuild/recreate API and Web only.
+
+- User accepted two modes: default complete-only and available-data with day coverage; persist selection locally. Implemented on `codex/sale-out-partial-option`, application commit `95b56ac`. Production remains `4eb4e36`; deployment permission for this feature is pending.
+- API accepts `completeness=complete|available`; default remains strict. Partial values retain incomplete state and carry coveredDays/expectedDays/coverageUnit. Total includes available contributions, with aggregate coverage explicitly labelled MT-days; fully missing ranges remain missing rather than zero. Growth, differences and derived Run rate are suppressed for incomplete operands. Unacknowledged reconciliation warnings and non-daily sales remain excluded from valid days.
+- Sale Out now applies current effective Item/Branch mapping and visibility preferences like Matrix, excluding inactive mapped items. Monthly summaries remain the fast path for complete full months; mapped-branch daily summaries serve partial periods, with raw daily facts only for MTs allowing unmatched branches. Mapping membership uses independent MT/SKU and MT/branch sets to avoid per-row correlated date queries.
+- Changed files: backend API/service sale_out.py/sale_out_report.py; test_sale_out_report.py and new test_sale_out_partial.py; frontend SaleOutPage, SaleOutComparisonLedger, saleOutApi, types, new coverageLabel helper, SaleOutPage tests, and one toolbar flex-wrap CSS rule to accommodate the option.
+- Tests: full backend 334 passed / 2 skipped; frontend 137 passed (28 files), lint and production build passed; focused backend Ruff and diff check passed. Full backend Ruff retains the same two pre-existing migration errors. Regression tests exercise all seven MTs with all four unmatched visibility combinations, invalid days, missing members, total coverage, persistence and strict default.
+- Read-only production-data probe loaded the candidate module only in an isolated Python process (no deployed files changed), using SET TRANSACTION READ ONLY with timeout and rollback. GH March 2025 strict remains incomplete/null; available returns 2734747.60 and 25/31 days, matching Matrix. Full seven-MT report improved from 36.6s in initial query to 1.04s after set-based mapping optimization. No production mutations, migrations or imports.
+- Staging procedure: switch option and reload to check persistence; compare GH Mar 2025 with Matrix, toggle Gross/Net and Qty/Average Price, check missing/future/excluded states, confirm Total day denominator aggregates included MTs and Growth/Run rate stay blank when incomplete. Browser visual checks at 375/768/1024/1440 remain unverified due previously recorded CUA failure.
+- Deployment: once explicitly approved, build API and Web from 95b56ac, retain compatible Worker, recreate API/Web, verify health/served option and live strict/available API responses. No migration needed. Rollback rebuild/recreate API/Web from 4eb4e36; no DB rollback.
+- Untouched files: all previously recorded pytest/temp artifacts and primary worktree edits. New backend/.pytest-partial-full/ and .pytest-partial-final/ are test artifacts excluded from commit. Production source/images remain unchanged by this feature.
+
+## Deployment completed after explicit user approval
+
+- User explicitly approved production activation. Deployed application commit `4eb4e36dbdf88a1ff8ec4e6f4e3cdd906cb5dae3` via recreate of API, Worker and Web; this supersedes the pending/blocked deployment notes below.
+- Preflight found no active imports and all seven MT visibility settings false/false. Post-deploy settings GET and Inventory performance GET returned HTTP 200 for all seven, with settings still false/false. HH 2025-04-24 Sales remains 22342.05 / 11.
+- API/Web/DB healthy; Worker running and all four modified importer file SHA256 values match deployed source. Alembic remains 7b8293a4b5c6; no data mutation/import/migration performed.
+- Served bundle `/assets/index-B1a6eZ-Y.js` contains the active-settings capability filter and no SCG placeholder panel. Initial literal-string smoke assertion expected double quotes, but minifier emits backticks; inspected actual bundle to resolve this verification mismatch. Browser visual check remains unavailable as previously documented.
+- Tests, changed-file inventory, untouched files and rollback commit 581eca1 remain as documented below.
+
+- Branch `codex/preserve-unmatched-settings`, application commit `4eb4e36`; implementation complete, production activation BLOCKED pending explicit approval for this deployment.
+- Root cause reproduced: HH/DH import setup forced both visibility flags true; GH/TA forced both false. Repeated setup now preserves saved flags; initial defaults remain unchanged. HP/MH setup already preserves them; TWD importer has no existing-trade flag assignment.
+- Changed four `backend/app/services/{hh,dh,gh,ta}_import.py` files, added `backend/tests/test_import_visibility_preferences.py`; SettingsPage.tsx now filters tabs by active settings capability and removes SCG-only placeholder components; SettingsPage.test.tsx covers remaining tabs and DH-to-TA keyboard selection. Registry/database historical identities retained.
+- Regression evidence: before fix 12 failures / 12 passes across six setup paths and four flag combinations; after fix full backend 305 passed / 2 skipped locally and in disposable built image. Frontend 136 passed; frontend lint/build, focused Ruff and diff check passed. Full backend Ruff retains two pre-existing migration errors documented above.
+- Read-only production audit: all seven MTs currently false/false; latest saved audit for TWD/HH/DH agrees. No settings restoration or database mutation needed/performed. No migration; Alembic head remains 7b8293a4b5c6. Existing backup path/size/checksum above reverified.
+- Server source checkout and built API/Worker/Web image tags now point at new candidate 4eb4e36, BUT running containers have NOT been recreated. Automatic approval review rejected `docker compose ... up -d --no-deps api worker web` because this task needs explicit production deployment permission. Do not describe candidate as live. Running app remains prior deployment (API/Web 581eca1; worker previous HH fix).
+- Next after approval: verify no active imports, activate candidate API/Worker/Web; verify all settings GETs retain false/false, critical APIs, served web bundle and container health. Rollback application source is 581eca1; rebuild API/Worker/Web, no DB rollback required.
+- Staging checks: save all four Item/Branch flag combinations, import in isolated DB and reload settings; verify SCG tab absent, seven MT tabs available and keyboard DH-to-TA navigation. Visual viewport tests remain unavailable due CUA sandbox failure.
+- Untracked untouched: prior pytest-hh and backend pytest-kpi directories; new backend/.pytest-visibility-full test artifact excluded. Primary worktree dirty documentation and other temporary files untouched; remote backups/ retained.
+
+# 2026-10-01 — Performance KPI follows Sales / Inventory mode
+
+- User authorized the shared KPI correction across all seven active MTs and continuation on wa-mtpulse.
+- Branch: `codex/inventory-kpi`; application commit: `581eca17a24065ef9c0a42a05965e71704d3376c`. Worktree reused: `.tmp/hh-file-validation`, branched from prior HH fix/handoff `93cca50`.
+- Changed files: `backend/app/api/performance.py`, `backend/tests/test_performance.py`, `src/features/performance/PerformancePage.tsx`, `PerformancePage.test.tsx`, and `types.ts` in that feature directory.
+- Inventory KPI now uses additive API field `inventorySnapshot`: latest imported date inside selected ranges, same mapping/SKU/branch/status filters, summed across all matching rows before pagination. Existing matrix totals, inventorySummary, turnover and Sales calculations are unchanged.
+- KPI metrics follow registry intersected with API capabilities: TWD OH/order; HP/MH/HH/GH/TA OH/source value; DH OH only. Snapshot date is in helper text and hover title (existing compact desktop CSS hides helper text).
+- Regression: backend 281 passed / 2 skipped locally and in the built Linux API image against disposable test databases. Frontend 135 passed with `--maxWorkers=2`; lint, production build, focused backend Ruff and diff check passed. Full backend Ruff still has the two pre-existing errors in `a7d4c2e91f30_add_manual_import_settings.py`; not edited.
+- Deployment: API and Web rebuilt/deployed from clean application commit 581eca1; worker code/image unchanged and compatible. No migration added, Alembic remains `7b8293a4b5c6`; no data correction/import in this task.
+- Existing backup verified: `/opt/mtpulse/backups/before-hh-swap-fix-20261001.dump`, 213328396 bytes, SHA256 `d9e6669a88b4e2ab1bc41728bb9ac4f18179ad4f3398946d7d6fc0f7a7dd391a`. It predates the previous HH data correction; application rollback does not require restoring this database backup.
+- Live smoke: all seven MT Inventory APIs return identical snapshot values for latest-only versus month-to-date Date queries. HH 2025-04-24 day/day_total/month, page_size=1: OH 1932, source value 5135567.05; Sales amount 22342.05 / qty 11. HTTP 200 Web bundle contains inventorySnapshot handling.
+- Repeat on staging: switch Sales/Inventory on each MT; compare a multi-date Inventory range against its last date; set SKU/branch filters and change pages. Check DH omits unsupported value/order cards and Sales Net/Gross retains its original cards.
+- Limitation: browser visual verification at 375/768/1024/1440 could not run because CUA kernel exits with Windows sandbox helper_unknown_error. No CSS or matrix layout edits. New empty/missing snapshot renders zero from API or em dash while unavailable.
+- Rollback: checkout `7f4c6013553a8aedab1a971e1c47d464ce070c2b`, rebuild/recreate API and Web only. No database rollback needed.
+- Untouched/untracked: previous `.pytest-hh-focused/`, `.pytest-hh-full/`, `.pytest-hh-red/`; new `backend/.pytest-kpi-full/` test artifact excluded. Primary checkout's pre-existing documentation edits and temporary directories were not touched. Server retains untracked `backups/`.

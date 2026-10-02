@@ -91,6 +91,12 @@ export interface PerformanceResponse {
     qty: number
     mappingAttention: number
   }
+  inventorySnapshot?: {
+    date: string | null
+    stockOh: number
+    stockOnOrder: number
+    stockValue: number
+  } | null
   inventorySummary?: {
     stockOh: number
     stockOnOrder: number

@@ -29,8 +29,8 @@ def _report(path: Path, *, kind: str, report_date: str = "10-09-2026") -> None:
         sheet.cell(2, column, heading)
     for index, branch in enumerate(branches):
         sheet.cell(2, 7 + index * 2, branch)
-        sheet.cell(3, 7 + index * 2, "Qty")
-        sheet.cell(3, 8 + index * 2, "Value")
+        sheet.cell(3, 7 + index * 2, "คงเหลือ" if kind == "stock" else "จน.ขาย")
+        sheet.cell(3, 8 + index * 2, "มูลค่า" if kind == "stock" else "ยอดขาย")
     rows = [
         ("00001", "Leading zero item"),
         ("12345678901", "Eleven digit item"),
@@ -76,6 +76,72 @@ def test_extract_hh_pair_rejects_different_report_dates(tmp_path: Path) -> None:
 
     with pytest.raises(HhFormatError, match="วันที่ข้อมูล Stock และ Sale ไม่ตรงกัน"):
         extract_hh_pair(stock, sales)
+
+
+def test_extract_hh_pair_rejects_swapped_files(tmp_path: Path) -> None:
+    stock = tmp_path / "StockReport.xlsx"
+    sales = tmp_path / "SaleReport.xlsx"
+    _report(stock, kind="stock")
+    _report(sales, kind="sales")
+    with pytest.raises(HhFormatError, match="หัวคอลัมน์"):
+        extract_hh_pair(sales, stock)
+
+
+@pytest.mark.parametrize("kind", ["stock", "sales"])
+def test_inspect_rejects_content_renamed_as_opposite_kind(tmp_path: Path, kind: str) -> None:
+    path = tmp_path / ("SaleReport.xlsx" if kind == "stock" else "StockReport.xlsx")
+    _report(path, kind=kind)
+    with pytest.raises(HhFormatError, match="หัวคอลัมน์"):
+        inspect_hh_workbook(path)
+
+
+@pytest.mark.parametrize("column", [7, 8, 15, 16, 17, 18])
+def test_extract_rejects_unknown_or_mixed_metric_headers(tmp_path: Path, column: int) -> None:
+    from openpyxl import load_workbook
+
+    stock = tmp_path / "StockReport.xlsx"
+    sales = tmp_path / "SaleReport.xlsx"
+    _report(stock, kind="stock")
+    _report(sales, kind="sales")
+    workbook = load_workbook(sales)
+    workbook.active.cell(3, column, "มูลค่า")
+    workbook.save(sales)
+    workbook.close()
+    with pytest.raises(HhFormatError, match="หัวคอลัมน์"):
+        extract_hh_pair(stock, sales)
+
+
+@pytest.mark.parametrize("action", ["preview", "confirm"])
+def test_manual_upload_rejects_swapped_pair_before_database_access(tmp_path: Path, action: str):
+    import asyncio
+    from io import BytesIO
+
+    from fastapi import HTTPException
+    from starlette.datastructures import UploadFile
+
+    from app.api.imports import confirm_hh_import, preview_hh_import
+
+    stock = tmp_path / "StockReport.xlsx"
+    sales = tmp_path / "SaleReport.xlsx"
+    _report(stock, kind="stock")
+    _report(sales, kind="sales")
+    class NoWriteSession:
+        def rollback(self):
+            pass
+
+    kwargs = {
+        "session": NoWriteSession(),
+        "stock_file": UploadFile(filename=sales.name, file=BytesIO(sales.read_bytes())),
+        "sales_file": UploadFile(filename=stock.name, file=BytesIO(stock.read_bytes())),
+    }
+    function = preview_hh_import
+    if action == "confirm":
+        function = confirm_hh_import
+        kwargs["expected_fingerprint"] = "a" * 64
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(function(**kwargs))
+    assert error.value.status_code == (400 if action == "preview" else 409)
+    assert "หัวคอลัมน์" in error.value.detail
 
 
 def test_inspect_hh_workbook_uses_structure_and_report_kind(tmp_path: Path) -> None:

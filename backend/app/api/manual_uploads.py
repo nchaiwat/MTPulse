@@ -35,7 +35,7 @@ class CreateFolderBatchRequest(BaseModel):
 
 
 class FinalizeFolderBatchRequest(BaseModel):
-    expected_source_group: Literal["TWD", "HP_MH", "HH", "GH", "TA"]
+    expected_source_group: Literal["TWD", "HP_MH", "HH", "GH", "TA", "DH"]
 
 
 def _batch(session: Session, batch_id: int) -> ManualUploadBatch:

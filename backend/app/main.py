@@ -5,6 +5,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from app.api.automatic_imports import router as automatic_imports_router
 from app.api.dashboards import router as dashboards_router
 from app.api.data_coverage import router as data_coverage_router
+from app.api.dh_prices import router as dh_prices_router
 from app.api.fileshare_settings import router as fileshare_settings_router
 from app.api.import_correctives import router as import_correctives_router
 from app.api.imports import router as imports_router
@@ -12,6 +13,8 @@ from app.api.item_mappings import router as item_mappings_router
 from app.api.manual_uploads import router as manual_uploads_router
 from app.api.monitoring import router as monitoring_router
 from app.api.performance import router as performance_router
+from app.api.sale_out import router as sale_out_router
+from app.api.sale_out_settings import router as sale_out_settings_router
 from app.api.sku_analysis_flags import router as sku_analysis_flags_router
 from app.api.sku_interests import router as sku_interests_router
 from app.api.system_settings import router as system_settings_router
@@ -30,9 +33,12 @@ app.add_middleware(
 )
 app.add_middleware(GZipMiddleware, minimum_size=1_000, compresslevel=5)
 app.include_router(data_coverage_router)
+app.include_router(dh_prices_router)
 app.include_router(automatic_imports_router)
 app.include_router(dashboards_router)
 app.include_router(performance_router)
+app.include_router(sale_out_router)
+app.include_router(sale_out_settings_router)
 app.include_router(item_mappings_router)
 app.include_router(imports_router)
 app.include_router(manual_uploads_router)
