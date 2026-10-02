@@ -27,3 +27,9 @@
 
 .ciam-ad-binding { display: grid; gap: 6px; min-width: 180px; }
 .ciam-ad-binding input { width: 100%; min-width: 0; min-height: 40px; padding: 8px; border: 1px solid var(--line, #d7e0e3); border-radius: 6px; }
+
+.ciam-secret { display: grid; gap: 6px; min-width: 0; align-content: start; }
+.ciam-secret-input { display: flex; gap: 6px; min-width: 0; }
+.ciam-secret-input input { flex: 1; }
+.ciam-secret-input button { display: grid; place-items: center; flex: 0 0 40px; border: 1px solid var(--line, #d7e0e3); border-radius: 6px; background: white; color: var(--ink-900, #102a43); }
+.ciam-secret > button { justify-self: start; }

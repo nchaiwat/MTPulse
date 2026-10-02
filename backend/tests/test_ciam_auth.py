@@ -715,3 +715,24 @@ def test_ad_timeout_is_redacted_and_rate_limited(auth_client, monkeypatch):
         ).status_code
         == 429
     )
+
+
+@pytest.mark.parametrize("kind,key", [("client", "ciam_client_secret"), ("ad", "ciam_ad_secret")])
+def test_secret_reveal_requires_admin_csrf_and_redacts_audit(auth_client, kind, key):
+    client, session = auth_client
+    ciam.save_config(session, {key: "fixture-private-value"}, "test")
+    path = f"/api/settings/ciam-sso/secrets/{kind}/reveal"
+    assert client.post(path).status_code == 401
+    sign_in(client, session, account(session, "operator"))
+    assert client.post(path).status_code == 403
+    sign_in(client, session, account(session))
+    assert client.post(path, headers={"X-CSRF-Token": "bad"}).status_code == 403
+    result = client.post(path)
+    assert result.status_code == 200
+    assert result.json() == {"value": "fixture-private-value"}
+    assert result.headers["cache-control"] == "no-store"
+    assert "fixture-private-value" not in client.get("/api/settings/ciam-sso").text
+    events = list(session.scalars(select(AuditEvent).where(AuditEvent.action == "secret_revealed")))
+    assert len(events) == 1
+    assert "fixture-private-value" not in events[0].after_json
+    assert key in events[0].after_json

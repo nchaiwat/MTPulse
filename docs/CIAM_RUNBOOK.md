@@ -194,3 +194,7 @@ Rollback images retained: mtpulse-api:pre-ciam-95b56ac, mtpulse-web:pre-ciam-95b
 mtpulse-worker:pre-ciam-95b56ac. A rollback to that pre-authentication release requires
 explicit consideration of restored anonymous access and infrastructure auth mode;
 do not downgrade/drop the additive auth schema or restore older business data.
+
+## Saved secret display
+
+Saved CIAM/AD secrets display ******** with an eye control. Owner explicitly authorized Admin on-demand reveal through POST /api/settings/ciam-sso/secrets/{client|ad}/reveal with CSRF, no-store and key-only audit. This supersedes the earlier statement that no endpoint reveals plaintext; ordinary settings GET still never reveals it. Visibility resets on hide, collapse/save/unmount or after 30 seconds. Use the separate Change action to replace a secret; leaving it untouched preserves the stored ciphertext. Other secret endpoints/policies are unchanged.

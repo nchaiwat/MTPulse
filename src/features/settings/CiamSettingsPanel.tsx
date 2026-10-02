@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { CiamSecretField } from './CiamSecretField'
 import { authRequest, setSessionToken, type LoginSession, type AuthUser } from '../auth/authApi'
 import '../auth/auth.css'
 
@@ -16,6 +17,7 @@ export function CiamSettingsPanel({ onDirtyChange }: { onDirtyChange?: (dirty: b
   const [cfg, setCfg] = useState<Config | null>(null)
   const [users, setUsers] = useState<AuthUser[]>([])
   const [secret, setSecret] = useState('')
+  const [secretVersion, setSecretVersion] = useState(0)
   const [adSecret, setAdSecret] = useState('')
   const [reason, setReason] = useState('')
   const [message, setMessage] = useState('')
@@ -46,18 +48,18 @@ export function CiamSettingsPanel({ onDirtyChange }: { onDirtyChange?: (dirty: b
           const { client_secret_configured: _configured, ad_secret_configured: _adConfigured, ciam_break_glass_active: _breakGlass, ...values } = cfg
           void _configured; void _adConfigured; void _breakGlass
           setCfg(await authRequest<Config>('/api/settings/ciam-sso', 'PUT', { ...values, ciam_client_secret: secret || null, ciam_ad_secret: adSecret || null }))
-          setSecret(''); setAdSecret(''); onDirtyChange?.(false); setMessage('บันทึกแล้ว มีผลกับคำขอใหม่ทันที')
+          setSecret(''); setAdSecret(''); setSecretVersion(v => v + 1); onDirtyChange?.(false); setMessage('บันทึกแล้ว มีผลกับคำขอใหม่ทันที')
         }) }}>
           <fieldset disabled={busy}><legend>การเชื่อมต่อ CIAM</legend><div className="ciam-form">
             <label>CIAM Base URL<input type="url" required value={cfg.ciam_base_url} onChange={e => setCfg({ ...cfg, ciam_base_url: e.target.value })} /></label>
             <label>Client ID<input value={cfg.ciam_client_id} onChange={e => setCfg({ ...cfg, ciam_client_id: e.target.value })} /></label>
-            <label>Client Secret<input type="password" autoComplete="new-password" value={secret} onChange={e => setSecret(e.target.value)} /><small>{cfg.client_secret_configured ? 'บันทึก Secret แล้ว — เว้นว่างเพื่อคงค่าเดิม' : 'ยังไม่ได้กำหนด Secret'}</small></label>
+            <CiamSecretField key={`client-${secretVersion}`} label="Client Secret" kind="client" configured={cfg.client_secret_configured} value={secret} onChange={value => { setSecret(value); onDirtyChange?.(true) }} />
             <label>Callback URL<input type="url" required value={cfg.ciam_redirect_uri} onChange={e => setCfg({ ...cfg, ciam_redirect_uri: e.target.value })} /></label>
             <label>อายุ Session (นาที)<input type="number" min={5} max={1440} required value={cfg.ciam_session_ttl_minutes} onChange={e => setCfg({ ...cfg, ciam_session_ttl_minutes: Number(e.target.value) })} /></label>
             <label>SSO<select value={String(cfg.ciam_sso_enabled)} onChange={e => setCfg({ ...cfg, ciam_sso_enabled: e.target.value === 'true' })}><option value="false">ปิด</option><option value="true">เปิด</option></select></label>
             <label>AD Gateway URL<input type="url" required value={cfg.ciam_ad_gateway_url ?? ''} onChange={e => setCfg({ ...cfg, ciam_ad_gateway_url: e.target.value })} /></label>
             <label>AD App ID<input required value={cfg.ciam_ad_app_id ?? ''} onChange={e => setCfg({ ...cfg, ciam_ad_app_id: e.target.value })} /></label>
-            <label>AD Secret<input type="password" autoComplete="new-password" value={adSecret} onChange={e => setAdSecret(e.target.value)} /><small>{cfg.ad_secret_configured ? 'บันทึก AD Secret แล้ว — เว้นว่างเพื่อคงค่าเดิม' : 'ยังไม่ได้กำหนด AD Secret'}</small></label>
+            <CiamSecretField key={`ad-${secretVersion}`} label="AD Secret" kind="ad" configured={cfg.ad_secret_configured} value={adSecret} onChange={value => { setAdSecret(value); onDirtyChange?.(true) }} />
           </div><div className="ciam-actions"><button type="submit">บันทึก CIAM</button>
           <button type="button" onClick={() => void run(async () => {
             const result = await authRequest<{ message: string }>('/api/settings/ciam-sso/test-connection', 'POST')

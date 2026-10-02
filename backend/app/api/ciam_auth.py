@@ -290,3 +290,14 @@ def bind_ad(user_id: str, payload: AdBinding, session: Db, actor: Admin):
 def ad_login(payload: LocalLogin, request: Request, response: Response, session: Db):
     response.headers["Cache-Control"] = "no-store"
     return ad_auth.login(session, request, response, payload.username, payload.password)
+
+
+@router.post("/api/settings/ciam-sso/secrets/{kind}/reveal")
+def reveal_secret(kind: Literal["client", "ad"], response: Response, session: Db, actor: Admin):
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    key = "ciam_client_secret" if kind == "client" else "ciam_ad_secret"
+    cfg = ciam.config(session, secret=kind == "client", ad_secret=kind == "ad")
+    ciam.audit(session, "secret_revealed", actor, {"key": key})
+    session.commit()
+    return {"value": cfg[key]}

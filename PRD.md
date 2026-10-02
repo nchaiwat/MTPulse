@@ -1663,3 +1663,7 @@ Owner approved implementation after main synchronization (a242b52).
 - Admin binds a unique, normalized AD sAMAccountName to an existing CIAM user. No automatic username/email linking or new AD account provisioning. Inherit that user's role/status and fixed session lifetime.
 - Keep gateway URL/app ID/encrypted secret in Global Settings. Never persist/log AD passwords or send example ABCDE as a real secret.
 - Disabling emergency mode, changing gateway settings or removing/changing a binding revokes AD sessions. HTTPS for browser-to-MTPulse remains required.
+
+## CIAM secret display — 2026-10-02
+
+Owner requested saved Client Secret and AD Secret to show ******** rather than empty inputs, and an eye control to view the actual saved value. Restrict on-demand reveal to authenticated Admin with CSRF and audit without logging the value. Normal settings GET remains redacted; reveal uses a separate no-store POST. Separate edit action preserves the saved secret when untouched; never submit mask text.
