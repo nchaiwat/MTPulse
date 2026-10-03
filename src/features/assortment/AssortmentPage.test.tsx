@@ -124,3 +124,13 @@ it('viewer can read but has no mapping or plan mutation controls', async () => {
     screen.queryByRole('button', { name: 'เพิ่มแผน' }),
   ).not.toBeInTheDocument()
 })
+it('blocks editing immediately when refreshing the same report', async () => {
+  render(<AssortmentPage onDirtyChange={() => {}} />)
+  const button = await screen.findByRole('button', {
+    name: 'Forecast TWD ประตูขาว',
+  })
+  await waitFor(() => expect(button).toBeEnabled())
+  fireEvent.click(screen.getByRole('button', { name: 'รีเฟรช' }))
+  expect(button).toBeDisabled()
+  await waitFor(() => expect(button).toBeEnabled())
+})

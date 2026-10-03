@@ -1051,3 +1051,10 @@ QA scripts/screenshots are ignored under .tmp/qa. No original NAS/workbook modif
 Rollback baseline 4dca977; additive schema can remain with old code. Production import,
 CIAM Agent activation and business-data correction are not part of this release.
 Primary and other worktree modifications/untracked artifacts preserved; not fully audited.
+
+Staging follow-up: PostgreSQL 17 fresh migration and real authenticated HTTP passed:
+Net=3, Gross=5, latest Stock=9 (2026-01-02); concurrent writes return 200/409, plan
+copy isolated, zero/blank Excel preserved, eight actor-attributed audit entries. Browser
+save/reopen uncovered a 200ms same-query refresh window: DB was saved but the editor
+could reopen its stale snapshot. Added failing regression, then track loaded revision
+and block editor/export until the latest refresh completes. Focused frontend 4 passed.

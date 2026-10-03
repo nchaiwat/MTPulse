@@ -28,7 +28,8 @@ export function AssortmentPage({
       pageSize: 25,
     }),
     [report, setReport] = useState<Report | null>(null),
-    [loadedQuery, setLoadedQuery] = useState('')
+    [loadedQuery, setLoadedQuery] = useState(''),
+    [loadedRevision, setLoadedRevision] = useState(-1)
   const [year, setYear] = useState(2027),
     [planId, setPlanId] = useState(''),
     [mt, setMt] = useState(''),
@@ -113,6 +114,7 @@ export function AssortmentPage({
           if (alive) {
             setReport(v)
             setLoadedQuery(query)
+            setLoadedRevision(revision)
             if (v.total > 0 && (page - 1) * v.pageSize >= v.total) setPage(1)
           }
         })
@@ -172,7 +174,8 @@ export function AssortmentPage({
       refresh()
     })
   }
-  const reportLoading = loading || loadedQuery !== query
+  const reportLoading =
+    loading || loadedQuery !== query || loadedRevision !== revision
   const selected = report?.mts || [],
     offset = (details ? 7 * 64 : 0) + 44
   const identity = (base: BaseItem, index: number) => (
