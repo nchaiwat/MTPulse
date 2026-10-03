@@ -2295,3 +2295,77 @@ Status: owner confirmed the PRD and additive database scope. Continue the existi
    cleanup. Keep this separate from settings-save payload and User Management.
 5. Run focused/full regression, lint/build and responsive checks; update runbook
    and HANDOFF. Test integration with fixtures, not guessed real AD credentials.
+
+## Mode C implementation plan — 2026-10-02 draft
+
+Status: owner authorized Mode C; repository inspection/worktree preparation complete.
+Protocol and account-policy decisions above remain open; no implementation code yet.
+
+1. Verify Central IAM Group D against its actual implementation. Record sanitized
+   request/response fixtures and an explicit failure/retry/ack/ordering contract.
+   Do not use illustrative credentials or claim example command handlers work.
+2. Add regression/contract tests first. Separate fixtures/test DB from production.
+3. Add dedicated Agent settings service/API using existing encryption and Admin/CSRF
+   controls. Reuse CIAM base URL/client only as agreed by actual registration; never
+   assume the example mtpulse-spoke-client is the installed MTPulse-spoke-client.
+   Do not route Agent-only edits through ciam.save_config: that clears SsoAttempt and
+   may revoke AD sessions. Settings must update the running Agent without restart.
+4. Draft and review additive persistence migration once command semantics are known:
+   durable command/result journal, cycle/sync status and ownership/lease as needed.
+   Reuse existing auth_users/auth_sessions/system_settings/transaction_logs tables;
+   no mutation of ModernTrade tables and no raw payload/secret persistence.
+5. Implement a separate backend app.ciam_agent process and narrowly scoped services
+   for protocol transport, inventory and command application. Extract only the shared
+   account-status operation needed to preserve row locks and last-admin protection;
+   do not invoke an HTTP Admin handler with invented credentials. Transactional tests
+   must cover simultaneous login/session issuance and remote account revocation.
+6. Add Outbound Agent panel under existing Central IAM / AD, with configured state,
+   last attempt/success/full-sync, next scheduled cycle, pending acknowledgements and
+   sanitized failure. Add explicit Agent event descriptions in Transaction Logs.
+7. Add separate Docker Compose Agent service, no published ports; use API runtime,
+   DB/encryption infrastructure and a service-specific entrypoint. Never insert this
+   loop into import worker.run_forever, which synchronously processes long imports.
+8. Focused tests then full backend/frontend regression, lint/build, 375/768/1024/1440
+   visual/keyboard checks; isolated PostgreSQL migration and fake-CIAM contract smoke.
+9. Review diff, document evidence/limitations, create PR against CIAM integration base.
+   Verify staging before merge. Production rollout requires explicit approval, verified
+   backup, identified immutable release and health/API/seven-MT smoke. Rollback stops
+   Agent first and restores prior API/Web while retaining additive history tables.
+
+Test matrix: response loss after commit, restart before acknowledgement, duplicate and
+conflicting IDs, stale/out-of-order enable/disable, invalid action/account, disabled AD
+and SSO users, Local Admin protection, last admin, concurrent local edit/login, gateway
+failure/time skew, credential rotation, failed full sync, daily/change scheduling,
+agent replica exclusion, secret redaction and accurate actor/target audit.
+
+Dependencies: existing Python/FastAPI/SQLAlchemy/httpx/cryptography/PostgreSQL and
+React/TypeScript; no new broker, public tunnel, CA VM or import-worker redesign.
+Concrete schema/API names and command state transitions remain draft pending contract.
+
+
+### Contract-source clarification
+Use v2.4.0 as the implementation contract per owner response. The exact deployed
+provider implementation is unavailable. Tests must distinguish documented behavior
+from local defensive handling and later real integration acceptance. Lack of provider
+source alone is not a blocker. Account reactivation precedence remains a blocking
+business-rule question for command mutation implementation.
+
+
+### Approved policy and implemented contract interpretation
+- Owner confirmed CIAM ENABLE overrides ordinary local disables; preserve emergency
+  account/last active Admin guards, role and AD binding. No implementation approval pending.
+- Persist inbox plus immutable command identity/result before acknowledging delivery.
+  HTTP 200 ACKNOWLEDGED with matching app_code is interpreted as acceptance of results
+  sent in that request (the document defines no per-result acknowledgement). Retain
+  journal permanently; duplicate incoming commands requeue the same outcome.
+- Commands are processed by issued_at; older/equal successful timestamps cannot revert
+  newer state. Conflicting IDs/malformed batches are rejected, unknown commands/users
+  get explicit failure, not account creation. Future timestamps beyond five minutes fail.
+- Heartbeat uses documented fixed 120 seconds; daily/change-triggered full sync. Provider
+  next_heartbeat_seconds is not used to silently change the documented local schedule.
+- Dedicated M2M key in settings (may be provisioned by CIAM as the allowed Client Secret);
+  share current saved CIAM URL/client ID without guessing a registration identity.
+- New additive migration bc2637e8f901 creates ciam_agent_state and ciam_agent_commands.
+  Agent defaults off. PostgreSQL session advisory lock covers each cycle across commits.
+- Real CIAM endpoint compatibility, FULL_SYNC null department acceptance and degraded
+  status handling remain integration checks; no production account inventory transmitted.

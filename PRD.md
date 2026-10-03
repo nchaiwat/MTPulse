@@ -1700,3 +1700,67 @@ Owner chose option 1: test AD credentials even before an MTPulse account exists,
 then report MTPulse account/active/AD-permission status separately.
 This diagnostic never grants access or bypasses actual login authorization.
 No schema migration is expected. Production deployment needs explicit authorization.
+
+## Mode C outbound agent — 2026-10-02, implementation authorized; protocol discovery pending
+
+Owner authorized continuing the assessed Mode C work. Baseline: deployed application
+1d26186 and handoff 05a2339, in isolated codex/ciam-mode-c worktree. Existing Mode B
+SSO, always-available per-account AD and protected Local Admin remain the baseline.
+Source: owner-supplied enterprise specification v2.4.0, Group D. Examples are guidance,
+not verified evidence of the deployed Central IAM command contract.
+
+### Outcome and scope
+- Dedicated outbound-only Agent reports heartbeat, pushes account inventory, receives
+  DISABLE_USER / ENABLE_USER commands and durably reports actual local outcomes.
+- Agent configuration/status resides in System Setting, Central IAM / AD. Use encrypted
+  runtime database settings and authenticated Admin controls. No inbound public API.
+- Normal heartbeat approximately 120 seconds; full sync daily and after account changes,
+  subject to verified CIAM contract. Preserve sync progress across restart.
+- Preserve existing role assignments and AD bindings. Disabling a managed account must
+  invalidate all its local sessions, including SSO and AD. Enabling never restores old
+  sessions. Existing inactive-account guards continue applying on every API request.
+- Protect emergency Local Admin from remote disable; its inventory representation and
+  policy on re-enabling a locally disabled user require explicit owner resolution.
+- Record command reference, verified source, target, before/after state, timestamps,
+  session revocations, result and acknowledgement state. Do not infer a human CIAM
+  administrator where the protocol supplies only system identity.
+- Historical audit records and all ModernTrade data/workflows remain unchanged.
+
+### Reliability and acceptance
+- Command processing must survive restart/network failure without losing results.
+  Duplicate command IDs must not repeat mutation; same ID/different content is rejected.
+  Ordering/expiry/ack semantics must be verified with CIAM before execution code.
+- User mutation, session revocation, command result and audit commit atomically.
+- One active agent cycle at a time across replicas; bounded timeout/retry and payloads.
+- Distinguish agent connectivity from actual web/API health; never report HEALTHY solely
+  because the agent process is alive. Internet outage does not itself disable local users.
+- No credential or raw provider response logging; UI reports actionable sanitized errors.
+- Existing authentication and seven MT regressions plus isolated PostgreSQL tests pass.
+
+### Open decisions (not assumed)
+1. Locate authoritative CIAM heartbeat implementation/API contract (question pending).
+2. Verify M2M key/client registration, response acknowledgement guarantees, retries,
+   per-user ordering, expiry, commands for unknown users and issuer/identity matching.
+3. Determine precedence of remote ENABLE against a local administrative disable.
+4. Confirm directory fields, missing department handling and emergency-account inventory.
+5. Determine whether CIAM supplies initiator/correlation fields for complete audit.
+
+Production activation/deployment and migrations require separate explicit authorization.
+No Mode C outbound requests or account exports will occur during discovery.
+
+
+### Owner clarification: contract source
+The owner confirmed the supplied v2.4.0 file is the available contract. Do not block on
+access to CIAM source. Build against that document and simulated CIAM responses;
+label real CIAM interoperability as unverified until staged acceptance. Pending owner
+question: whether remote ENABLE can override a local Admin disable. No answer yet.
+Protocol omissions will be explicitly documented rather than invented as CIAM guarantees.
+
+
+### Owner policy finalized / implementation in progress
+Owner chose option 2 and explicitly confirmed implementation: Central IAM can re-enable
+an ordinary account even if a MTPulse Admin disabled it locally. Emergency Local Admin
+remains protected. No additional plan confirmation is pending. Initial implementation
+uses all local account inventory fields from the specification; department is null
+because MTPulse does not store it. Local Admin is included in inventory for reconciliation
+but rejects remote mutations. Roles remain viewer/operator/admin, not example PU Staff.

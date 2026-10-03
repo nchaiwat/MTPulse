@@ -288,3 +288,42 @@ authentication/lockout policy. No background retries and no database migration.
 CFG-03 distinguishes the authenticated Admin actor from `tested_username`. `gateway_status=success` means the gateway verified the submitted account; `mtpulse_status=ready` means the account is eligible locally. The diagnostic never issues a login session. Historical summaries use stored target/outcome metadata without rewriting records.
 
 New audit context includes request method/path, peer IP and IP provenance. The CIAM Compose API config trusts `X-Real-IP` only from the internal `web` service resolved through Docker DNS; nginx must overwrite that header with `$remote_addr`. Do not point `MTPULSE_AUDIT_PROXY_HOST` to an untrusted service or expose API directly as a substitute. DNS failure/untrusted peer/invalid header falls back to observed peer. Historical records remain labelled server-observed and missing destinations stay unknown. Source IP may represent NAT/upstream proxy, not a uniquely identified workstation.
+
+
+## Mode C outbound agent (candidate; not deployed)
+
+Apply additive migration bc2637e8f901 before running the new API/Agent. Agent runs as
+its own Compose ciam-agent service with no published ports; do not attach it to the
+Import Worker loop. Default enabled=false prevents outbound calls until Admin saves
+registered App Code and Agent API Key in System Setting > Central IAM / AD. Uses the
+saved CIAM Base URL and Client ID verbatim. Key is encrypted and normal GET is redacted;
+on-demand reveal is Admin-only, CSRF-protected, no-store and audited. Agent-only saves
+do not invalidate ongoing SSO or AD sessions.
+
+Protocol: outbound HTTPS /api/v1/agent/heartbeat, fixed 120 seconds, timeout 15 seconds,
+no redirects, response limit 2 MB/100 commands. Inventory is pushed initially, daily,
+and after account changes. All local accounts are included (department=null); Local
+Admin remains remotely protected. No password/hash/token is exported. Local API health
+is checked before reporting HEALTHY; failures report DEGRADED, which needs real CIAM
+contract acceptance. An Agent connectivity failure alone does not revoke local users.
+
+The v2.4 document supplies no per-result ACK, expiry or sequence. Candidate interprets
+matching ACKNOWLEDGED as acceptance of submitted results; retained durable journal
+supports retries. It rejects conflicting command IDs, newer-than-five-minutes future
+commands and stale/equal timestamps after a successful command. Received commands are
+persisted before execution and resumed after restart. Duplicate command outcomes are
+resent without repeated mutation. If response delivery is lost before local receipt,
+CIAM must redeliver unacknowledged commands; verify this behavior during integration.
+
+CIAM can re-enable locally disabled ordinary users per owner policy. Disable deletes
+all sessions; enable never restores them or changes role/AD binding. Local Admin and
+last active Admin are protected. Commands for missing/ambiguous users fail. Audit names
+system:ciam and the actual target; missing human initiator is explicitly unknown.
+
+Verification: simulated provider tests plus isolated PostgreSQL migration/cycle/lock
+checks before release; real CIAM acceptance is separate. Production rollout requires
+explicit approval, fresh verified pg_dump, migration/head and immutable API/Web/Agent
+images. Preserve compatible import Worker. Rollback disables/stops Agent first, restores
+1d26186 API/Web, and retains additive tables/history; do not downgrade/drop audit data.
+Commands already applied to users are not undone by code rollback. Any corrective
+account changes require explicit review and an audited operator action.

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { CiamAgentPanel } from './CiamAgentPanel'
 import { AdGatewayTestPanel } from './AdGatewayTestPanel'
 import { CiamSecretField } from './CiamSecretField'
 import { authRequest, setSessionToken, type LoginSession, type AuthUser } from '../auth/authApi'
@@ -51,7 +52,7 @@ export function CiamSettingsPanel({ mode = 'ciam', onDirtyChange }: { mode?: 'ci
   }, [])
   return <section className="ciam-panel" aria-labelledby="ciam-heading">
     <h2 id="ciam-heading">{mode === 'ciam' ? 'Central IAM / AD' : 'User Management'}</h2>
-    <p>การเข้าสู่ระบบและสิทธิ์ผู้ใช้ · Mode B · ผู้ใช้ใหม่เป็น Viewer</p>
+    <p>การเข้าสู่ระบบและสิทธิ์ผู้ใช้ · SSO / Outbound Agent · ผู้ใช้ใหม่เป็น Viewer</p>
     <>
       {busy && <p role="status">กำลังดำเนินการ…</p>}
       {error && <p role="alert" className="auth-error">{error}</p>}
@@ -82,7 +83,8 @@ export function CiamSettingsPanel({ mode = 'ciam', onDirtyChange }: { mode?: 'ci
           })}>ทดสอบการเชื่อมต่อที่บันทึกไว้</button></div></fieldset>
         </form>
         <AdGatewayTestPanel disabled={busy} />
-        <p>Session ที่ออกใหม่ใช้เวลาที่ตั้งไว้ การระงับผู้ใช้จาก CIAM จะมีผลเมื่อยืนยันตัวตนใหม่ ส่วนการปิดบัญชีที่นี่มีผลทันที</p>
+        <CiamAgentPanel onDirtyChange={value => mark('agent', value)} />
+        <p>Session ที่ออกใหม่ใช้เวลาที่ตั้งไว้ เมื่อเปิด Mode C การระงับจาก CIAM มีผลหลัง Agent ประมวลผล ส่วนการปิดบัญชีที่นี่มีผลทันที</p>
         <fieldset disabled={busy}><legend>โหมดฉุกเฉิน: {cfg.ciam_break_glass_active ? 'เปิด' : 'ปิด'}</legend>
           <label className="ciam-reason">เหตุผล<input value={reason} maxLength={300} onChange={e => { setReason(e.target.value); mark('reason', true) }} /></label>
           <button type="button" disabled={reason.trim().length < 5} onClick={() => void run(async () => {
