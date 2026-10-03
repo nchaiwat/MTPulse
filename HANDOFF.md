@@ -1058,3 +1058,11 @@ copy isolated, zero/blank Excel preserved, eight actor-attributed audit entries.
 save/reopen uncovered a 200ms same-query refresh window: DB was saved but the editor
 could reopen its stale snapshot. Added failing regression, then track loaded revision
 and block editor/export until the latest refresh completes. Focused frontend 4 passed.
+
+Assortment release validation: final frontend 167 passed / 37 files; lint and production
+build passed (existing >500kB bundle warning; 547.63kB). Real Linux Web image 050e7b7,
+API image 82ed06c (backend unchanged in 050e7b7), isolated PostgreSQL 17 schema head
+cd3748f901a2. Authenticated browser through SSH tunnel saved Forecast, refreshed/reopened
+it and exported XLSX with no page errors. Same-query refresh regression is resolved.
+Read-only production smoke follows deployment. No reference workbook or confirmed
+memberships are seeded: first use Admin > Base Item / Mapping; then create Forecast plan.
