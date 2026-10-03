@@ -1,3 +1,4 @@
+import { useIsAdmin } from '../auth/permissions'
 import { useEffect, useRef, useState } from 'react'
 import { Building2, CalendarDays, Download, FileSpreadsheet, PackageSearch, Rows3, Upload } from 'lucide-react'
 import {
@@ -33,6 +34,7 @@ export function TwdSettingsPage({
   mtCode?: ActiveModernTradeCode
   mtName?: string
 }) {
+  const isAdmin = useIsAdmin()
   const [settings, setSettings] = useState(defaultSettings)
   const [isLoading, setIsLoading] = useState(true)
   const [updating, setUpdating] = useState<'item' | 'branch' | null>(null)
@@ -207,7 +209,7 @@ export function TwdSettingsPage({
         </div>
         {mappingMessage && <div className="settings-message" data-tone={mappingMessage.tone === 'error' ? 'error' : undefined} role="status">{mappingMessage.text}</div>}
       </section>
-      <SkuBackfillPanel key={mappingRevision} mtCode={mtCode} />
+      {isAdmin && <SkuBackfillPanel key={mappingRevision} mtCode={mtCode} />}
       <section className="report-display-settings" aria-labelledby="report-display-heading">
         <header>
           <span className="setting-icon"><Rows3 size={19} aria-hidden="true" /></span>
@@ -218,7 +220,7 @@ export function TwdSettingsPage({
           </div>
           <div className="report-display-actions">
             <label htmlFor="report-page-size">SKU ต่อหน้า</label>
-            <select id="report-page-size" aria-label="จำนวน SKU ต่อหน้า" value={settings.reportPageSize} disabled={isLoading || isPageSizeUpdating} onChange={(event) => void handlePageSizeChange(Number(event.target.value))}>
+            <select id="report-page-size" aria-label="จำนวน SKU ต่อหน้า" value={settings.reportPageSize} disabled={!isAdmin || isLoading || isPageSizeUpdating} onChange={(event) => void handlePageSizeChange(Number(event.target.value))}>
               <option value={0}>ทั้งหมด</option>
               {[25, 50, 100].map((size) => <option key={size} value={size}>{size} SKU</option>)}
             </select>
@@ -264,7 +266,7 @@ export function TwdSettingsPage({
               role="switch"
               aria-checked={settings.showUnmatchedBranches}
               aria-label="แสดง Branch Unmatch"
-              disabled={isLoading || updating !== null}
+              disabled={!isAdmin || isLoading || updating !== null}
               onClick={() => void changeSetting('branch', !settings.showUnmatchedBranches)}
             >
               <span aria-hidden="true"><i /></span>
@@ -285,7 +287,7 @@ export function TwdSettingsPage({
               role="switch"
               aria-checked={settings.showUnmatchedItems}
               aria-label="แสดง Item Unmatch"
-              disabled={isLoading || updating !== null}
+              disabled={!isAdmin || isLoading || updating !== null}
               onClick={() => void changeSetting('item', !settings.showUnmatchedItems)}
             >
               <span aria-hidden="true"><i /></span>

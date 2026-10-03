@@ -1,3 +1,4 @@
+import { apiFetch } from '../auth/authApi'
 import type { SaleOutFilters, SaleOutReport } from './types'
 
 export async function fetchSaleOutReport(filters: SaleOutFilters, signal?: AbortSignal): Promise<SaleOutReport> {
@@ -11,7 +12,7 @@ export async function fetchSaleOutReport(filters: SaleOutFilters, signal?: Abort
   if (filters.completeness) params.set('completeness', filters.completeness)
   filters.mtCodes?.forEach((code) => params.append('mt_code', code))
 
-  const response = await fetch(`/api/sale-out?${params.toString()}`, { signal })
+  const response = await apiFetch(`/api/sale-out?${params.toString()}`, { signal })
   if (!response.ok) {
     let message = 'ไม่สามารถโหลดรายงาน Sale Out ได้'
     try {

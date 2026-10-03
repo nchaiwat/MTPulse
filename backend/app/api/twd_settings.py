@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import distinct, func, select
 from sqlalchemy.orm import Session
 
+from app.auth import actor_from_session
 from app.database import get_session
 from app.models import (
     AuditEvent,
@@ -141,7 +142,7 @@ def update_unmatched_visibility(
             entity_type="modern_trade",
             entity_id=modern_trade.code,
             action="update_unmatched_visibility",
-            actor="twd-settings",
+            actor=actor_from_session(session, "twd-settings"),
             before_json=json.dumps(before),
             after_json=json.dumps(after),
         )
@@ -168,7 +169,7 @@ def update_modern_trade_visibility(
             entity_type="modern_trade",
             entity_id=modern_trade.code,
             action="update_unmatched_visibility",
-            actor=f"{modern_trade.code.lower()}-settings",
+            actor=actor_from_session(session, f"{modern_trade.code.lower()}-settings"),
             before_json=json.dumps(before),
             after_json=json.dumps(
                 {
@@ -200,7 +201,7 @@ def update_report_page_size(
             entity_type="modern_trade",
             entity_id=modern_trade.code,
             action="update_report_page_size",
-            actor="twd-settings",
+            actor=actor_from_session(session, "twd-settings"),
             before_json=json.dumps(before),
             after_json=json.dumps({"report_page_size": modern_trade.report_page_size}),
         )
@@ -227,7 +228,7 @@ def update_modern_trade_report_page_size(
             entity_type="modern_trade",
             entity_id=modern_trade.code,
             action="update_report_page_size",
-            actor=f"{modern_trade.code.lower()}-settings",
+            actor=actor_from_session(session, f"{modern_trade.code.lower()}-settings"),
             before_json=json.dumps(before),
             after_json=json.dumps({"report_page_size": modern_trade.report_page_size}),
         )

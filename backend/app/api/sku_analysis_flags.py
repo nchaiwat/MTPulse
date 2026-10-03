@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.auth import actor_from_session
 from app.database import get_session
 from app.models import AuditEvent, ItemMapping, ModernTrade, SkuAnalysisFlag, SkuInterest
 
@@ -80,7 +81,7 @@ def update_sku_analysis_flag(
         analysis_flag = SkuAnalysisFlag(
             modern_trade_id=modern_trade.id,
             source_sku=normalized_sku,
-            updated_by="performance-user",
+            updated_by=actor_from_session(session, "performance-user"),
         )
         session.add(analysis_flag)
         session.flush()
@@ -93,7 +94,7 @@ def update_sku_analysis_flag(
         analysis_flag.is_showroom = request.enabled
     else:
         analysis_flag.is_promotion = request.enabled
-    analysis_flag.updated_by = "performance-user"
+    analysis_flag.updated_by = actor_from_session(session, "performance-user")
     after = {
         "isSho": analysis_flag.is_showroom,
         "isPro": analysis_flag.is_promotion,
@@ -104,7 +105,7 @@ def update_sku_analysis_flag(
                 entity_type="sku_analysis_flag",
                 entity_id=f"{normalized_mt_code}:{normalized_sku}",
                 action=f"set_{request.flag}",
-                actor="performance-user",
+                actor=actor_from_session(session, "performance-user"),
                 before_json=json.dumps(before),
                 after_json=json.dumps(after),
             )

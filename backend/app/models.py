@@ -588,3 +588,66 @@ class MonitoringSnapshot(Base):
     host_disk_total_bytes: Mapped[int | None] = mapped_column(BigInteger)
     host_uptime_seconds: Mapped[int | None] = mapped_column(BigInteger)
     worker_heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AuthUser(Base):
+    __tablename__ = "auth_users"
+    __table_args__ = (
+        UniqueConstraint("issuer", "subject", name="uq_auth_identity"),
+        CheckConstraint("role IN ('viewer','operator','admin')", name="ck_auth_role"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    issuer: Mapped[str] = mapped_column(String(300))
+    subject: Mapped[str] = mapped_column(String(255))
+    username: Mapped[str] = mapped_column(String(200))
+    full_name: Mapped[str] = mapped_column(String(300))
+    email: Mapped[str | None] = mapped_column(String(300))
+    role: Mapped[str] = mapped_column(String(20), default="viewer")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    ad_username: Mapped[str | None] = mapped_column(String(200), unique=True, index=True)
+    password_hash: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AuthSession(Base):
+    __tablename__ = "auth_sessions"
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("auth_users.id"), index=True)
+    provider: Mapped[str] = mapped_column(String(10))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class SsoAttempt(Base):
+    __tablename__ = "auth_sso_attempts"
+    state_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    binding_hash: Mapped[str] = mapped_column(String(64))
+    verifier: Mapped[str] = mapped_column(Text)
+    nonce: Mapped[str] = mapped_column(String(100))
+    config_digest: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class AuthRateLimit(Base):
+    __tablename__ = "auth_rate_limits"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    attempts: Mapped[int] = mapped_column(Integer)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class TransactionLog(Base):
+    __tablename__ = "transaction_logs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    event_code: Mapped[str] = mapped_column(String(50))
+    category: Mapped[str] = mapped_column(String(50), index=True)
+    action: Mapped[str] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(20))
+    message: Mapped[str] = mapped_column(String(500))
+    details: Mapped[str | None] = mapped_column(Text)
+    records_count: Mapped[int] = mapped_column(Integer, default=0)
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    triggered_by: Mapped[str] = mapped_column(String(220))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )

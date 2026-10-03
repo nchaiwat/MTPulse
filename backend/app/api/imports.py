@@ -14,6 +14,7 @@ from smbprotocol.exceptions import SMBException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.auth import actor_from_session
 from app.database import get_session
 from app.importers.dh import DhFormatError, DhPairExtract, extract_dh_pair
 from app.importers.gh import GhExtract, GhFormatError, extract_gh_file
@@ -128,7 +129,7 @@ def _record(
             entity_type="data_import",
             entity_id=checksum[:100],
             action=action,
-            actor=actor,
+            actor=actor_from_session(session, actor),
             before_json=None,
             after_json=json.dumps(payload, ensure_ascii=False),
         )
@@ -482,7 +483,7 @@ def _record_fileshare_failure(
         filename=source.source_filename,
         data_date=(source.detected_data_date.isoformat() if source.detected_data_date else None),
         notification=delivery,
-        actor="fileshare-import",
+        actor=actor_from_session(session, "fileshare-import"),
     )
 
 
@@ -566,7 +567,7 @@ def preview_fileshare_import(
         message=duplicate_reason or "ตรวจสอบไฟล์จาก FileShare ผ่าน รอผู้ใช้ยืนยัน Import",
         filename=extract.source_filename,
         data_date=extract.data_date.isoformat(),
-        actor="fileshare-import",
+        actor=actor_from_session(session, "fileshare-import"),
     )
     return _preview(
         extract,
@@ -630,7 +631,7 @@ def _completed_import_response(
         data_date=batch.data_date.isoformat(),
         batch_id=batch.id,
         notification=delivery,
-        actor=actor,
+        actor=actor_from_session(session, actor),
     )
     try:
         capture_monitoring_snapshot(
@@ -707,7 +708,7 @@ def confirm_fileshare_import(
         session,
         batch,
         method_label="FileShare",
-        actor="fileshare-import",
+        actor=actor_from_session(session, "fileshare-import"),
         timings=timings,
     )
 
@@ -826,7 +827,8 @@ async def confirm_hp_mh_import(
         if pair.business_fingerprint != expected_fingerprint:
             raise ValueError("คู่ไฟล์เปลี่ยนจากรอบ Preview กรุณาตรวจสอบใหม่")
         import_started = perf_counter()
-        batches = import_hp_mh_pair(session, pair, actor="manual-upload")
+        batches = import_hp_mh_pair(session, pair,
+            actor=actor_from_session(session, "manual-upload"))
         import_finished = perf_counter()
         session.commit()
     except (HpMhFormatError, HpMhImportError, OSError, ValueError) as exc:
@@ -982,7 +984,7 @@ async def confirm_dh_import(
         batch = import_dh_pair(
             session,
             pair,
-            actor="manual-upload",
+            actor=actor_from_session(session, "manual-upload"),
             expected_fingerprint=expected_fingerprint,
         )
         import_finished = perf_counter()
@@ -1109,7 +1111,7 @@ async def confirm_hh_import(
         existing_batch = _hh_existing_batch(session, pair)
         replacing = existing_batch is not None
         import_started = perf_counter()
-        batch = import_hh_pair(session, pair, actor="manual-upload")
+        batch = import_hh_pair(session, pair, actor=actor_from_session(session, "manual-upload"))
         import_finished = perf_counter()
         session.commit()
     except (HhFormatError, HhImportError, OSError, ValueError) as exc:
@@ -1224,7 +1226,7 @@ async def confirm_gh_import(
         existing = _gh_existing_batch(session, extract)
         replacing = existing is not None
         import_started = perf_counter()
-        batch = import_gh_file(session, extract, actor="manual-upload")
+        batch = import_gh_file(session, extract, actor=actor_from_session(session, "manual-upload"))
         import_finished = perf_counter()
         session.commit()
     except (GhFormatError, GhImportError, OSError, ValueError) as exc:
@@ -1335,7 +1337,7 @@ async def confirm_ta_import(
         existing = _ta_existing_batch(session, extract)
         replacing = existing is not None
         import_started = perf_counter()
-        batch = import_ta_file(session, extract, actor="manual-upload")
+        batch = import_ta_file(session, extract, actor=actor_from_session(session, "manual-upload"))
         import_finished = perf_counter()
         session.commit()
     except (TaFormatError, TaImportError, OSError, ValueError) as exc:
@@ -1479,7 +1481,7 @@ async def confirm_import(
         session,
         batch,
         method_label="Manual Upload",
-        actor="manual-upload",
+        actor=actor_from_session(session, "manual-upload"),
         timings={
             "serverReadMs": round((read_finished - read_started) * 1000, 1),
             "parseMs": round((parse_finished - parse_started) * 1000, 1),

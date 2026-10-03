@@ -1,3 +1,4 @@
+import { useIsAdmin } from '../auth/permissions'
 import { useEffect, useState } from 'react'
 import { Building2, CalendarClock, Globe2 } from 'lucide-react'
 import { FileShareSettingsCard } from './FileShareSettingsCard'
@@ -35,7 +36,9 @@ const statusLabel = {
 }
 
 export function SettingsPage({ focusCoverageKey = 0 }: { focusCoverageKey?: number }) {
-  const [activeScope, setActiveScope] = useState<SettingsScope>('global')
+  const isAdmin = useIsAdmin()
+  const visibleScopes = isAdmin ? scopes : scopes.filter(scope => scope.code !== 'global')
+  const [activeScope, setActiveScope] = useState<SettingsScope>(isAdmin ? 'global' : 'TWD')
   const [dirtyScope, setDirtyScope] = useState<SettingsScope | null>(null)
   const current = scopes.find((scope) => scope.code === activeScope) ?? scopes[0]
 
@@ -68,7 +71,7 @@ export function SettingsPage({ focusCoverageKey = 0 }: { focusCoverageKey?: numb
       <div className="settings-control-intro">
         <div>
           <span className="eyebrow">Administration</span>
-          <h1>การตั้งค่าระบบ</h1>
+          <h1>ModernTrade Setting</h1>
           <p>ค่ากลางของระบบและค่าที่มีผลเฉพาะแต่ละ Modern Trade</p>
         </div>
         <div className="settings-scope-context" aria-label="ขอบเขตการตั้งค่าปัจจุบัน">
@@ -88,7 +91,7 @@ export function SettingsPage({ focusCoverageKey = 0 }: { focusCoverageKey?: numb
       </div>
 
       <nav className="settings-scope-tabs" role="tablist" aria-label="Settings scope">
-        {scopes.map((scope) => (
+        {visibleScopes.map((scope) => (
           <button
             key={scope.code}
             id={`settings-tab-${scope.code}`}
@@ -101,16 +104,16 @@ export function SettingsPage({ focusCoverageKey = 0 }: { focusCoverageKey?: numb
             data-status={scope.status}
             onClick={() => selectScope(scope.code)}
             onKeyDown={(event) => {
-              const currentIndex = scopes.findIndex((item) => item.code === scope.code)
+              const currentIndex = visibleScopes.findIndex((item) => item.code === scope.code)
               if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
                 event.preventDefault()
                 const step = event.key === 'ArrowRight' ? 1 : -1
-                const nextIndex = (currentIndex + step + scopes.length) % scopes.length
-                moveScopeFocus(scopes[nextIndex].code)
+                const nextIndex = (currentIndex + step + visibleScopes.length) % visibleScopes.length
+                moveScopeFocus(visibleScopes[nextIndex].code)
               }
               if (event.key === 'Home' || event.key === 'End') {
                 event.preventDefault()
-                moveScopeFocus(event.key === 'Home' ? scopes[0].code : scopes[scopes.length - 1].code)
+                moveScopeFocus(event.key === 'Home' ? visibleScopes[0].code : visibleScopes[visibleScopes.length - 1].code)
               }
             }}
           >
@@ -129,35 +132,35 @@ export function SettingsPage({ focusCoverageKey = 0 }: { focusCoverageKey?: numb
 
         {activeScope === 'TWD' && (
           <>
-            <FileShareSettingsCard view="profile" profileCode="TWD" showSaveAction onDirtyChange={(dirty) => setDirtyScope(dirty ? 'TWD' : null)} />
+            {isAdmin && <FileShareSettingsCard view="profile" profileCode="TWD" showSaveAction onDirtyChange={(dirty) => setDirtyScope(dirty ? 'TWD' : null)} />}
             <TwdSettingsPage embedded />
           </>
         )}
 
         {(activeScope === 'HP' || activeScope === 'MH') && (
           <>
-            <FileShareSettingsCard view="profile" profileCode={activeScope} showSaveAction onDirtyChange={(dirty) => setDirtyScope(dirty ? activeScope : null)} />
+            {isAdmin && <FileShareSettingsCard view="profile" profileCode={activeScope} showSaveAction onDirtyChange={(dirty) => setDirtyScope(dirty ? activeScope : null)} />}
             <TwdSettingsPage embedded mtCode={activeScope} mtName={activeScope === 'HP' ? 'HomePro' : 'MegaHome'} />
           </>
         )}
 
         {activeScope === 'HH' && (
           <>
-            <FileShareSettingsCard view="profile" profileCode="HH" showSaveAction onDirtyChange={(dirty) => setDirtyScope(dirty ? 'HH' : null)} />
+            {isAdmin && <FileShareSettingsCard view="profile" profileCode="HH" showSaveAction onDirtyChange={(dirty) => setDirtyScope(dirty ? 'HH' : null)} />}
             <TwdSettingsPage embedded mtCode="HH" mtName="HomeHub" />
           </>
         )}
 
         {activeScope === 'GH' && (
           <>
-            <FileShareSettingsCard view="profile" profileCode="GH" showSaveAction onDirtyChange={(dirty) => setDirtyScope(dirty ? 'GH' : null)} />
+            {isAdmin && <FileShareSettingsCard view="profile" profileCode="GH" showSaveAction onDirtyChange={(dirty) => setDirtyScope(dirty ? 'GH' : null)} />}
             <TwdSettingsPage embedded mtCode="GH" mtName="Global House" />
           </>
         )}
 
         {activeScope === 'DH' && (
           <>
-            <FileShareSettingsCard view="profile" profileCode="DH" showSaveAction onDirtyChange={(dirty) => setDirtyScope(dirty ? 'DH' : null)} />
+            {isAdmin && <FileShareSettingsCard view="profile" profileCode="DH" showSaveAction onDirtyChange={(dirty) => setDirtyScope(dirty ? 'DH' : null)} />}
             <DhPriceMasterPanel />
             <TwdSettingsPage embedded mtCode="DH" mtName="DoHome" />
           </>
@@ -165,7 +168,7 @@ export function SettingsPage({ focusCoverageKey = 0 }: { focusCoverageKey?: numb
 
         {activeScope === 'TA' && (
           <>
-            <FileShareSettingsCard view="profile" profileCode="TA" showSaveAction onDirtyChange={(dirty) => setDirtyScope(dirty ? 'TA' : null)} />
+            {isAdmin && <FileShareSettingsCard view="profile" profileCode="TA" showSaveAction onDirtyChange={(dirty) => setDirtyScope(dirty ? 'TA' : null)} />}
             <TwdSettingsPage embedded mtCode="TA" mtName="Thai-Aust" />
           </>
         )}

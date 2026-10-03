@@ -1,3 +1,4 @@
+import { apiFetch } from '../auth/authApi'
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
 
 export interface UnmatchedVisibility {
@@ -45,7 +46,7 @@ export async function fetchUnmatchedVisibility(
   mtCode = 'TWD',
   signal?: AbortSignal,
 ): Promise<UnmatchedVisibility> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${apiBaseUrl}${settingsPath(mtCode, 'unmatched-visibility')}`,
     { signal },
   )
@@ -57,7 +58,7 @@ export async function updateUnmatchedVisibility(
   settings: UnmatchedVisibility,
   mtCode = 'TWD',
 ): Promise<UnmatchedVisibility> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${apiBaseUrl}${settingsPath(mtCode, 'unmatched-visibility')}`,
     {
       method: 'PATCH',
@@ -74,7 +75,7 @@ export async function updateUnmatchedVisibility(
 
 export async function exportItemMappings(mtCode = 'TWD'): Promise<{ blob: Blob, filename: string }> {
   const query = mtCode === 'TWD' ? '' : `?mt_code=${encodeURIComponent(mtCode)}`
-  const response = await fetch(`${apiBaseUrl}/api/item-mappings/export${query}`)
+  const response = await apiFetch(`${apiBaseUrl}/api/item-mappings/export${query}`)
   if (!response.ok) throw new Error(await apiError(response, `Export API ตอบกลับ ${response.status}`))
   const disposition = response.headers.get('Content-Disposition') ?? ''
   const encodedFilename = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
@@ -88,7 +89,7 @@ export async function importItemMappings(file: File, mtCode = 'TWD'): Promise<It
   const body = new FormData()
   body.set('file', file)
   if (mtCode !== 'TWD') body.set('mt_code', mtCode)
-  const response = await fetch(`${apiBaseUrl}/api/item-mappings/import`, { method: 'POST', body })
+  const response = await apiFetch(`${apiBaseUrl}/api/item-mappings/import`, { method: 'POST', body })
   if (!response.ok) throw new Error(await apiError(response, `Import API ตอบกลับ ${response.status}`))
   return response.json() as Promise<ItemMappingImportReport>
 }
@@ -98,7 +99,7 @@ export async function downloadDataCoverage(
   year: number,
 ): Promise<{ blob: Blob, filename: string }> {
   const query = new URLSearchParams({ mt_code: mtCode, year: String(year) })
-  const response = await fetch(`${apiBaseUrl}/api/data-coverage/export?${query}`)
+  const response = await apiFetch(`${apiBaseUrl}/api/data-coverage/export?${query}`)
   if (!response.ok) throw new Error(await apiError(response, `Download API ตอบกลับ ${response.status}`))
   const disposition = response.headers.get('Content-Disposition') ?? ''
   const encodedFilename = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
@@ -112,7 +113,7 @@ export async function updateReportPageSize(
   reportPageSize: number,
   mtCode = 'TWD',
 ): Promise<{ reportPageSize: number }> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${apiBaseUrl}${settingsPath(mtCode, 'report-page-size')}`,
     {
       method: 'PATCH',

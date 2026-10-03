@@ -2230,3 +2230,68 @@ Phase 1 ยังไม่เปิด UI, ไม่เชื่อม productio
 - First implementation phase: tests + additive schema + workbook/domain repository
   โดยยังไม่เปิด UI/import route จริง
 - ต้องได้รับ Product Owner ยืนยันแผนนี้ก่อนเริ่ม Phase 1 coding
+
+
+## CIAM implementation — 2026-10-02
+
+Branch codex/ciam-login; separate worktree .tmp/ciam-login; base origin/main a242b52.
+1. Add isolated regression fixtures and additive user/session/login-attempt/rate-limit
+   schema. Keep business facts/imports and workers independent of browser sessions.
+2. Implement DB-backed configuration, encrypted secret, discovery/JWKS validation,
+   PKCE browser binding and single-use callback, fixed-lifetime server sessions,
+   role/deactivation management and redacted AuditEvent records.
+3. Protect every business API through a central default-deny authorization dependency;
+   retain explicit development mode for existing fixtures, never use it in CIAM rollout.
+4. Add Login/callback/session handling, shared authenticated fetch and settings/user
+   administration with existing tokens/components and keyboard-accessible controls.
+5. Run negative auth/security tests and full frontend/backend tests, lint, build,
+   migration checks on isolated DB and viewport checks when tooling permits.
+6. Supply setup/rollback runbook and PR. Production migration/deploy require separate
+   authorization and a newly verified backup; no CA installation in this task.
+
+Dependencies: existing FastAPI/SQLAlchemy/httpx/cryptography plus PyJWT for vetted RS256
+verification. No external session service. Read runtime settings from DB per request
+rather than stale process-local caches. Store only session hashes and encrypted PKCE.
+Do not store provider access/refresh tokens or AD passwords. Settings save invalidates
+pending logins; changing roles/status revokes user sessions. Tests use fake signed OIDC
+responses; live CIAM login must be reported separately from simulated integration.
+
+## AD emergency login implementation — 2026-10-02
+
+Owner confirmed workflow, LAN HTTP, unrestricted gateway group, and explicit Admin binding. Extend the existing CIAM feature worktree/branch.
+1. Regression tests for break-glass guard, explicit binding, strict v2 response, same role/status, secret redaction and session revocation.
+2. Add nullable unique AD username to auth_users with additive migration; admin binding endpoint and audit.
+3. Add encrypted gateway configuration and backend v2 authentication with bounded timeout, no redirects/proxy headers, throttling and no password persistence.
+4. Extend existing Login and Global Settings controls; preserve Local Admin access.
+5. Run focused and full tests/lint/build, inspect migration/diff and document real-gateway/TLS acceptance limits. Do not deploy until prerequisites are ready.
+
+## User Management and always-available AD — owner approved
+
+Admin creates MTPulse accounts before first CIAM login, assigns role/status and allows AD using matching sAMAccountName. AD is available alongside CIAM, independent of break-glass. CIAM auto-links matching usernames case-insensitively to an unlinked managed account, retaining role/status; never links Local Admin or reassigns an already bound issuer/subject. Unknown CIAM identities continue auto-provisioning as Viewer. Reuse nullable unique ad_username as the per-user AD permission; no schema migration. Test managed creation, duplicate prevention, disabled/AD-denied access, trusted CIAM linking and identity-conflict rejection before deployment.
+
+## System Setting separation and transaction logs — 2026-10-02 approved
+
+Status: owner confirmed the PRD and additive database scope. Continue the existing isolated CIAM feature worktree; current feature base 35b298a, deployed application 6971a73. Main remains untouched.
+
+1. Trace App navigation, existing SettingsPage and CiamSettingsPanel, role guards and dirty-form handling. Add failing navigation/permission/form-preservation tests before splitting presentation into the three System Setting tabs; retain ModernTrade settings and existing API contracts.
+2. Add TransactionLog model and additive Alembic migration after 9da415c6d7e8, with category and timestamp indexes per source specification. Add a single structured, allowlisted logging helper with event mapping; preserve existing audit_events and business audit paths. No destructive migration/backfill.
+3. Instrument actual CIAM callback, session issuance, AD/local login, settings/break-glass and user-management paths. Pass request context explicitly; respect configured proxy trust rather than reading arbitrary forwarded headers. Persist denied/failed events even when the request raises. Keep secrets and unverified claims out of logs. Regression-test the seven source event codes and current app-specific auth events.
+4. Add Admin-only paginated read API and Transaction Logs tab with server-side filters and safe details rendering. Retain legacy CIAM audit access with an explicit legacy label where shown, without inventing missing fields. No retention cleanup job or log mutation API.
+5. Run focused tests, full backend pytest/Ruff and frontend tests/lint/build. Validate diff and additive migration on isolated PostgreSQL; exercise logging persistence, access control and redaction through API. Verify responsive layout and keyboard controls. Record any unavailable checks explicitly.
+6. Before production schema migration, create and verify a fresh database backup (path, size, checksum, readable dump); build immutable candidate images, stage and deploy only within explicit owner authorization. Verify schema/head, health, login/log viewer, and seven MT critical APIs. Roll back application to 6971a73 if needed; leave additive log table intact. Record SHA, files, tests, risks and untouched work in HANDOFF.
+
+## AD Gateway credential test — 2026-10-02 approved
+
+1. Owner confirmed option 1: gateway verification plus separate MTPulse eligibility report.
+2. Add regression tests for Admin/CSRF/origin enforcement, saved settings,
+   strict matching response, redacted failures, timeout/rate limiting, unchanged
+   session/accounts, and durable test-outcome Transaction Log.
+3. Reuse the existing AD Gateway request/validation logic through a small shared
+   function; retain actual login checks and locks. Add a dedicated Admin test endpoint
+   whose failed credential result does not trigger the application's session-expired
+   handler. Never return raw gateway responses or exception text.
+4. Add labeled username/password/test controls to Central IAM / AD, password hidden
+   by default with eye control, clear pending/error/result feedback and password
+   cleanup. Keep this separate from settings-save payload and User Management.
+5. Run focused/full regression, lint/build and responsive checks; update runbook
+   and HANDOFF. Test integration with fixtures, not guessed real AD credentials.

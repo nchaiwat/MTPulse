@@ -1,3 +1,4 @@
+import { apiFetch, applyXhrAuth, notifyUnauthorized } from '../auth/authApi'
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
 
 export const MANUAL_UPLOAD_LIMITS = {
@@ -265,6 +266,7 @@ function uploadForm<T>(path: string, form: FormData, onProgress?: (progress: Upl
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('POST', `${apiBaseUrl}${path}`)
+    applyXhrAuth(xhr)
     xhr.upload.addEventListener('progress', (event) => {
       if (!event.lengthComputable) return
       onProgress?.({
@@ -278,6 +280,7 @@ function uploadForm<T>(path: string, form: FormData, onProgress?: (progress: Upl
       onProgress?.({ phase: 'processing', loaded: 0, total: 0, percent: 100 })
     })
     xhr.addEventListener('load', () => {
+      notifyUnauthorized(xhr.status)
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           resolve(JSON.parse(xhr.responseText) as T)
@@ -415,7 +418,7 @@ export async function confirmTaImport(file: File, fingerprint: string, onProgres
 }
 
 async function jsonRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${apiBaseUrl}${path}`, init)
+  const response = await apiFetch(`${apiBaseUrl}${path}`, init)
   if (!response.ok) throw new Error(await errorMessage(response))
   return response.json() as Promise<T>
 }
@@ -453,7 +456,7 @@ export function fetchFolderImportBatch(batchId: number, signal?: AbortSignal) {
 }
 
 export async function fetchFileShareReady(signal?: AbortSignal): Promise<FileShareReadyFile[]> {
-  const response = await fetch(`${apiBaseUrl}/api/imports/fileshare-ready`, {
+  const response = await apiFetch(`${apiBaseUrl}/api/imports/fileshare-ready`, {
     signal,
   })
   if (!response.ok) throw new Error(await errorMessage(response))
@@ -462,7 +465,7 @@ export async function fetchFileShareReady(signal?: AbortSignal): Promise<FileSha
 }
 
 export async function previewFileShareImport(sourceFileId: number): Promise<ImportPreview> {
-  const response = await fetch(`${apiBaseUrl}/api/imports/fileshare/${sourceFileId}/preview`, { method: 'POST' })
+  const response = await apiFetch(`${apiBaseUrl}/api/imports/fileshare/${sourceFileId}/preview`, { method: 'POST' })
   if (!response.ok) throw new Error(await errorMessage(response))
   return response.json() as Promise<ImportPreview>
 }
@@ -470,7 +473,7 @@ export async function previewFileShareImport(sourceFileId: number): Promise<Impo
 export async function confirmFileShareImport(sourceFileId: number, checksum: string) {
   const form = new FormData()
   form.append('expected_checksum', checksum)
-  const response = await fetch(`${apiBaseUrl}/api/imports/fileshare/${sourceFileId}/confirm`, { method: 'POST', body: form })
+  const response = await apiFetch(`${apiBaseUrl}/api/imports/fileshare/${sourceFileId}/confirm`, { method: 'POST', body: form })
   if (!response.ok) throw new Error(await errorMessage(response))
   return response.json() as Promise<{
     message: string
@@ -481,7 +484,7 @@ export async function confirmFileShareImport(sourceFileId: number, checksum: str
 }
 
 export async function fetchImportActivity(signal?: AbortSignal): Promise<ImportActivity[]> {
-  const response = await fetch(`${apiBaseUrl}/api/imports/activity`, {
+  const response = await apiFetch(`${apiBaseUrl}/api/imports/activity`, {
     signal,
   })
   if (!response.ok) throw new Error(`Import API ตอบกลับ ${response.status}`)
@@ -490,7 +493,7 @@ export async function fetchImportActivity(signal?: AbortSignal): Promise<ImportA
 }
 
 export async function fetchImportBatch(batchId: number, signal?: AbortSignal): Promise<ImportBatchDetail> {
-  const response = await fetch(`${apiBaseUrl}/api/imports/batches/${batchId}`, {
+  const response = await apiFetch(`${apiBaseUrl}/api/imports/batches/${batchId}`, {
     signal,
   })
   if (!response.ok) throw new Error(await errorMessage(response))
@@ -498,7 +501,7 @@ export async function fetchImportBatch(batchId: number, signal?: AbortSignal): P
 }
 
 export async function acknowledgeImportWarning(batchId: number, note: string): Promise<ImportBatchDetail> {
-  const response = await fetch(`${apiBaseUrl}/api/imports/batches/${batchId}/acknowledge`, {
+  const response = await apiFetch(`${apiBaseUrl}/api/imports/batches/${batchId}/acknowledge`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ note }),
@@ -510,7 +513,7 @@ export async function acknowledgeImportWarning(batchId: number, note: string): P
 export async function previewBatchReplacement(batchId: number, file: File): Promise<ReplacementPreview> {
   const form = new FormData()
   form.append('file', file)
-  const response = await fetch(`${apiBaseUrl}/api/imports/batches/${batchId}/replacement-preview`, { method: 'POST', body: form })
+  const response = await apiFetch(`${apiBaseUrl}/api/imports/batches/${batchId}/replacement-preview`, { method: 'POST', body: form })
   if (!response.ok) throw new Error(await errorMessage(response))
   return response.json() as Promise<ReplacementPreview>
 }
@@ -519,7 +522,7 @@ export async function replaceImportBatch(batchId: number, file: File, checksum: 
   const form = new FormData()
   form.append('file', file)
   form.append('expected_checksum', checksum)
-  const response = await fetch(`${apiBaseUrl}/api/imports/batches/${batchId}/replace`, { method: 'POST', body: form })
+  const response = await apiFetch(`${apiBaseUrl}/api/imports/batches/${batchId}/replace`, { method: 'POST', body: form })
   if (!response.ok) throw new Error(await errorMessage(response))
   return response.json() as Promise<ImportBatchDetail>
 }
@@ -528,7 +531,7 @@ export async function previewDhBatchReplacement(batchId: number, stockFile: File
   const form = new FormData()
   form.append('stock_file', stockFile)
   form.append('sales_file', salesFile)
-  const response = await fetch(apiBaseUrl + '/api/imports/batches/' + batchId + '/dh-replacement-preview', { method: 'POST', body: form })
+  const response = await apiFetch(apiBaseUrl + '/api/imports/batches/' + batchId + '/dh-replacement-preview', { method: 'POST', body: form })
   if (!response.ok) throw new Error(await errorMessage(response))
   return response.json() as Promise<DhReplacementPreview>
 }
@@ -538,7 +541,7 @@ export async function replaceDhImportBatch(batchId: number, stockFile: File, sal
   form.append('stock_file', stockFile)
   form.append('sales_file', salesFile)
   form.append('expected_fingerprint', fingerprint)
-  const response = await fetch(apiBaseUrl + '/api/imports/batches/' + batchId + '/dh-replace', { method: 'POST', body: form })
+  const response = await apiFetch(apiBaseUrl + '/api/imports/batches/' + batchId + '/dh-replace', { method: 'POST', body: form })
   if (!response.ok) throw new Error(await errorMessage(response))
   return response.json() as Promise<ImportBatchDetail>
 }

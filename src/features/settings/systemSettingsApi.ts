@@ -1,3 +1,4 @@
+import { apiFetch } from '../auth/authApi'
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
 
 export interface TelegramSettings {
@@ -57,7 +58,7 @@ async function detail(response: Response) {
 }
 
 export async function fetchTelegramSettings(signal?: AbortSignal): Promise<TelegramSettings> {
-  const response = await fetch(`${apiBaseUrl}/api/settings/system/telegram`, { signal })
+  const response = await apiFetch(`${apiBaseUrl}/api/settings/system/telegram`, { signal })
   if (!response.ok) throw new Error(await detail(response))
   return response.json() as Promise<TelegramSettings>
 }
@@ -67,7 +68,7 @@ export async function saveTelegramSettings(input: {
   groupId: string
   notifyManualImport: boolean
 }): Promise<TelegramSettings> {
-  const response = await fetch(`${apiBaseUrl}/api/settings/system/telegram`, {
+  const response = await apiFetch(`${apiBaseUrl}/api/settings/system/telegram`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -81,14 +82,14 @@ export async function saveTelegramSettings(input: {
 }
 
 export async function fetchTelegramToken(): Promise<string> {
-  const response = await fetch(`${apiBaseUrl}/api/settings/system/telegram/token`)
+  const response = await apiFetch(`${apiBaseUrl}/api/settings/system/telegram/token`)
   if (!response.ok) throw new Error(await detail(response))
   const payload = await response.json() as { botToken: string }
   return payload.botToken
 }
 
 export async function testTelegram(): Promise<string> {
-  const response = await fetch(`${apiBaseUrl}/api/settings/system/telegram/test`, { method: 'POST' })
+  const response = await apiFetch(`${apiBaseUrl}/api/settings/system/telegram/test`, { method: 'POST' })
   if (!response.ok) throw new Error(await detail(response))
   const payload = await response.json() as { message: string }
   return payload.message
@@ -97,7 +98,7 @@ export async function testTelegram(): Promise<string> {
 export async function fetchTechnicalNotificationSettings(
   signal?: AbortSignal,
 ): Promise<TechnicalNotificationSettings> {
-  const response = await fetch(`${apiBaseUrl}/api/settings/system/technical-notifications`, { signal })
+  const response = await apiFetch(`${apiBaseUrl}/api/settings/system/technical-notifications`, { signal })
   if (!response.ok) throw new Error(await detail(response))
   return response.json() as Promise<TechnicalNotificationSettings>
 }
@@ -105,7 +106,7 @@ export async function fetchTechnicalNotificationSettings(
 export async function saveTechnicalNotificationSettings(
   input: TechnicalNotificationSettings,
 ): Promise<TechnicalNotificationSettings> {
-  const response = await fetch(`${apiBaseUrl}/api/settings/system/technical-notifications`, {
+  const response = await apiFetch(`${apiBaseUrl}/api/settings/system/technical-notifications`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -122,7 +123,7 @@ export async function saveTechnicalNotificationSettings(
 }
 
 export async function checkTechnicalHealth(): Promise<TechnicalHealthCheck> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${apiBaseUrl}/api/settings/system/technical-notifications/check`,
     { method: 'POST' },
   )

@@ -1,3 +1,4 @@
+import { apiFetch } from '../auth/authApi'
 import type { ImportRun } from './fileShareSettingsApi'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
@@ -57,7 +58,7 @@ async function apiError(response: Response) {
 }
 
 async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${apiBaseUrl}${url}`, init)
+  const response = await apiFetch(`${apiBaseUrl}${url}`, init)
   if (!response.ok) throw new Error(await apiError(response))
   return response.json() as Promise<T>
 }

@@ -1,8 +1,12 @@
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.middleware.gzip import GZipMiddleware
 
 from app.api.automatic_imports import router as automatic_imports_router
+from app.api.ciam_auth import router as ciam_router
 from app.api.dashboards import router as dashboards_router
 from app.api.data_coverage import router as data_coverage_router
 from app.api.dh_prices import router as dh_prices_router
@@ -20,10 +24,15 @@ from app.api.sku_interests import router as sku_interests_router
 from app.api.system_settings import router as system_settings_router
 from app.api.twd_settings import modern_trade_router
 from app.api.twd_settings import router as twd_settings_router
+from app.auth import authorize_request
 from app.config import get_settings
 
 settings = get_settings()
-app = FastAPI(title=settings.app_name, version="0.1.0")
+app = FastAPI(title=settings.app_name, version="0.1.0",
+              dependencies=[Depends(authorize_request)],
+              docs_url="/docs" if settings.auth_mode == "development" else None,
+              redoc_url=None,
+              openapi_url="/openapi.json" if settings.auth_mode == "development" else None)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -32,6 +41,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(GZipMiddleware, minimum_size=1_000, compresslevel=5)
+app.include_router(ciam_router)
 app.include_router(data_coverage_router)
 app.include_router(dh_prices_router)
 app.include_router(automatic_imports_router)
@@ -55,3 +65,16 @@ app.include_router(monitoring_router)
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+# Validation failures must not echo passwords/secrets back in FastAPI's input field.
+
+
+@app.exception_handler(RequestValidationError)
+async def redact_auth_validation(request, exc):
+    if request.url.path.startswith(("/api/auth/", "/api/settings/ciam-sso")):
+        return JSONResponse(status_code=422, content={"detail": [
+            {key: value for key, value in error.items() if key in {"loc", "msg", "type"}}
+            for error in exc.errors()
+        ]})
+    return await request_validation_exception_handler(request, exc)

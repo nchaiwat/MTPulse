@@ -1627,3 +1627,76 @@ Discovery สำหรับ Frontend UX Milestone ได้รับอนุ�
 - Status: Discovery complete; รอ Product Owner ยืนยัน PRD และ implementation plan
 - Priority: (1) schema/parser/domain repository, (2) preview/confirm/list API,
   (3) UI, (4) Manual/Automatic/Backfill integration, (5) full regression/release gate
+
+
+## CIAM Login — 2026-10-02
+
+Owner approved implementation after main synchronization (a242b52).
+- Mode B outbound OIDC/PKCE S256; no inbound directory/provisioning webhooks.
+- Registered callback: https://wa-mtpulse.wa.net/auth/callback.
+- New identities provision as Viewer; System Admin assigns Data Operator/System Admin.
+- Roles retain the existing PRD boundaries: Viewer reports/downloads; Operator manual
+  uploads/mapping/correctives/import logs; Admin settings/secrets/automatic operations.
+- Fixed session lifetime defaults to 480 minutes, configurable in Settings. No sliding
+  refresh that extends this window. Local deactivation revokes sessions immediately;
+  CIAM-only offboarding is checked upon fresh authentication (no immediate webhook).
+- Global Settings owns CIAM URLs/client ID/encrypted secret/SSO/break-glass/session TTL.
+  Infrastructure encryption key and deployment auth mode remain outside the database.
+- Server-managed opaque HttpOnly Secure sessions, CSRF protection, state/nonce/PKCE,
+  issuer/subject identity and validated RS256 tokens supersede illustrative browser-token
+  storage and email-based account linking in the supplied specification.
+- Login follows existing design tokens. SSO primary action, emergency local form,
+  explicit error/loading states; real user identity and Logout in the app shell.
+- CA/AD CS setup, public exposure and Production activation are deferred. Real SSO
+  acceptance requires working trusted HTTPS/DNS and the registered client credentials.
+- Owner selected emergency Local Admin, independent of AD. Bootstrap via server console;
+  hashed password, login throttling, audit and self-service password change in Settings.
+  Direct AD Gateway is out of scope.
+- Success: unauthenticated data access denied, role boundaries enforced server-side,
+  rejected forged/replayed/expired OIDC flows, seven-MT regressions unchanged, secret
+  redaction/audit, settings updates effective across processes without restart.
+
+## AD emergency login — approved 2026-10-02
+
+- Owner approved direct HTTP on LAN: http://192.168.12.11:3100/api/v2/login, app_id MTPULSE. No v3. Blank required_group means unrestricted at Gateway; MTPulse still requires an explicit account binding.
+- AD login is available only while an Admin explicitly enables break-glass; never automatic failover. Preserve emergency Local Admin.
+- Admin binds a unique, normalized AD sAMAccountName to an existing CIAM user. No automatic username/email linking or new AD account provisioning. Inherit that user's role/status and fixed session lifetime.
+- Keep gateway URL/app ID/encrypted secret in Global Settings. Never persist/log AD passwords or send example ABCDE as a real secret.
+- Disabling emergency mode, changing gateway settings or removing/changing a binding revokes AD sessions. HTTPS for browser-to-MTPulse remains required.
+
+## CIAM secret display — 2026-10-02
+
+Owner requested saved Client Secret and AD Secret to show ******** rather than empty inputs, and an eye control to view the actual saved value. Restrict on-demand reveal to authenticated Admin with CSRF and audit without logging the value. Normal settings GET remains redacted; reveal uses a separate no-store POST. Separate edit action preserves the saved secret when untouched; never submit mask text.
+
+## User Management and always-available AD — owner approved
+
+Admin creates MTPulse accounts before first CIAM login, assigns role/status and allows AD using matching sAMAccountName. AD is available alongside CIAM, independent of break-glass. CIAM auto-links matching usernames case-insensitively to an unlinked managed account, retaining role/status; never links Local Admin or reassigns an already bound issuer/subject. Unknown CIAM identities continue auto-provisioning as Viewer. Reuse nullable unique ad_username as the per-user AD permission; no schema migration. Test managed creation, duplicate prevention, disabled/AD-denied access, trusted CIAM linking and identity-conflict rejection before deployment.
+
+## System Setting separation and transaction logs — 2026-10-02 approved
+
+Status: owner confirmed the requirements and additive database plan. Implementation follows this scope.
+Source: D:/Downloads/CIAM_SPOKE_ENTERPRISE_INTEGRATION_SPECIFICATION.md v2.3, sections 2.2 and 4. Latest owner decisions on always-available AD and automatic username linking take precedence over older emergency-only examples.
+
+- Rename the existing Settings navigation/page to ModernTrade Setting. Preserve Global, TWD, HP, MH, HH, GH, DH and TA and their existing settings/workflows. Remove only the CIAM/user panel from Global.
+- Add separate Admin-only System Setting navigation/page with Central IAM / AD, User Management and Transaction Logs tabs. Reuse current design patterns and forms; retain Local Admin password change under User Management and emergency controls under Central IAM / AD. Preserve dirty-form protection when changing tabs/pages.
+- Transaction Logs must persist the specification's category/action/status/message/details/records_count/duration_ms/triggered_by/created_at fields, plus an explicit event code. Add transaction_logs without replacing or deleting audit_events. Existing history remains legacy history; do not fabricate missing historical IP/status or event facts.
+- Implement and test SSO-01 login success, SSO-02 failure, SSO-03 auto-provision, SSO-04 inactive-account denial, BG-01 emergency toggle, BG-02 AD login during emergency, CFG-01 settings changes. Add clearly distinguished normal AD/local login outcomes, logout, user creation/role/status/AD permission changes, CIAM linking, connection tests and secret reveals. Preserve Viewer provisioning and current roles.
+- Record authenticated actor identity, server-observed/trusted-proxy IP, provider, redacted reason and relevant changes. Never log passwords, client/AD secrets, tokens, codes, PKCE verifier or session/CSRF values. Claims are allowlisted, not raw token payloads. Failed authentication logs must survive rollback.
+- Admin-only read-only log viewer: newest first, paginated, date range/category/status/actor filtering, readable Thai summary and redacted detail view. No edit/delete controls. No new automated retention/deletion rule absent an owner policy.
+- Non-goals: Mode A inbound M2M/directory APIs, external SIEM shipping, MT business logic changes, retrospective reconstruction of missing audit fields.
+- Acceptance: correct menu/tab visibility and Admin enforcement; seven specification cases with persisted fields and redaction; failed/disabled authentication recorded; existing login/user-management behavior unchanged; ModernTrade settings retained; full frontend/backend regression/lint/build and responsive checks at 375/768/1024/1440; isolated PostgreSQL migration and API smoke before release.
+
+## AD Gateway credential test — 2026-10-02 approved
+
+Owner requests a username/password test in the Central IAM / AD settings page.
+Add an Admin-only test form using the saved AD Gateway URL/App ID/Secret. Clearly
+state that unsaved settings are not tested. Show sanitized success/rejection,
+timeout/unavailable and configuration errors. Keep current Admin session unchanged:
+no session issuance, account creation/linking, permission change or password storage.
+Clear the test password after each attempt; audit the test outcome without credentials.
+Use CSRF, same-origin and rate limiting; preserve strict v2 response username matching.
+
+Owner chose option 1: test AD credentials even before an MTPulse account exists,
+then report MTPulse account/active/AD-permission status separately.
+This diagnostic never grants access or bypasses actual login authorization.
+No schema migration is expected. Production deployment needs explicit authorization.

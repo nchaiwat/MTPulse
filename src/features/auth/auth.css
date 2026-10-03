@@ -1,0 +1,56 @@
+.auth-page { min-height: 100dvh; display: grid; place-items: center; padding: 24px; background: var(--canvas, #f4f8fb); }
+.auth-panel { width: min(100%, 420px); min-width: 0; padding: 28px; background: white; border: 1px solid var(--line, #d7e0e3); border-radius: 12px; color: var(--ink-900, #102a43); }
+.auth-panel h1 { font-size: 24px; margin: 12px 0 4px; }
+.auth-panel p { line-height: 1.6; }
+.auth-panel form, .ciam-form { display: grid; gap: 14px; }
+.auth-panel label, .ciam-form label { display: grid; gap: 6px; font-weight: 600; }
+.auth-panel input, .ciam-form input, .ciam-form select { min-width: 0; width: 100%; min-height: 40px; border: 1px solid var(--line, #d7e0e3); border-radius: 6px; padding: 8px; }
+.auth-panel button, .ciam-panel button, .ciam-panel select { min-height: 40px; cursor: pointer; }
+.auth-panel button { width: 100%; margin: 6px 0; padding: 10px; border: 1px solid var(--line, #d7e0e3); border-radius: 6px; }
+.auth-primary { background: var(--ink-900, #102a43); color: white; font-weight: 600; }
+.auth-link { background: transparent; color: var(--ink-900, #102a43); }
+.auth-panel small { display: block; margin-top: 18px; color: var(--text-600, #617181); }
+.auth-error, .auth-global-error { color: var(--red-700, #b73846); }
+.auth-warning { color: var(--amber-700, #a66400); }
+.auth-panel :focus-visible, .ciam-panel :focus-visible { outline: 2px solid #02abff; outline-offset: 3px; }
+.ciam-panel { padding: 20px; border: 1px solid var(--line, #d7e0e3); border-radius: 12px; background: white; margin-bottom: 16px; min-width: 0; }
+.ciam-panel h2 { font-size: 16px; }
+.ciam-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ciam-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
+.ciam-users { overflow-x: auto; }
+.ciam-users table { width: 100%; border-collapse: collapse; }
+.ciam-users th, .ciam-users td { padding: 8px; text-align: left; border-bottom: 1px solid var(--line, #d7e0e3); }
+.auth-global-error { position: fixed; bottom: 16px; right: 16px; background: white; padding: 12px; z-index: 100; }
+@media (max-width: 600px) { .ciam-form { grid-template-columns: minmax(0, 1fr); } .auth-panel { padding: 20px; } }
+
+.ciam-panel fieldset { min-width: 0; max-width: 100%; }
+
+
+.ciam-secret { display: grid; gap: 6px; min-width: 0; align-content: start; }
+.ciam-secret-input { display: flex; gap: 6px; min-width: 0; }
+.ciam-secret-input input { flex: 1; }
+.ciam-secret-input button { display: grid; place-items: center; flex: 0 0 40px; border: 1px solid var(--line, #d7e0e3); border-radius: 6px; background: white; color: var(--ink-900, #102a43); }
+.ciam-secret > button { justify-self: start; }
+
+.transaction-details { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 480px; min-width: 180px; }
+.ciam-users th, .ciam-users td { vertical-align: top; }
+
+.ciam-reason { display: grid; gap: 6px; }
+.ciam-reason input { width: 100%; min-width: 0; min-height: 40px; }
+.ciam-panel { font-size: 12px; overflow-wrap: anywhere; }
+.ciam-panel button { max-width: 100%; }
+@media (max-width: 600px) {
+  .ciam-panel { padding: 10px; }
+  .ciam-panel fieldset { margin-inline: 0; padding: 8px; }
+  .ciam-secret-input { gap: 3px; }
+}
+
+.ciam-form label { align-content: start; }
+.ciam-users table { min-width: 700px; }
+.ciam-users th:first-child, .ciam-users td:first-child { min-width: 150px; }
+.ciam-panel button { padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink-900); }
+.ciam-panel button:disabled { opacity: .55; cursor: default; }
+.ciam-panel button:hover:not(:disabled) { background: var(--primary-50); }
+
+.transaction-log-table table { min-width: 1150px; }
+.transaction-log-table td { overflow-wrap: anywhere; }
