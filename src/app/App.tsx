@@ -8,10 +8,11 @@ import { MonitoringPage } from '../features/monitoring/MonitoringPage'
 import { PerformancePage } from '../features/performance/PerformancePage'
 import { SystemAdministrationPage } from '../features/settings/SystemAdministrationPage'
 import { SettingsPage } from '../features/settings/SettingsPage'
+import { AssortmentPage } from '../features/assortment/AssortmentPage'
 import { SaleOutPage } from '../features/saleOut/SaleOutPage'
 import { MODERN_TRADES } from '../config/modernTrades'
 
-type AppPage = 'dashboard' | 'dashboard-hp' | 'dashboard-mh' | 'dashboard-hh' | 'dashboard-gh' | 'dashboard-dh' | 'dashboard-ta' | 'performance' | 'performance-hp' | 'performance-mh' | 'performance-hh' | 'performance-gh' | 'performance-dh' | 'performance-ta' | 'sale-out' | 'imports' | 'monitoring' | 'settings' | 'system-settings'
+type AppPage = 'dashboard' | 'dashboard-hp' | 'dashboard-mh' | 'dashboard-hh' | 'dashboard-gh' | 'dashboard-dh' | 'dashboard-ta' | 'performance' | 'performance-hp' | 'performance-mh' | 'performance-hh' | 'performance-gh' | 'performance-dh' | 'performance-ta' | 'sale-out' | 'imports' | 'monitoring' | 'settings' | 'system-settings' | 'assortment'
 
 const pageMeta: Record<AppPage, { eyebrow: string; title: string }> = {
   dashboard: {
@@ -74,6 +75,7 @@ const pageMeta: Record<AppPage, { eyebrow: string; title: string }> = {
   imports: { eyebrow: 'สถานะข้อมูล / นำเข้าข้อมูล', title: 'นำเข้าข้อมูล' },
   monitoring: { eyebrow: 'System health', title: 'Monitoring' },
   settings: { eyebrow: 'Administration', title: 'ModernTrade Setting' },
+  assortment: {eyebrow:'Assortment',title:'Assortment'},
   'system-settings': { eyebrow: 'Administration', title: 'System Setting' },
 }
 
@@ -85,7 +87,7 @@ export function App({ auth = developmentSession, onLogout }: { auth?: LoginSessi
   const [page, updatePage] = useState<AppPage>('dashboard')
   const [systemDirty, setSystemDirty] = useState(false)
   const setPage = (next: AppPage) => {
-    if (next !== page && page === 'system-settings' && systemDirty && !window.confirm('มีข้อมูลที่ยังไม่ได้บันทึก ต้องการออกจากหน้านี้หรือไม่?')) return
+    if (next !== page && (page === 'system-settings' || page === 'assortment') && systemDirty && !window.confirm('มีข้อมูลที่ยังไม่ได้บันทึก ต้องการออกจากหน้านี้หรือไม่?')) return
     setSystemDirty(false)
     updatePage(next)
   }
@@ -171,6 +173,7 @@ export function App({ auth = developmentSession, onLogout }: { auth?: LoginSessi
             )}
           </section>
 
+          <button className="nav-item nav-main-item" aria-label="Assortment" title="Assortment" data-active={page === 'assortment' || undefined} aria-current={page === 'assortment' ? 'page' : undefined} type="button" onClick={() => setPage('assortment')}><BarChart3 size={17} aria-hidden="true"/><span>Assortment</span></button>
           <button className="nav-item nav-main-item" aria-label="Sale Out" title={navigationCollapsed ? 'Sale Out' : undefined} data-active={page === 'sale-out' || undefined} aria-current={page === 'sale-out' ? 'page' : undefined} type="button" onClick={() => setPage('sale-out')}>
             <TrendingUp size={17} aria-hidden="true" />
             <span>Sale Out</span>
@@ -297,7 +300,7 @@ export function App({ auth = developmentSession, onLogout }: { auth?: LoginSessi
       </aside>
 
       <main className="app-main" id="main-content">
-        {!page.startsWith('performance') && !page.startsWith('dashboard') && page !== 'sale-out' && page !== 'imports' && page !== 'monitoring' && page !== 'settings' && page !== 'system-settings' && (
+        {!page.startsWith('performance') && !page.startsWith('dashboard') && page !== 'sale-out' && page !== 'imports' && page !== 'monitoring' && page !== 'settings' && page !== 'system-settings' && page !== 'assortment' && (
           <header className="top-bar">
             <div>
               <span className="eyebrow">{meta.eyebrow}</span>
@@ -320,6 +323,7 @@ export function App({ auth = developmentSession, onLogout }: { auth?: LoginSessi
         {page === 'performance-dh' && <PerformancePage mtCode="DH" />}
         {page === 'performance-ta' && <PerformancePage mtCode="TA" />}
         {page === 'sale-out' && <SaleOutPage />}
+        {page === 'assortment' && <AssortmentPage onDirtyChange={setSystemDirty} />}
         {canEdit && page === 'imports' && <ImportPage correctiveBatchId={correctiveBatchId} />}
         {isAdmin && page === 'monitoring' && (
           <MonitoringPage

@@ -1032,3 +1032,22 @@ Owner confirmed proposed Base Item suggestions require Admin confirmation, one W
 per Base Item, unconfirmed memberships excluded from actual totals. Workbook lacks
 WA Item/SKU keys; do not infer confirmed mappings from descriptions or annual figures.
 No Assortment tables, migration, production import, API or actual data query exists yet.
+
+## 2026-10-03 — Assortment candidate
+Branch codex/assortment, base 4dca977. Owner explicitly confirmed implementation then
+Merge/Deploy. New backend models, additive migration cd3748f901a2, API/service and tests;
+new src/features/assortment components; small App/auth/main/SystemAdministration wiring.
+No parser, Performance query, MT registry or existing mapping semantics changed.
+Confirmed WA memberships only; no automatic reference workbook import. Admin creates
+Base Items and confirms suggested existing WA Items before their Qty/Inventory aggregates.
+Forecasts persist by plan/base/MT with 12 monthly values, optimistic version checks,
+independent copies, main-plan selection, role enforcement and transaction audit.
+Full backend 448 passed / 2 skipped. Changed Python Ruff passed. Full Ruff has only the
+pre-existing I001/E501 in a7d4c2e91f30. Frontend suite/lint/build and Linux staging release
+results recorded in the subsequent release entry. Browser fixtures at 375/768/1024/1440
+verify no viewport overflow, horizontal scroll sync, frozen Description and month dialog.
+At narrow widths attributes default hidden; existing sidebar can be collapsed. Local
+QA scripts/screenshots are ignored under .tmp/qa. No original NAS/workbook modified.
+Rollback baseline 4dca977; additive schema can remain with old code. Production import,
+CIAM Agent activation and business-data correction are not part of this release.
+Primary and other worktree modifications/untracked artifacts preserved; not fully audited.

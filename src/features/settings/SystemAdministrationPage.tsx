@@ -4,10 +4,12 @@ import { useIsAdmin } from '../auth/permissions'
 import { CiamSettingsPanel } from './CiamSettingsPanel'
 import { TransactionLogsPanel } from './TransactionLogsPanel'
 import './settingsControlPlane.css'
+import { AssortmentSettings } from '../assortment/AssortmentSettings'
 
 const tabs = [
   { id: 'ciam', label: 'Central IAM / AD', icon: ShieldCheck },
   { id: 'users', label: 'User Management', icon: Users },
+  { id: 'assortment', label: 'Assortment', icon: ScrollText },
   { id: 'logs', label: 'Transaction Logs', icon: ScrollText },
 ] as const
 type Tab = typeof tabs[number]['id']
@@ -39,7 +41,7 @@ export function SystemAdministrationPage({ onDirtyChange }: { onDirtyChange: (di
       }}><Icon size={16} aria-hidden="true" /><span><strong>{label}</strong></span></button>)}
     </nav>
     <div id={'system-panel-' + tab} role="tabpanel" aria-labelledby={'system-tab-' + tab} className="settings-scope-panel">
-      {tab === 'logs' ? <TransactionLogsPanel /> : <CiamSettingsPanel key={tab} mode={tab} onDirtyChange={setDirty} />}
+      {tab === 'assortment' ? <AssortmentSettings /> : tab === 'logs' ? <TransactionLogsPanel /> : <CiamSettingsPanel key={tab} mode={tab} onDirtyChange={setDirty} />}
     </div>
   </div>
 }

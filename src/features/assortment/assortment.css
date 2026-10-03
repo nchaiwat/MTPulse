@@ -1,0 +1,337 @@
+.assortment-page {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.assortment-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.assortment-heading h1 {
+  font-size: var(--type-page-title-size);
+  margin: 0;
+}
+.assortment-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  padding: 8px;
+  border-radius: 8px;
+}
+.assortment-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--type-label-size);
+}
+.assortment-page button,
+.assortment-dialog button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--ink-900);
+  padding: 5px 9px;
+  font: inherit;
+  cursor: pointer;
+}
+.assortment-page button:disabled,
+.assortment-dialog button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.assortment-page input,
+.assortment-page select,
+.assortment-dialog input,
+.assortment-dialog select {
+  font: inherit;
+  min-width: 0;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 5px 7px;
+  color: var(--text-900);
+  background: var(--surface);
+  max-width: 100%;
+}
+.assortment-toolbar input[type='number'] {
+  width: 85px;
+}
+.assortment-toolbar select {
+  max-width: 220px;
+}
+.as-search {
+  flex: 1;
+}
+.as-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+.assortment-page button[aria-pressed='true'] {
+  background: var(--primary-50);
+  border-color: var(--primary-500);
+  color: #006fa6;
+}
+.assortment-page small {
+  display: block;
+  font-family: var(--font-ui);
+  font-weight: 400;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.assortment-page .matrix-scroll {
+  max-height: calc(100dvh - 270px);
+  min-height: 300px;
+}
+.assortment-page .performance-matrix th {
+  background: var(--ink-900);
+  color: white;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.assortment-page .performance-matrix thead tr:first-child th {
+  height: 36px;
+  top: 0;
+}
+.assortment-page .performance-matrix thead tr:nth-child(2) th {
+  top: 36px;
+  height: 48px;
+  min-width: 95px;
+}
+.assortment-page .performance-matrix .as-no {
+  position: sticky;
+  left: 0;
+  width: 44px;
+  min-width: 44px;
+  max-width: 44px;
+  z-index: 5;
+}
+.assortment-page .performance-matrix .as-attr {
+  position: sticky;
+  width: 64px;
+  min-width: 64px;
+  max-width: 64px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  z-index: 5;
+}
+.assortment-page .performance-matrix .as-description {
+  position: sticky;
+  width: 260px;
+  min-width: 260px;
+  max-width: 260px;
+  z-index: 5;
+  border-right: 2px solid var(--primary-500);
+}
+.as-description span {
+  display: block;
+  max-width: 246px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-data);
+}
+.assortment-page tbody .as-no,
+.assortment-page tbody .as-attr,
+.assortment-page tbody .as-description {
+  background: var(--surface);
+}
+.assortment-page .performance-matrix thead .as-no,
+.assortment-page .performance-matrix thead .as-attr,
+.assortment-page .performance-matrix thead .as-description {
+  z-index: 18;
+}
+.assortment-page .as-mt {
+  text-align: center !important;
+  border-right: 2px solid var(--primary-500) !important;
+}
+.assortment-page .numeric-column {
+  font-family: var(--font-data);
+  text-align: right;
+}
+.assortment-page .numeric-column button {
+  display: block;
+  width: 100%;
+  background: var(--primary-50);
+  border-color: #b7e5fb;
+}
+.assortment-pagination {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+}
+.assortment-pagination span {
+  flex: 1;
+}
+.assortment-dialog {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text-900);
+  background: var(--surface);
+  width: 900px;
+  max-width: 96vw;
+  max-height: 95dvh;
+  padding: 20px;
+  overflow: auto;
+}
+.assortment-dialog::backdrop {
+  background: #102a4355;
+}
+.assortment-dialog header,
+.assortment-dialog footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.assortment-dialog h2 {
+  font-size: 18px;
+}
+.assortment-dialog label {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.assortment-dialog label > input,
+.assortment-dialog label > select {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+}
+.assortment-attributes {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.assortment-members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 10px 0;
+}
+.assortment-candidates,
+.assortment-months {
+  overflow: auto;
+  max-height: 50dvh;
+}
+.assortment-candidates table {
+  border-collapse: collapse;
+  font-size: 12px;
+  min-width: 620px;
+  width: 100%;
+}
+.assortment-candidates td,
+.assortment-candidates th {
+  padding: 8px;
+  border: 1px solid var(--line);
+  vertical-align: top;
+}
+.assortment-candidates small {
+  display: block;
+}
+.assortment-months table {
+  min-width: 600px;
+  width: 100%;
+}
+.assortment-months input {
+  width: 130px;
+}
+.assortment-dialog [role='alert'] {
+  color: var(--red-700);
+}
+.assortment-page :focus-visible,
+.assortment-dialog :focus-visible {
+  outline: 2px solid var(--primary-500);
+  outline-offset: 2px;
+}
+@media (max-width: 1279px) {
+  .assortment-page .performance-matrix .as-attr {
+    position: static;
+  }
+  .assortment-page .performance-matrix .as-description {
+    left: 44px !important;
+    width: 180px;
+    min-width: 180px;
+    max-width: 180px;
+  }
+  .as-description span {
+    max-width: 166px;
+  }
+  .assortment-page .matrix-scroll {
+    max-height: 65dvh;
+  }
+  .as-actions {
+    margin-left: 0;
+  }
+  .assortment-attributes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 500px) {
+  .assortment-heading {
+    flex-wrap: wrap;
+    gap: 7px;
+  }
+  .assortment-page .performance-matrix .as-description {
+    width: 130px;
+    min-width: 130px;
+    max-width: 130px;
+  }
+  .as-description span {
+    max-width: 116px;
+  }
+  .assortment-toolbar label {
+    flex-wrap: wrap;
+  }
+  .assortment-toolbar select {
+    max-width: 160px;
+  }
+  .assortment-dialog {
+    padding: 12px;
+  }
+}
+/* Keep controls inside the existing collapsible App Shell at narrow widths. */
+.assortment-toolbar > *,
+.assortment-toolbar label {
+  min-width: 0;
+  max-width: 100%;
+}
+.assortment-toolbar .segmented-control,
+.as-actions,
+.assortment-pagination {
+  flex-wrap: wrap;
+}
+.assortment-toolbar input,
+.assortment-toolbar select {
+  max-width: 100%;
+}
+.assortment-pagination {
+  overflow-wrap: anywhere;
+}
+.assortment-pagination span {
+  min-width: 0;
+  flex-basis: 80px;
+}
+.assortment-months th:first-child {
+  position: sticky;
+  left: 0;
+  min-width: 60px;
+  z-index: 2;
+  background: var(--ink-900);
+  color: white;
+}
+.assortment-months thead th:first-child {
+  z-index: 4;
+}

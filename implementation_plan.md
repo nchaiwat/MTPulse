@@ -2369,3 +2369,14 @@ business-rule question for command mutation implementation.
   Agent defaults off. PostgreSQL session advisory lock covers each cycle across commits.
 - Real CIAM endpoint compatibility, FULL_SYNC null department acceptance and degraded
   status handling remain integration checks; no production account inventory transmitted.
+
+## Assortment implementation / release (2026-10-03)
+- Add four additive tables via cd3748f901a2 after bc2637e8f901: bases, members, plans,
+  forecasts. Reuse canonical Performance queries for MT-specific sales and stock semantics.
+- Add authenticated /api/assortment routes and Assortment page. Admin manages bases/mappings
+  and page size; Operator/Admin manages plans/monthly forecasts; Viewer reads and exports.
+- Audit successful mutations with actor, source request, IDs and before/after values.
+- Release gates: full frontend/backend regression, lint/build, four-width browser QA,
+  isolated PostgreSQL 17 migration and API persistence/concurrency smoke before merge.
+- Production requires fresh verified backup. Roll back API/Web to 4dca977; retain additive
+  tables and user-entered forecasts. Do not run destructive downgrade or import reference data.
