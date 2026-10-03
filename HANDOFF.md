@@ -981,3 +981,88 @@ so heartbeat requires a separate process. No schema drafted beyond conceptual ne
 - Ignored .tmp/mode-c-qa holds fixture screenshots/scripts/archive/local test DB only.
   New worktree tracked changes all belong to this task. Unrelated primary/old worktree
   modifications remain untouched; their full inventories not re-audited.
+
+
+## 2026-10-03 — CIAM baseline merged and deployed; Assortment handoff
+
+Owner explicitly authorized Merge and Deploy while selecting the Assortment baseline.
+PR #2 merged as 5e29cea14e392df5c092bc206692e78e49805ea5; PR #3 retargeted to
+main and merged as 4dca97764138d9d84b14d579ead5470fe035ce98. Final tree exactly
+matches tested candidate f71c51b. Production /opt/mtpulse is detached at 4dca977.
+API/Web images ciam-4dca977, Agent uses same API image. Worker retained ciam-c916ff3.
+Additive migration ab1526d7e8f9 -> bc2637e8f901 applied. Agent enabled=false, no
+live heartbeat/directory export/remote command was executed. Live CIAM interoperability
+still requires integration acceptance; installation does not establish that contract.
+
+Verified before migration:
+- /opt/mtpulse/backups/before-mode-c-4dca977-20261003.dump
+- 214427238 bytes; SHA-256 70e0d6bfde96aa6737ce6897c5fcd1fc915922d67d96f1d31ecefbddd95fc98f
+- pg_restore --list succeeded; matching .list retained.
+
+Validation:
+- Frontend 163 passed; lint/build passed; existing 528 kB bundle warning.
+- Linux backend full 435 passed / 2 skipped. Changed Python files pass Ruff.
+  Full Ruff retains I001/E501 in untouched a7d4c2e91f30 migration.
+- Initial local backend runtime lacked PyJWT. Initial Linux test mount omitted root
+  compose.yaml (2 test failures); corrected full repository mount passed all tests.
+- Isolated PostgreSQL 17: fresh migrations, durable inbox restart, disable/revoke,
+  result ACK, enable, redaction and advisory lock passed with simulated provider.
+- Candidate Linux Web/API HTTP and authenticated Agent/log endpoints passed.
+- After deployment API/Web/DB healthy; Agent running, restart count 0, disabled.
+- HTTPS health, emergency-admin login, all seven MT Performance endpoints and
+  Transaction Logs returned 200; smoke session logged out. Certificate trust was
+  bypassed for local smoke only; CA/trust deployment was not changed.
+- Test containers modec-stage-{web,api,db} stopped; fixture data retained separately.
+
+Rollback: stop ciam-agent, checkout 1d26186686de00864cf16ef8544a6bc1a9333519,
+use releases/1d26186/compose.images.yaml to restore API/Web. Preserve added tables
+and audit history; no destructive downgrade. No business data import/correction.
+Production untracked backups/ and releases/ preserved. Primary and older worktrees
+contain unrelated changes/temp files; none changed or cleaned in this release.
+
+Assortment: branch codex/assortment, separate worktree .tmp/assortment from origin/main
+4dca977. Real implementation is NOT completed/deployed. Approved standalone prototype:
+C:/Users/Chaiwat.N/.codex/visualizations/2026/10/01/01a0f668-1596-79e3-9c44-799b5c25526e/assortment/assortment-design.html
+Approved UI: TWD shared design; compact toolbar; hide/show group-through-size columns,
+always-visible Description and frozen identity; synchronized top/bottom scrolling;
+System Setting page size 25/50/100/all; year comparison and monthly Forecast plans;
+Excel export across all filtered pages. Forecast year 2027; annual sum from months,
+blank distinct from intentional zero. Inventory snapshot, never summed across dates.
+Owner confirmed proposed Base Item suggestions require Admin confirmation, one WA Item
+per Base Item, unconfirmed memberships excluded from actual totals. Workbook lacks
+WA Item/SKU keys; do not infer confirmed mappings from descriptions or annual figures.
+No Assortment tables, migration, production import, API or actual data query exists yet.
+
+## 2026-10-03 — Assortment candidate
+Branch codex/assortment, base 4dca977. Owner explicitly confirmed implementation then
+Merge/Deploy. New backend models, additive migration cd3748f901a2, API/service and tests;
+new src/features/assortment components; small App/auth/main/SystemAdministration wiring.
+No parser, Performance query, MT registry or existing mapping semantics changed.
+Confirmed WA memberships only; no automatic reference workbook import. Admin creates
+Base Items and confirms suggested existing WA Items before their Qty/Inventory aggregates.
+Forecasts persist by plan/base/MT with 12 monthly values, optimistic version checks,
+independent copies, main-plan selection, role enforcement and transaction audit.
+Full backend 448 passed / 2 skipped. Changed Python Ruff passed. Full Ruff has only the
+pre-existing I001/E501 in a7d4c2e91f30. Frontend suite/lint/build and Linux staging release
+results recorded in the subsequent release entry. Browser fixtures at 375/768/1024/1440
+verify no viewport overflow, horizontal scroll sync, frozen Description and month dialog.
+At narrow widths attributes default hidden; existing sidebar can be collapsed. Local
+QA scripts/screenshots are ignored under .tmp/qa. No original NAS/workbook modified.
+Rollback baseline 4dca977; additive schema can remain with old code. Production import,
+CIAM Agent activation and business-data correction are not part of this release.
+Primary and other worktree modifications/untracked artifacts preserved; not fully audited.
+
+Staging follow-up: PostgreSQL 17 fresh migration and real authenticated HTTP passed:
+Net=3, Gross=5, latest Stock=9 (2026-01-02); concurrent writes return 200/409, plan
+copy isolated, zero/blank Excel preserved, eight actor-attributed audit entries. Browser
+save/reopen uncovered a 200ms same-query refresh window: DB was saved but the editor
+could reopen its stale snapshot. Added failing regression, then track loaded revision
+and block editor/export until the latest refresh completes. Focused frontend 4 passed.
+
+Assortment release validation: final frontend 167 passed / 37 files; lint and production
+build passed (existing >500kB bundle warning; 547.63kB). Real Linux Web image 050e7b7,
+API image 82ed06c (backend unchanged in 050e7b7), isolated PostgreSQL 17 schema head
+cd3748f901a2. Authenticated browser through SSH tunnel saved Forecast, refreshed/reopened
+it and exported XLSX with no page errors. Same-query refresh regression is resolved.
+Read-only production smoke follows deployment. No reference workbook or confirmed
+memberships are seeded: first use Admin > Base Item / Mapping; then create Forecast plan.

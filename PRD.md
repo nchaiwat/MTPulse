@@ -1764,3 +1764,16 @@ remains protected. No additional plan confirmation is pending. Initial implement
 uses all local account inventory fields from the specification; department is null
 because MTPulse does not store it. Local Admin is included in inventory for reconciliation
 but rejects remote mutations. Roles remain viewer/operator/admin, not example PU Staff.
+
+## Assortment — approved implementation (2026-10-03)
+- Compare Qty for the two years preceding the selected Forecast year; default 2027.
+- Confirmed Base Item membership aggregates WA Items across active MTs. Admin confirms
+  proposals; one WA Item belongs to one Base Item. No description-only auto confirmation.
+- Inventory uses the latest available snapshot within each year per MT, with date shown.
+- Monthly Forecast plans are durable, editable by Operator/Admin, copied independently,
+  and version checked to prevent concurrent overwrites. Blank is not zero; annual sum
+  includes entered months and shows completeness. Growth needs complete historical coverage.
+- TWD shared styling, always-visible frozen Description, optional attribute columns,
+  synchronized scrollbars, filters, System Setting page size, all-filtered-row XLSX export.
+- Source workbook is a design reference without WA/SKU identity. No workbook figures or
+  automatic Base Item mappings are imported by deployment. Admin sets confirmed memberships.

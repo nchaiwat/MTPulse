@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.gzip import GZipMiddleware
 
+from app.api.assortment import router as assortment_router
 from app.api.automatic_imports import router as automatic_imports_router
 from app.api.ciam_agent import router as ciam_agent_router
 from app.api.ciam_auth import router as ciam_router
@@ -42,6 +43,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(GZipMiddleware, minimum_size=1_000, compresslevel=5)
+app.include_router(assortment_router)
 app.include_router(ciam_router)
 app.include_router(ciam_agent_router)
 app.include_router(data_coverage_router)

@@ -38,6 +38,10 @@ def actor_from_session(session: Session, fallback: str) -> str:
 
 def role_for_path(path: str, method: str) -> str:
     # Unknown endpoints require Admin; newly added APIs cannot silently become public.
+    if path.startswith("/api/assortment/"):
+        if method in SAFE_METHODS:
+            return "viewer"
+        return "operator" if path.startswith("/api/assortment/plans") else "admin"
     if path.startswith("/api/auth/"):
         return "admin" if path.endswith("break-glass-toggle") else "viewer"
     if (

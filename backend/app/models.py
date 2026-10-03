@@ -670,3 +670,35 @@ class CiamAgentCommand(Base):
     payload: Mapped[str] = mapped_column(Text)
     result: Mapped[str] = mapped_column(Text)
     acknowledged: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class AssortmentBase(Base):
+    __tablename__ = "assortment_bases"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    description: Mapped[str] = mapped_column(String(500))
+    attributes: Mapped[str] = mapped_column(Text, default="[]")
+    version: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class AssortmentMember(Base):
+    __tablename__ = "assortment_members"
+    wa_item_code: Mapped[str] = mapped_column(String(50), primary_key=True)
+    base_id: Mapped[str] = mapped_column(ForeignKey("assortment_bases.id"), index=True)
+
+
+class AssortmentPlan(Base):
+    __tablename__ = "assortment_plans"
+    __table_args__ = (CheckConstraint("year BETWEEN 2000 AND 2100"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(150))
+    year: Mapped[int] = mapped_column(Integer)
+    primary_year: Mapped[int | None] = mapped_column(Integer, unique=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class AssortmentForecast(Base):
+    __tablename__ = "assortment_forecasts"
+    plan_id: Mapped[str] = mapped_column(ForeignKey("assortment_plans.id"), primary_key=True)
+    base_id: Mapped[str] = mapped_column(ForeignKey("assortment_bases.id"), primary_key=True)
+    mt_code: Mapped[str] = mapped_column(String(10), primary_key=True)
+    months: Mapped[str] = mapped_column(Text)
