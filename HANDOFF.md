@@ -981,3 +981,54 @@ so heartbeat requires a separate process. No schema drafted beyond conceptual ne
 - Ignored .tmp/mode-c-qa holds fixture screenshots/scripts/archive/local test DB only.
   New worktree tracked changes all belong to this task. Unrelated primary/old worktree
   modifications remain untouched; their full inventories not re-audited.
+
+
+## 2026-10-03 — CIAM baseline merged and deployed; Assortment handoff
+
+Owner explicitly authorized Merge and Deploy while selecting the Assortment baseline.
+PR #2 merged as 5e29cea14e392df5c092bc206692e78e49805ea5; PR #3 retargeted to
+main and merged as 4dca97764138d9d84b14d579ead5470fe035ce98. Final tree exactly
+matches tested candidate f71c51b. Production /opt/mtpulse is detached at 4dca977.
+API/Web images ciam-4dca977, Agent uses same API image. Worker retained ciam-c916ff3.
+Additive migration ab1526d7e8f9 -> bc2637e8f901 applied. Agent enabled=false, no
+live heartbeat/directory export/remote command was executed. Live CIAM interoperability
+still requires integration acceptance; installation does not establish that contract.
+
+Verified before migration:
+- /opt/mtpulse/backups/before-mode-c-4dca977-20261003.dump
+- 214427238 bytes; SHA-256 70e0d6bfde96aa6737ce6897c5fcd1fc915922d67d96f1d31ecefbddd95fc98f
+- pg_restore --list succeeded; matching .list retained.
+
+Validation:
+- Frontend 163 passed; lint/build passed; existing 528 kB bundle warning.
+- Linux backend full 435 passed / 2 skipped. Changed Python files pass Ruff.
+  Full Ruff retains I001/E501 in untouched a7d4c2e91f30 migration.
+- Initial local backend runtime lacked PyJWT. Initial Linux test mount omitted root
+  compose.yaml (2 test failures); corrected full repository mount passed all tests.
+- Isolated PostgreSQL 17: fresh migrations, durable inbox restart, disable/revoke,
+  result ACK, enable, redaction and advisory lock passed with simulated provider.
+- Candidate Linux Web/API HTTP and authenticated Agent/log endpoints passed.
+- After deployment API/Web/DB healthy; Agent running, restart count 0, disabled.
+- HTTPS health, emergency-admin login, all seven MT Performance endpoints and
+  Transaction Logs returned 200; smoke session logged out. Certificate trust was
+  bypassed for local smoke only; CA/trust deployment was not changed.
+- Test containers modec-stage-{web,api,db} stopped; fixture data retained separately.
+
+Rollback: stop ciam-agent, checkout 1d26186686de00864cf16ef8544a6bc1a9333519,
+use releases/1d26186/compose.images.yaml to restore API/Web. Preserve added tables
+and audit history; no destructive downgrade. No business data import/correction.
+Production untracked backups/ and releases/ preserved. Primary and older worktrees
+contain unrelated changes/temp files; none changed or cleaned in this release.
+
+Assortment: branch codex/assortment, separate worktree .tmp/assortment from origin/main
+4dca977. Real implementation is NOT completed/deployed. Approved standalone prototype:
+C:/Users/Chaiwat.N/.codex/visualizations/2026/10/01/01a0f668-1596-79e3-9c44-799b5c25526e/assortment/assortment-design.html
+Approved UI: TWD shared design; compact toolbar; hide/show group-through-size columns,
+always-visible Description and frozen identity; synchronized top/bottom scrolling;
+System Setting page size 25/50/100/all; year comparison and monthly Forecast plans;
+Excel export across all filtered pages. Forecast year 2027; annual sum from months,
+blank distinct from intentional zero. Inventory snapshot, never summed across dates.
+Owner confirmed proposed Base Item suggestions require Admin confirmation, one WA Item
+per Base Item, unconfirmed memberships excluded from actual totals. Workbook lacks
+WA Item/SKU keys; do not infer confirmed mappings from descriptions or annual figures.
+No Assortment tables, migration, production import, API or actual data query exists yet.
